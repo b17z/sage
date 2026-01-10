@@ -35,11 +35,17 @@ Each checkpoint captures:
 ## Installation
 
 ```bash
-# Install the Claude Code plugin
-claude plugin install /path/to/sage --scope user
+# 1. Clone the repository
+git clone https://github.com/b17z/sage.git
+cd sage
+
+# 2. Install the Claude Code plugin
+claude plugin install . --scope user
 ```
 
 That's it. The checkpoint skill is now available across all your projects.
+
+**Note:** After installation, keep the cloned directory in place. Claude Code plugins reference the source directory rather than copying files, so moving or deleting it will break the plugin. Choose a permanent location like `~/plugins/sage` or `~/.local/share/sage`.
 
 ## Usage
 
