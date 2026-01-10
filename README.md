@@ -32,20 +32,44 @@ Each checkpoint captures:
 - **Tensions** — Where credible sources disagree (high value!)
 - **Unique contributions** — What YOU discovered, not just aggregated
 
+## Prerequisites
+
+**For the Claude Code plugin (recommended):**
+- [Claude Code](https://claude.ai/code) CLI installed
+- Git (to clone this repo)
+- No Python required
+
+**For the optional Python CLI (`sage ask`, `sage chat`):**
+- Python 3.11+
+- pip
+
 ## Installation
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/b17z/sage.git
-cd sage
+### Claude Code Plugin (Recommended)
 
-# 2. Install the Claude Code plugin
+```bash
+# 1. Clone to a permanent location
+git clone https://github.com/b17z/sage.git ~/plugins/sage
+cd ~/plugins/sage
+
+# 2. Install the plugin
 claude plugin install . --scope user
 ```
 
 That's it. The checkpoint skill is now available across all your projects.
 
-**Note:** After installation, keep the cloned directory in place. Claude Code plugins reference the source directory rather than copying files, so moving or deleting it will break the plugin. Choose a permanent location like `~/plugins/sage` or `~/.local/share/sage`.
+**Important:** Keep the cloned directory in place. Claude Code plugins reference the source directory rather than copying files, so moving or deleting it will break the plugin.
+
+### Optional: Python CLI
+
+If you also want the standalone `sage` CLI for use outside Claude Code:
+
+```bash
+cd ~/plugins/sage
+pip install -e .
+```
+
+This gives you commands like `sage ask <skill> "query"` and `sage chat <skill>`.
 
 ## Usage
 
