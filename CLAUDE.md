@@ -10,6 +10,12 @@ sage ask <skill> "<query>"   # One-shot query
 sage context <skill>         # Show what a skill knows
 sage history <skill>         # Query history
 sage usage                   # Token/cost analytics
+
+# Knowledge management
+sage knowledge list          # List stored knowledge
+sage knowledge add <file> --id <id> --keywords <kw1,kw2>
+sage knowledge match "query" # Test what would be recalled
+sage knowledge rm <id>       # Remove knowledge item
 ```
 
 ## Architecture
@@ -18,6 +24,10 @@ sage usage                   # Token/cost analytics
 ~/.sage/                     # Sage metadata and state
 ├── config.yaml
 ├── shared_memory.md         # Cross-skill insights
+├── knowledge/               # Knowledge recall system
+│   ├── index.yaml           # Registry with triggers
+│   ├── global/              # Available to all skills
+│   └── skills/<name>/       # Skill-scoped knowledge
 └── skills/<name>/
     └── history.jsonl        # Interaction log
 
@@ -37,6 +47,7 @@ sage usage                   # Token/cost analytics
 | `sage/history.py` | JSONL logging, usage analytics |
 | `sage/errors.py` | Result types (`Ok`/`Err`), error constructors |
 | `sage/config.py` | Config management, path constants |
+| `sage/knowledge.py` | Knowledge recall system |
 
 ## Patterns
 
@@ -62,7 +73,7 @@ def load_skill(name: str) -> Result[Skill, SageError]:
 pip install -e ".[dev]"     # Install dev mode
 ruff check sage/ --fix      # Lint
 black sage/                 # Format
-pytest                      # Test (none yet)
+pytest                      # Run tests
 ```
 
 ## Code Style
@@ -85,8 +96,19 @@ Checkpoint at state transitions (proactive), not token pressure (reactive):
 
 Schema preserves: core_question, thesis, confidence, open_questions, sources, tensions, unique_contributions, action context.
 
+## Knowledge Recall
+
+Automatic injection of stored insights based on query keywords:
+
+1. Knowledge items stored in `~/.sage/knowledge/` with keyword triggers
+2. On query, matching keywords are scored and relevant items recalled
+3. Recalled knowledge injected into context before API call
+4. User sees "📚 Knowledge recalled (N)" notification
+
+See `skills/knowledge/SKILL.md` for the auto-invoke skill.
+
 ## Planned Features (docs/design-knowledge-checkpoints.md)
 
-- **Knowledge Recall**: Keyword-triggered injection of stored insights
 - **Chat Mode**: Multi-turn REPL with `/checkpoint`, `/restore` commands
-- **Checkpoints**: Save/restore/branch conversation state
+- **Checkpoint Restore**: Resume from saved checkpoints
+- **Checkpoint Branching**: Try different approaches from same point

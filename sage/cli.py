@@ -12,6 +12,13 @@ from sage.config import Config, ensure_directories
 from sage.errors import format_error
 from sage.history import append_entry, calculate_usage, create_entry, read_history
 from sage.init import run_init
+from sage.knowledge import (
+    add_knowledge,
+    format_recalled_context,
+    list_knowledge,
+    recall_knowledge,
+    remove_knowledge,
+)
 from sage.skill import (
     build_context,
     create_skill,
@@ -143,6 +150,14 @@ def ask(skill, query, no_search, model, input_file, output_file, to_stdout):
 
     # Build context
     system = build_context(skill_data)
+
+    # Recall relevant knowledge
+    recall_result = recall_knowledge(query, skill)
+    if recall_result.count > 0:
+        console.print(f"📚 [dim]Knowledge recalled ({recall_result.count})[/dim]")
+        for item in recall_result.items:
+            console.print(f"   [dim]├─ {item.id} (~{item.metadata.tokens} tokens)[/dim]")
+        system += format_recalled_context(recall_result)
 
     # Add input file content if provided
     if input_file:
@@ -511,6 +526,109 @@ def usage(skill, period):
         cache_rate = (total_cache / total_in * 100) if total_in > 0 else 0
         console.print(f"  Cache-eligible tokens: {total_in:,}")
         console.print(f"  Cache hits:           {total_cache:,} ({cache_rate:.0f}%)")
+
+
+@main.group()
+def knowledge():
+    """Manage knowledge items for recall."""
+    pass
+
+
+@knowledge.command("add")
+@click.argument("file", type=click.Path(exists=True))
+@click.option("--id", "knowledge_id", required=True, help="Unique identifier for this knowledge")
+@click.option("--keywords", "-k", required=True, help="Comma-separated trigger keywords")
+@click.option("--skill", "-s", help="Scope to specific skill (omit for global)")
+@click.option("--source", help="Where this knowledge came from")
+def knowledge_add(file, knowledge_id, keywords, skill, source):
+    """Add a knowledge item from a file."""
+    from pathlib import Path
+    
+    content = Path(file).read_text()
+    keyword_list = [k.strip() for k in keywords.split(",")]
+    
+    item = add_knowledge(
+        content=content,
+        knowledge_id=knowledge_id,
+        keywords=keyword_list,
+        skill=skill,
+        source=source or "",
+    )
+    
+    scope = f"skill:{skill}" if skill else "global"
+    console.print(f"[green]✓[/green] Added knowledge: {item.id} ({scope})")
+    console.print(f"  Keywords: {', '.join(item.triggers.keywords)}")
+    console.print(f"  Tokens: ~{item.metadata.tokens}")
+
+
+@knowledge.command("list")
+@click.option("--skill", "-s", help="Filter by skill")
+def knowledge_list(skill):
+    """List knowledge items."""
+    items = list_knowledge(skill)
+    
+    if not items:
+        console.print("[yellow]No knowledge items found.[/yellow]")
+        console.print("Add one with: sage knowledge add <file> --id <id> --keywords <kw1,kw2>")
+        return
+    
+    table = Table()
+    table.add_column("ID")
+    table.add_column("SCOPE")
+    table.add_column("KEYWORDS")
+    table.add_column("TOKENS", justify="right")
+    table.add_column("ADDED")
+    
+    for item in items:
+        scope = ", ".join(item.scope.skills) if item.scope.skills else "global"
+        keywords = ", ".join(item.triggers.keywords[:3])
+        if len(item.triggers.keywords) > 3:
+            keywords += "..."
+        
+        table.add_row(
+            item.id,
+            scope,
+            keywords,
+            str(item.metadata.tokens),
+            item.metadata.added,
+        )
+    
+    console.print(table)
+
+
+@knowledge.command("rm")
+@click.argument("knowledge_id")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def knowledge_rm(knowledge_id, force):
+    """Remove a knowledge item."""
+    if not force:
+        if not click.confirm(f"Remove knowledge '{knowledge_id}'?"):
+            console.print("Cancelled.")
+            return
+    
+    if remove_knowledge(knowledge_id):
+        console.print(f"[green]✓[/green] Removed: {knowledge_id}")
+    else:
+        console.print(f"[red]Knowledge '{knowledge_id}' not found[/red]")
+
+
+@knowledge.command("match")
+@click.argument("query")
+@click.option("--skill", "-s", default="test", help="Skill context for matching")
+def knowledge_match(query, skill):
+    """Test what knowledge would be recalled for a query."""
+    result = recall_knowledge(query, skill)
+    
+    if result.count == 0:
+        console.print("[yellow]No knowledge matched this query.[/yellow]")
+        return
+    
+    console.print(f"📚 [bold]Would recall {result.count} items (~{result.total_tokens} tokens):[/bold]")
+    for item in result.items:
+        console.print(f"  [green]✓[/green] {item.id}")
+        console.print(f"    Keywords: {', '.join(item.triggers.keywords)}")
+        if item.metadata.source:
+            console.print(f"    Source: {item.metadata.source}")
 
 
 if __name__ == "__main__":
