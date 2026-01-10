@@ -54,26 +54,8 @@ Insights that inform all research skills.
     SHARED_MEMORY_PATH.write_text(content)
 
 
-def setup_hooks(install: bool = False) -> None:
-    """Set up Claude Code hooks for Sage integration."""
-    if not install:
-        return
-
-    # Copy hook template
-    hooks_dir = SAGE_DIR / "hooks"
-    hooks_dir.mkdir(exist_ok=True)
-
-    hook_src = Path(__file__).parent / "templates" / "hooks" / "pre-compact.sh"
-    hook_dest = hooks_dir / "pre-compact.sh"
-
-    if hook_src.exists():
-        shutil.copy(hook_src, hook_dest)
-        hook_dest.chmod(0o755)
-
-
 def run_init(
     api_key: str | None = None,
-    install_hooks: bool = False,
     skill_name: str | None = None,
     skill_description: str | None = None,
     non_interactive: bool = False,
@@ -130,23 +112,6 @@ def run_init(
     # Shared memory
     create_shared_memory()
 
-    # Hooks
-    console.print()
-    console.print("[bold]Claude Code Hooks[/bold]")
-
-    should_install_hooks = install_hooks
-    if not non_interactive and not install_hooks:
-        should_install_hooks = Confirm.ask(
-            "  Install pre-compact hook for session continuity?",
-            default=False
-        )
-
-    if should_install_hooks:
-        setup_hooks(install=True)
-        console.print("  [green]✓[/green] Hook installed to ~/.sage/hooks/")
-    else:
-        console.print("  [dim]Skipped hook installation[/dim]")
-
     # First skill
     console.print()
     console.print("[bold]First Skill[/bold]")
@@ -182,12 +147,15 @@ def run_init(
     console.print("[bold green]Setup complete![/bold green]")
     console.print()
     console.print("Next steps:")
+    console.print("  # Install as Claude Code plugin (recommended)")
+    console.print("  claude plugin install /path/to/sage --scope user")
+    console.print()
     if skill_name:
-        console.print(f'  sage research {skill_name} "your first query"')
-        console.print(f"  sage chat {skill_name}")
+        console.print(f'  # Or use CLI directly')
+        console.print(f'  sage ask {skill_name} "your first query"')
     else:
+        console.print('  # Create a research skill')
         console.print('  sage new <skill> --description "domain expertise"')
-    console.print("  sage --help")
     console.print()
 
     return ok(None)

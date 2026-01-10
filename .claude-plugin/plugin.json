@@ -1,0 +1,6 @@
+{
+  "name": "sage",
+  "version": "0.1.0",
+  "description": "Semantic checkpointing and research orchestration for AI coding assistants",
+  "keywords": ["research", "checkpointing", "context", "handoff", "memory"]
+}
