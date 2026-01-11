@@ -631,5 +631,111 @@ def knowledge_match(query, skill):
             console.print(f"    Source: {item.metadata.source}")
 
 
+@main.group()
+def checkpoint():
+    """Manage research checkpoints."""
+    pass
+
+
+@checkpoint.command("list")
+@click.option("--skill", "-s", help="Filter by skill")
+@click.option("--limit", "-n", default=10, help="Number of checkpoints to show")
+def checkpoint_list(skill, limit):
+    """List saved checkpoints."""
+    from sage.checkpoint import list_checkpoints
+
+    checkpoints = list_checkpoints(skill=skill, limit=limit)
+
+    if not checkpoints:
+        console.print("[yellow]No checkpoints found.[/yellow]")
+        console.print("Create one with: /checkpoint in Claude Code or sage checkpoint save")
+        return
+
+    table = Table()
+    table.add_column("ID")
+    table.add_column("TRIGGER")
+    table.add_column("THESIS")
+    table.add_column("CONF", justify="right")
+    table.add_column("SAVED")
+
+    for cp in checkpoints:
+        thesis = cp.thesis[:40] + "..." if len(cp.thesis) > 40 else cp.thesis
+        ts = cp.ts[:16].replace("T", " ")
+
+        table.add_row(
+            cp.id[:30] + "..." if len(cp.id) > 30 else cp.id,
+            cp.trigger,
+            thesis,
+            f"{cp.confidence:.0%}",
+            ts,
+        )
+
+    console.print(table)
+
+
+@checkpoint.command("show")
+@click.argument("checkpoint_id")
+def checkpoint_show(checkpoint_id):
+    """Show details of a checkpoint."""
+    from sage.checkpoint import format_checkpoint_for_context, load_checkpoint
+
+    cp = load_checkpoint(checkpoint_id)
+
+    if not cp:
+        console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
+        return
+
+    console.print(format_checkpoint_for_context(cp))
+
+
+@checkpoint.command("restore")
+@click.argument("checkpoint_id")
+@click.argument("skill")
+def checkpoint_restore(checkpoint_id, skill):
+    """Restore a checkpoint and start a query with its context."""
+    from sage.checkpoint import format_checkpoint_for_context, load_checkpoint
+
+    cp = load_checkpoint(checkpoint_id)
+
+    if not cp:
+        console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
+        return
+
+    # Show what's being restored
+    console.print(f"[bold]Restoring checkpoint:[/bold] {cp.id}")
+    console.print(f"  Thesis: {cp.thesis[:60]}..." if len(cp.thesis) > 60 else f"  Thesis: {cp.thesis}")
+    console.print(f"  Confidence: {cp.confidence:.0%}")
+    console.print(f"  Open questions: {len(cp.open_questions)}")
+    console.print(f"  Sources: {len(cp.sources)}")
+    console.print()
+
+    # Format context for injection
+    context = format_checkpoint_for_context(cp)
+    console.print("[dim]Checkpoint context ready. Use with:[/dim]")
+    console.print(f"[dim]  sage ask {skill} \"<your question>\" --input <checkpoint-context-file>[/dim]")
+    console.print()
+    console.print("[bold]Or copy this context:[/bold]")
+    console.print()
+    console.print(context)
+
+
+@checkpoint.command("rm")
+@click.argument("checkpoint_id")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def checkpoint_rm(checkpoint_id, force):
+    """Delete a checkpoint."""
+    from sage.checkpoint import delete_checkpoint
+
+    if not force:
+        if not click.confirm(f"Delete checkpoint '{checkpoint_id}'?"):
+            console.print("Cancelled.")
+            return
+
+    if delete_checkpoint(checkpoint_id):
+        console.print(f"[green]✓[/green] Deleted: {checkpoint_id}")
+    else:
+        console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
+
+
 if __name__ == "__main__":
     main()

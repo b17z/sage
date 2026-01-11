@@ -69,7 +69,7 @@ action:
 
 ## Storage
 
-Save checkpoints to `.sage/checkpoints/` in the current project, or `~/.sage/checkpoints/` for global research.
+Save checkpoints to `~/.sage/checkpoints/` (global Sage directory).
 
 Filename format: `YYYY-MM-DDTHH-MM-SS_short-description.yaml`
 

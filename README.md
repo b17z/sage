@@ -50,15 +50,20 @@ Each checkpoint captures:
 ```bash
 # 1. Clone to a permanent location
 git clone https://github.com/b17z/sage.git ~/plugins/sage
-cd ~/plugins/sage
 
-# 2. Install the plugin
-claude plugin install . --scope user
+# 2. Run Claude Code with the plugin
+claude --plugin-dir ~/plugins/sage
 ```
 
-That's it. The checkpoint skill is now available across all your projects.
+This loads Sage for the current session. The checkpoint and knowledge skills are now available.
 
-**Important:** Keep the cloned directory in place. Claude Code plugins reference the source directory rather than copying files, so moving or deleting it will break the plugin.
+**For persistent use**, add an alias to your shell config:
+```bash
+# ~/.zshrc or ~/.bashrc
+alias claude-sage='claude --plugin-dir ~/plugins/sage'
+```
+
+Now you can run `claude-sage` from any directory—checkpoints and knowledge are stored globally in `~/.sage/`, so your research persists across projects.
 
 ### Optional: Python CLI
 
@@ -111,7 +116,7 @@ Claude: [Loads checkpoint, continues seamlessly]
 
 ## What Gets Saved
 
-Checkpoints live in `.sage/checkpoints/` (per-project) or `~/.sage/checkpoints/` (global).
+Checkpoints live in `~/.sage/checkpoints/` (global, accessible from any project).
 
 Example checkpoint (98% compression from 45,000 token conversation):
 
