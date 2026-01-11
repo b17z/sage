@@ -165,6 +165,23 @@ class TestAddRemoveKnowledge:
         result = remove_knowledge("does-not-exist")
         assert result is False
 
+    def test_path_traversal_prevented(self, mock_knowledge_paths: Path, tmp_path: Path):
+        """Path traversal attempts are sanitized."""
+        # Try to escape the knowledge directory with path traversal
+        item = add_knowledge(
+            content="Malicious content",
+            knowledge_id="../../../.bashrc",
+            keywords=["test"],
+        )
+        
+        # ID should be sanitized (no path separators)
+        assert "/" not in item.id
+        assert ".." not in item.id
+        
+        # File should be in knowledge directory, not escaped
+        assert not (tmp_path / ".bashrc.md").exists()
+        assert (mock_knowledge_paths / "global" / f"{item.id}.md").exists()
+
 
 class TestRecallKnowledge:
     """Tests for recall_knowledge()."""

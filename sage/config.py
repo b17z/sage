@@ -132,11 +132,24 @@ def ensure_directories() -> None:
     (SAGE_DIR / "hooks").mkdir(exist_ok=True)
 
 
+def _sanitize_name(name: str) -> str:
+    """Sanitize a name to prevent path traversal attacks.
+    
+    Only allows alphanumeric, hyphens, underscores.
+    Prevents names like '../../../.bashrc' from escaping directories.
+    """
+    import re
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "-", name).strip("-")
+    return sanitized or "unnamed"
+
+
 def get_skill_path(skill_name: str) -> Path:
     """Get the path to a skill's directory in ~/.claude/skills/."""
-    return SKILLS_DIR / skill_name
+    safe_name = _sanitize_name(skill_name)
+    return SKILLS_DIR / safe_name
 
 
 def get_sage_skill_path(skill_name: str) -> Path:
     """Get the path to a skill's Sage metadata directory in ~/.sage/skills/."""
-    return SAGE_DIR / "skills" / skill_name
+    safe_name = _sanitize_name(skill_name)
+    return SAGE_DIR / "skills" / safe_name

@@ -141,9 +141,23 @@ def save_index(items: list[KnowledgeItem]) -> None:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
+def _is_safe_path(base: Path, target: Path) -> bool:
+    """Check if target path is safely within base directory."""
+    try:
+        target.resolve().relative_to(base.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
     """Load the actual content for a knowledge item."""
     file_path = KNOWLEDGE_DIR / item.file
+    
+    # Security: ensure path doesn't escape knowledge directory
+    if not _is_safe_path(KNOWLEDGE_DIR, file_path):
+        return item
+    
     if not file_path.exists():
         return item
     
@@ -246,6 +260,14 @@ def recall_knowledge(
     return RecallResult(items=selected, total_tokens=total_tokens)
 
 
+def _sanitize_id(raw_id: str) -> str:
+    """Sanitize an ID to prevent path traversal attacks."""
+    # Only allow alphanumeric, hyphens, underscores
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw_id).strip("-")
+    # Ensure not empty
+    return sanitized or "unnamed"
+
+
 def add_knowledge(
     content: str,
     knowledge_id: str,
@@ -270,29 +292,33 @@ def add_knowledge(
     """
     ensure_knowledge_dir()
     
+    # Sanitize IDs to prevent path traversal
+    safe_id = _sanitize_id(knowledge_id)
+    safe_skill = _sanitize_id(skill) if skill else None
+    
     # Determine file path
-    if skill:
-        file_dir = KNOWLEDGE_DIR / "skills" / skill
+    if safe_skill:
+        file_dir = KNOWLEDGE_DIR / "skills" / safe_skill
         file_dir.mkdir(parents=True, exist_ok=True)
-        file_path = f"skills/{skill}/{knowledge_id}.md"
+        file_path = f"skills/{safe_skill}/{safe_id}.md"
     else:
-        file_path = f"global/{knowledge_id}.md"
+        file_path = f"global/{safe_id}.md"
     
     # Write content file
     full_path = KNOWLEDGE_DIR / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(content)
     
-    # Create item
+    # Create item (use safe_id for storage, original for display)
     item = KnowledgeItem(
-        id=knowledge_id,
+        id=safe_id,
         file=file_path,
         triggers=KnowledgeTriggers(
             keywords=tuple(keywords),
             patterns=tuple(patterns or []),
         ),
         scope=KnowledgeScope(
-            skills=(skill,) if skill else (),
+            skills=(safe_skill,) if safe_skill else (),
             always=False,
         ),
         metadata=KnowledgeMetadata(
@@ -306,7 +332,7 @@ def add_knowledge(
     # Update index
     items = load_index()
     # Remove existing item with same ID
-    items = [i for i in items if i.id != knowledge_id]
+    items = [i for i in items if i.id != safe_id]
     items.append(item)
     save_index(items)
     
@@ -335,9 +361,9 @@ def remove_knowledge(knowledge_id: str) -> bool:
     items = [i for i in items if i.id != knowledge_id]
     save_index(items)
     
-    # Also remove content file
+    # Also remove content file (with path safety check)
     file_path = KNOWLEDGE_DIR / removed_item.file
-    if file_path.exists():
+    if _is_safe_path(KNOWLEDGE_DIR, file_path) and file_path.exists():
         file_path.unlink()
     
     return True
