@@ -58,14 +58,26 @@ Auto-checkpoint uses configurable confidence thresholds per trigger type:
 
 ### 1. Install
 
-```bash
-# From PyPI
-pip install claude-sage
+**Option A: Claude Code Plugin (recommended)**
+```
+/plugin marketplace add b17z/sage
+/plugin install sage@sage-marketplace
+```
 
-# Or from source
+**Option B: PyPI**
+```bash
+pip install claude-sage
+sage mcp install
+sage hooks install
+```
+
+**Option C: From source**
+```bash
 git clone https://github.com/b17z/sage.git
 cd sage
 pip install -e ".[mcp]"
+sage mcp install
+sage hooks install
 ```
 
 ### 2. Add MCP server to Claude Code
