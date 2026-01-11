@@ -261,6 +261,7 @@ AUTOSAVE_THRESHOLDS = {
     "user_validated": 0.4,       # User confirmed something
     "constraint_discovered": 0.3,  # Important pivot point
     "branch_point": 0.4,         # Decision point
+    "precompact": 0.0,           # Always save before context compaction
     "manual": 0.0,               # Always save manual requests
 }
 
@@ -285,7 +286,7 @@ def sage_autosave_check(
     Args:
         trigger_event: What triggered this check (research_start, web_search_complete,
                       synthesis, topic_shift, user_validated, constraint_discovered,
-                      branch_point, manual)
+                      branch_point, precompact, manual)
         core_question: What decision/action is this research driving toward?
         current_thesis: Current synthesized position (1-2 sentences)
         confidence: Confidence in thesis (0.0-1.0)

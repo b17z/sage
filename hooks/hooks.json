@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[sage] Context compacting - consider saving a checkpoint first with /checkpoint'"
+            "command": ".claude/hooks/pre-compact.sh"
           }
         ]
       }

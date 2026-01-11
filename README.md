@@ -32,6 +32,28 @@ Each checkpoint captures:
 - **Tensions** — Where credible sources disagree (high value!)
 - **Unique contributions** — What YOU discovered, not just aggregated
 
+## Features
+
+### Auto-Checkpoint (MCP Server)
+Claude automatically saves checkpoints when meaningful events occur:
+- **After web searches** — Captures synthesized findings before they're lost
+- **On synthesis moments** — When Claude combines multiple sources into a conclusion  
+- **Before context compaction** — PreCompact hook ensures nothing is lost to auto-compact
+- **On explicit request** — Say "checkpoint" or "save this" anytime
+
+### Knowledge Persistence
+Store and recall facts across sessions:
+- `sage_save_knowledge` — Persist discoveries, constraints, validated facts
+- `sage_recall_knowledge` — Query your knowledge base semantically
+- Knowledge survives context resets and session restarts
+
+### Smart Thresholds
+Auto-checkpoint uses configurable confidence thresholds per trigger type:
+- `synthesis: 0.5` — Save after strong synthesis moments
+- `web_search_complete: 0.3` — Save after research with findings
+- `precompact: 0.0` — Always save before context compaction
+- `explicit: 0.0` — Always save on user request
+
 ## Prerequisites
 
 **For the Claude Code plugin (recommended):**
@@ -76,22 +98,26 @@ pip install -e .
 
 This gives you commands like `sage ask <skill> "query"` and `sage chat <skill>`.
 
-### Optional: MCP Server (Tool-Based)
+### Optional: MCP Server (Auto-Checkpoint)
 
-For direct tool execution (Claude calls tools instead of outputting YAML for you to copy):
+For automatic checkpointing with direct tool execution:
 
 ```bash
 # Install with MCP support
 cd ~/plugins/sage
 pip install -e ".[mcp]"
+
+# Add to Claude Code (recommended method)
+claude mcp add --transport stdio --scope user sage -- python -m sage.mcp_server
 ```
 
-Add to Claude Code's MCP config (`~/.config/claude-code/mcp.json`):
+Or manually add to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "sage": {
+      "type": "stdio",
       "command": "python",
       "args": ["-m", "sage.mcp_server"]
     }
@@ -99,7 +125,15 @@ Add to Claude Code's MCP config (`~/.config/claude-code/mcp.json`):
 }
 ```
 
-This exposes tools: `sage_save_checkpoint`, `sage_list_checkpoints`, `sage_load_checkpoint`, `sage_save_knowledge`, `sage_recall_knowledge`, `sage_list_knowledge`, `sage_remove_knowledge`.
+This exposes 8 tools:
+- `sage_save_checkpoint` — Save semantic checkpoint
+- `sage_list_checkpoints` — List all checkpoints
+- `sage_load_checkpoint` — Restore a checkpoint
+- `sage_save_knowledge` — Persist a fact/discovery
+- `sage_recall_knowledge` — Query knowledge base
+- `sage_list_knowledge` — List all knowledge entries
+- `sage_remove_knowledge` — Delete a knowledge entry
+- `sage_autosave_check` — Check if auto-save should trigger (used by hooks)
 
 ## Usage
 
