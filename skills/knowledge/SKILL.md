@@ -1,12 +1,11 @@
 ---
 name: knowledge
-description: Automatic knowledge recall from stored insights
-auto_invoke: true
-triggers:
-  - query matches stored knowledge keywords
-  - user asks about previously researched topic
-  - continuation of prior research thread
-  - user says "recall", "what do we know about", "remember"
+description: >
+  Recall and save insights using sage_recall_knowledge and sage_save_knowledge MCP tools.
+  INVOKE WHEN: user asks "what do we know about", "recall", "remember this";
+  starting research on a topic that may have prior knowledge;
+  user wants to save an insight for future use.
+  DO NOT INVOKE: for general questions without stored context.
 ---
 
 # Knowledge Recall Skill

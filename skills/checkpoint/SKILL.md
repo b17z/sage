@@ -1,13 +1,11 @@
 ---
 name: checkpoint
-description: Semantic checkpointing for research and complex tasks
-auto_invoke: true
-triggers:
-  - synthesis moment detected
-  - branch point identified
-  - hypothesis validated or invalidated
-  - topic transition
-  - user says "checkpoint", "save this", "remember this"
+description: >
+  Auto-save research progress using sage_autosave_check MCP tool.
+  INVOKE WHEN: user asks to research, compare, analyze, or investigate topics;
+  after completing web searches; when synthesizing conclusions ("therefore", "in summary").
+  INVOKE FOR: checkpoint, save this, remember this, save my research.
+  DO NOT INVOKE: for simple Q&A, code editing, or file operations unrelated to research.
 ---
 
 # Checkpoint Skill
@@ -106,8 +104,34 @@ When continuing from a checkpoint, inject it as context:
 [unique_contributions]
 ```
 
+## Autosave Triggers
+
+Think of checkpointing like a game's autosave system. Call `sage_autosave_check` at these moments:
+
+| Trigger Event | When | Game Analogy |
+|---------------|------|--------------|
+| `research_start` | User asks research question | Entering boss room |
+| `web_search_complete` | After processing web search results | Picked up item |
+| `synthesis` | You say "So...", "Therefore...", "In summary..." | Quest complete |
+| `topic_shift` | User pivots to new topic | Switching levels |
+| `user_validated` | User confirms your finding ("yes", "agreed", "that's right") | Checkpoint reached |
+| `constraint_discovered` | New info changes approach | Plot twist |
+| `branch_point` | Multiple viable paths identified | Fork in road |
+
+**Call pattern:**
+```
+sage_autosave_check(
+  trigger_event="synthesis",
+  core_question="What we're researching",
+  current_thesis="Where we are now",
+  confidence=0.75
+)
+```
+
+The tool decides whether to save. If it saves, briefly confirm: "📍 Autosaved: [thesis]"
+
 ## Behavior
 
-- **Proactive**: Don't wait to be asked. When you detect a checkpoint-worthy moment, save it.
-- **Lightweight**: Brief notification to user ("Checkpointed: [description]"), don't disrupt flow.
+- **Proactive**: Call autosave checks at trigger moments. Don't wait to be asked.
+- **Lightweight**: Brief notification ("📍 Autosaved"), don't disrupt flow.
 - **Cumulative**: Each checkpoint builds on previous, creating a research trail.
