@@ -15,7 +15,7 @@ input=$(cat)
 transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
 
 if [ -z "$transcript_path" ] || [ ! -f "$transcript_path" ]; then
-    echo '{"decision": "APPROVE"}'
+    echo '{"decision": "approve"}'
     exit 0
 fi
 
@@ -37,7 +37,7 @@ last_assistant_msg=$($reverse_cmd "$transcript_path" 2>/dev/null | while read -r
 done)
 
 if [ -z "$last_assistant_msg" ]; then
-    echo '{"decision": "APPROVE"}'
+    echo '{"decision": "approve"}'
     exit 0
 fi
 
