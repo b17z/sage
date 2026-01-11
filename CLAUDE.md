@@ -107,6 +107,21 @@ Automatic injection of stored insights based on query keywords:
 
 See `skills/knowledge/SKILL.md` for the auto-invoke skill.
 
+## Research Task Completion (REQUIRED)
+
+A research task is NOT complete until:
+1. ✅ Answer provided to user
+2. ✅ `sage_autosave_check` called with appropriate trigger
+
+**NEVER skip step 2.** The research is incomplete without it.
+
+Workflow: `WebSearch → synthesize → sage_autosave_check → respond`
+
+Trigger events:
+- `web_search_complete` — after processing search results
+- `synthesis` — when concluding ("therefore", "in summary")
+- `topic_shift` — before changing subjects
+
 ## Planned Features (docs/design-knowledge-checkpoints.md)
 
 - **Chat Mode**: Multi-turn REPL with `/checkpoint`, `/restore` commands

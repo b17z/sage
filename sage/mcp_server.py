@@ -249,6 +249,96 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
 
 
 # =============================================================================
+# Autosave Tools
+# =============================================================================
+
+# Minimum confidence thresholds for each trigger type
+AUTOSAVE_THRESHOLDS = {
+    "research_start": 0.0,       # Always save starting point
+    "web_search_complete": 0.3,  # Save if we learned something
+    "synthesis": 0.5,            # Save meaningful conclusions
+    "topic_shift": 0.3,          # Save before switching
+    "user_validated": 0.4,       # User confirmed something
+    "constraint_discovered": 0.3,  # Important pivot point
+    "branch_point": 0.4,         # Decision point
+    "manual": 0.0,               # Always save manual requests
+}
+
+
+@mcp.tool()
+def sage_autosave_check(
+    trigger_event: str,
+    core_question: str,
+    current_thesis: str,
+    confidence: float,
+    open_questions: list[str] | None = None,
+    sources: list[dict] | None = None,
+    tensions: list[dict] | None = None,
+    unique_contributions: list[dict] | None = None,
+) -> str:
+    """Check if an autosave checkpoint should be created.
+
+    Call this at natural breakpoints in research: after web searches, when reaching
+    conclusions, when topics shift, etc. The tool decides whether to save based on
+    the trigger type and confidence level.
+
+    Args:
+        trigger_event: What triggered this check (research_start, web_search_complete,
+                      synthesis, topic_shift, user_validated, constraint_discovered,
+                      branch_point, manual)
+        core_question: What decision/action is this research driving toward?
+        current_thesis: Current synthesized position (1-2 sentences)
+        confidence: Confidence in thesis (0.0-1.0)
+        open_questions: What's still unknown (optional)
+        sources: Sources with {id, type, take, relation} (optional)
+        tensions: Disagreements with {between, nature, resolution} (optional)
+        unique_contributions: Discoveries with {type, content} (optional)
+
+    Returns:
+        Confirmation if saved, or explanation if not saved
+    """
+    # Validate trigger event
+    threshold = AUTOSAVE_THRESHOLDS.get(trigger_event)
+    if threshold is None:
+        valid_triggers = ", ".join(AUTOSAVE_THRESHOLDS.keys())
+        return f"Unknown trigger: {trigger_event}. Valid triggers: {valid_triggers}"
+
+    # Check if we should save
+    if confidence < threshold:
+        return (
+            f"⏸ Not saving (confidence {confidence:.0%} < {threshold:.0%} threshold "
+            f"for {trigger_event}). Continue research to build confidence."
+        )
+
+    # Check for meaningful content
+    if not current_thesis or len(current_thesis.strip()) < 10:
+        return "⏸ Not saving: thesis too brief. Develop your position first."
+
+    if not core_question or len(core_question.strip()) < 5:
+        return "⏸ Not saving: no clear research question. What are we trying to answer?"
+
+    # Save the checkpoint
+    data = {
+        "core_question": core_question,
+        "thesis": current_thesis,
+        "confidence": confidence,
+        "open_questions": open_questions or [],
+        "sources": sources or [],
+        "tensions": tensions or [],
+        "unique_contributions": unique_contributions or [],
+        "action": {"goal": "", "type": "learning"},
+    }
+
+    checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
+    save_checkpoint(checkpoint)
+
+    thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis
+    thesis_preview = thesis_preview.replace("\n", " ")
+
+    return f"📍 Autosaved: {thesis_preview}\nCheckpoint: {checkpoint.id}"
+
+
+# =============================================================================
 # Entry Point
 # =============================================================================
 
