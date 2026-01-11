@@ -55,7 +55,7 @@ echo "## post-response-context-check.sh"
 CONTEXT_TEMP=$(mktemp -d)
 
 # Clean up any stale cooldown markers from previous test runs
-rm -f /tmp/sage_checkpoint_test-*
+rm -f "${HOME}/.sage/cooldown/checkpoint_test-"* 2>/dev/null
 
 # 50% usage: 100k tokens out of 200k
 echo '{"message": {"usage": {"input_tokens": 80000, "output_tokens": 20000, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}' > "$CONTEXT_TEMP/50pct.jsonl"
@@ -102,7 +102,7 @@ test_hook "missing transcript → approve" \
     "approve"
 
 # Cleanup test markers
-rm -f /tmp/sage_checkpoint_test-*
+rm -f "${HOME}/.sage/cooldown/checkpoint_test-"* 2>/dev/null
 
 rm -rf "$CONTEXT_TEMP"
 
@@ -115,7 +115,7 @@ echo "## post-response-semantic-detector.sh"
 TEMP_DIR=$(mktemp -d)
 
 # Clean up semantic cooldown markers
-rm -f /tmp/sage_semantic_test-*
+rm -f "${HOME}/.sage/cooldown/semantic_test-"* 2>/dev/null
 
 # Test: synthesis detection (each needs unique session_id)
 echo '{"role": "assistant", "content": "In conclusion, REST is better for simple APIs."}' > "$TEMP_DIR/synthesis.jsonl"
@@ -169,7 +169,7 @@ test_hook "missing transcript → approve" \
     "approve"
 
 # Cleanup
-rm -f /tmp/sage_semantic_test-*
+rm -f "${HOME}/.sage/cooldown/semantic_test-"* 2>/dev/null
 rm -rf "$TEMP_DIR"
 
 echo ""

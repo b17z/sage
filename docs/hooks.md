@@ -129,7 +129,7 @@ The hook skips detection when the message discusses the hook system itself to pr
 
 Each trigger type has an independent 5-minute cooldown using marker files:
 ```
-/tmp/sage_semantic_${session_id}_${trigger_type}
+~/.sage/cooldown/semantic_${session_id}_${trigger_type}
 ```
 
 **Configuration:**

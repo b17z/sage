@@ -56,11 +56,15 @@ Auto-checkpoint uses configurable confidence thresholds per trigger type:
 
 ## Quick Start (5 minutes)
 
-### 1. Clone and install
+### 1. Install
 
 ```bash
-git clone https://github.com/b17z/sage.git ~/plugins/sage
-cd ~/plugins/sage
+# From PyPI
+pip install claude-sage
+
+# Or from source
+git clone https://github.com/b17z/sage.git
+cd sage
 pip install -e ".[mcp]"
 ```
 
@@ -157,10 +161,9 @@ Sage is currently optimized for **research workflows** — web searches, synthes
 ### Full Install (recommended)
 
 ```bash
-git clone https://github.com/b17z/sage.git ~/plugins/sage
-cd ~/plugins/sage
-pip install -e ".[mcp]"
-claude mcp add --transport stdio --scope user sage -- python -m sage.mcp_server
+pip install claude-sage
+sage mcp install
+sage hooks install
 ```
 
 ### MCP Tools Only
