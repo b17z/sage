@@ -270,9 +270,12 @@ You: What about the Asian market?
 
 ---
 
-## Feature 3: Chat Mode (Required for Checkpoints)
+## Feature 3: Chat Mode (Deprioritized)
 
-Checkpoints are most useful in multi-turn conversations. Sage needs a chat mode:
+> **Status:** Deprioritized. Claude Code + MCP + Hooks now provides the primary interface.
+> `sage chat` remains a future option for non-Claude-Code users or alternative LLM backends.
+
+The original design required chat mode for multi-turn checkpoint support:
 
 ```bash
 sage chat privacy
