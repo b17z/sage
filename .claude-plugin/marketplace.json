@@ -1,20 +1,21 @@
 {
-  "name": "sage-marketplace",
-  "version": "1.0.0",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sage",
   "description": "Semantic checkpointing for Claude Code — auto-checkpoint at meaningful moments, recall across sessions",
-  "metadata": {
-    "author": "b17z",
-    "repository": "https://github.com/b17z/sage",
-    "documentation": "https://github.com/b17z/sage#readme"
+  "owner": {
+    "name": "b17z",
+    "email": "ben@b17z.io"
   },
   "plugins": [
     {
       "name": "sage",
       "description": "Semantic checkpointing with hooks and MCP server for cross-session memory",
-      "source": {
-        "type": "local",
-        "path": "."
-      }
+      "version": "0.1.1",
+      "author": {
+        "name": "b17z",
+        "email": "ben@b17z.io"
+      },
+      "source": "."
     }
   ]
 }
