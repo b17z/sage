@@ -122,6 +122,18 @@ Trigger events:
 - `synthesis` — when concluding ("therefore", "in summary")
 - `topic_shift` — before changing subjects
 
+## Hook Message Response (REQUIRED)
+
+When a Stop hook injects a message (e.g., "🔍 Synthesis detected..."), you MUST act on it.
+
+Hook detection triggers:
+- 🔍 **Synthesis detected** → Call `sage_autosave_check(trigger_event='synthesis', ...)`
+- 🔀 **Branch point detected** → Call `sage_autosave_check(trigger_event='branch_point', ...)`  
+- 🚧 **Constraint discovered** → Call `sage_autosave_check(trigger_event='constraint_discovered', ...)`
+- ↪️ **Topic shift detected** → Call `sage_autosave_check(trigger_event='topic_shift', ...)`
+
+**NEVER ignore hook detection messages.** They indicate checkpoint-worthy moments.
+
 ## Planned Features (docs/design-knowledge-checkpoints.md)
 
 - **Chat Mode**: Multi-turn REPL with `/checkpoint`, `/restore` commands

@@ -26,15 +26,15 @@ else
     percent=0
 fi
 
-# If above threshold, suggest checkpoint
+# If above threshold, block and instruct checkpoint
 if [ "$percent" -ge "$THRESHOLD_PERCENT" ]; then
     cat << EOF
 {
-  "decision": "SUGGEST",
-  "message": "Context at ${percent}% (threshold: ${THRESHOLD_PERCENT}%). Consider calling sage_autosave_check with trigger_event='context_threshold' to checkpoint before context fills up."
+  "decision": "block",
+  "reason": "Context at ${percent}% (threshold: ${THRESHOLD_PERCENT}%). Call sage_autosave_check with trigger_event='context_threshold' to checkpoint before stopping."
 }
 EOF
 else
-    # Below threshold, continue normally
-    echo '{"decision": "APPROVE"}'
+    # Below threshold, allow stop
+    echo '{"decision": "approve"}'
 fi
