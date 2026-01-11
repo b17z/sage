@@ -6,7 +6,6 @@ readme = "README.md"
 keywords = ["claude", "claude-code", "checkpointing", "memory", "mcp", "ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
 ]
 requires-python = ">=3.11"
