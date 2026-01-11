@@ -416,6 +416,106 @@
       display: inline-flex;
     }
 
+    .install-methods {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 700px;
+      margin: 0 auto;
+      text-align: left;
+    }
+
+    .install-method {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .install-method.recommended {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px var(--accent-glow);
+    }
+
+    .install-method-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .install-method.recommended .install-method-header {
+      background: var(--accent-glow);
+    }
+
+    .install-method-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .install-method.recommended .install-method-title {
+      color: var(--accent);
+    }
+
+    .install-method-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--bg-primary);
+      background: var(--accent);
+      padding: 4px 10px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .install-method-body {
+      padding: 20px;
+    }
+
+    .install-method-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+
+    .install-method-commands {
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+
+    .install-method-commands .terminal-line {
+      margin-bottom: 4px;
+    }
+
+    .install-method-commands .terminal-line:last-child {
+      margin-bottom: 0;
+    }
+
+    .install-method-note {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .install-method-gets {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 12px;
+    }
+
+    .install-method-gets strong {
+      color: var(--accent);
+    }
+
     .install-command {
       display: inline-flex;
       align-items: center;
@@ -472,28 +572,6 @@
 
     .copy-btn.copied svg {
       stroke: var(--accent);
-    }
-
-    .copy-feedback {
-      position: fixed;
-      bottom: 32px;
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--accent);
-      color: var(--bg-primary);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      font-weight: 500;
-      padding: 12px 24px;
-      border-radius: 6px;
-      opacity: 0;
-      transition: all 0.3s ease;
-      z-index: 1001;
-    }
-
-    .copy-feedback.show {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
     }
 
     /* How It Works */
@@ -928,26 +1006,54 @@
   <section class="install" id="install">
     <div class="container">
       <h2>Get started</h2>
-      <p class="install-desc">Three commands. No build tools.</p>
-      <div class="install-block">
-        <div class="terminal-block" style="margin-top: 0; text-align: left;">
-          <div class="terminal-header">
-            <div class="terminal-dot red"></div>
-            <div class="terminal-dot yellow"></div>
-            <div class="terminal-dot green"></div>
+      <p class="install-desc">Choose your installation method.</p>
+
+      <div class="install-methods">
+        <!-- Method 1: Claude Code Plugin (Recommended) -->
+        <div class="install-method recommended">
+          <div class="install-method-header">
+            <span class="install-method-title">Claude Code Plugin</span>
+            <span class="install-method-badge">Recommended</span>
           </div>
-          <div class="terminal-body">
-            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage</span></div>
-            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install</span></div>
-            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage hooks install</span></div>
+          <div class="install-method-body">
+            <p class="install-method-desc">Primary method for Claude Code users. Installs everything automatically.</p>
+            <div class="install-method-commands">
+              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">plugin marketplace add b17z/sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">plugin install sage</span></div>
+            </div>
+            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + hooks (auto-checkpointing)</p>
           </div>
         </div>
-        <button class="copy-btn" onclick="copyInstall()" aria-label="Copy to clipboard" style="margin-top: 16px;">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
-          </svg>
-          <span style="margin-left: 8px;">Copy</span>
-        </button>
+
+        <!-- Method 2: PyPI -->
+        <div class="install-method">
+          <div class="install-method-header">
+            <span class="install-method-title">PyPI</span>
+          </div>
+          <div class="install-method-body">
+            <p class="install-method-desc">For standalone CLI usage outside Claude Code.</p>
+            <div class="install-method-commands">
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage</span></div>
+            </div>
+            <p class="install-method-gets"><strong>Gets you:</strong> sage CLI commands (<code style="color: var(--accent);">sage list</code>, <code style="color: var(--accent);">sage ask &lt;skill&gt; "query"</code>, etc.)</p>
+            <p class="install-method-note">Want MCP/hooks in Claude Code? Also run: <code style="color: var(--accent);">sage mcp install && sage hooks install</code></p>
+          </div>
+        </div>
+
+        <!-- Method 3: Build from Source -->
+        <div class="install-method">
+          <div class="install-method-header">
+            <span class="install-method-title">Build from Source</span>
+          </div>
+          <div class="install-method-body">
+            <p class="install-method-desc">For contributors or custom setups.</p>
+            <div class="install-method-commands">
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">git clone https://github.com/b17z/sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">cd sage && pip install -e ".[dev]"</span></div>
+            </div>
+            <p class="install-method-note">Then optionally: <code style="color: var(--accent);">sage mcp install && sage hooks install</code></p>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -974,25 +1080,7 @@
     </div>
   </footer>
 
-  <div class="copy-feedback" id="copyFeedback">Copied to clipboard</div>
-
   <script>
-    function copyInstall() {
-      const command = 'pip install claude-sage && sage mcp install && sage hooks install';
-      navigator.clipboard.writeText(command).then(() => {
-        const btn = document.querySelector('.copy-btn');
-        const feedback = document.getElementById('copyFeedback');
-
-        btn.classList.add('copied');
-        feedback.classList.add('show');
-
-        setTimeout(() => {
-          btn.classList.remove('copied');
-          feedback.classList.remove('show');
-        }, 2000);
-      });
-    }
-
     // Smooth scroll for anchor links
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function (e) {
