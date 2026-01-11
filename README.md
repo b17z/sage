@@ -80,27 +80,7 @@ sage mcp install
 sage hooks install
 ```
 
-### 2. Add MCP server to Claude Code
-
-```bash
-sage mcp install
-```
-
-### 3. Install hooks (optional but recommended)
-
-```bash
-sage hooks install
-```
-
-This copies the hook scripts to `~/.claude/hooks/` and updates `~/.claude/settings.json` automatically.
-
-To check status or uninstall:
-```bash
-sage hooks status
-sage hooks uninstall
-```
-
-### 4. Test it
+### 2. Test it
 
 ```bash
 # Start Claude Code
@@ -182,18 +162,14 @@ sage hooks install
 
 See Quick Start above.
 
-### Hooks Only
+### Manual Hook Installation
 
-If you just want the hooks without MCP tools:
+If you prefer to install hooks manually (MCP server still required for checkpoint tools):
 
 ```bash
-mkdir -p ~/.claude/hooks
-curl -o ~/.claude/hooks/post-response-semantic-detector.sh \
-  https://raw.githubusercontent.com/b17z/sage/main/.claude/hooks/post-response-semantic-detector.sh
-chmod +x ~/.claude/hooks/*.sh
+sage hooks install
+# Or manually copy from .claude/hooks/ and update ~/.claude/settings.json
 ```
-
-Then update `~/.claude/settings.json` (see Quick Start).
 
 ## Usage
 

@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sage — Semantic Checkpointing for Claude Code</title>
+  <meta name="description" content="Persistent memory for Claude Code. Not full transcripts — synthesized insights that survive /compact and session restarts.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a24;
+      --accent: #a855f7;
+      --accent-dim: #9333ea;
+      --accent-glow: rgba(168, 85, 247, 0.15);
+      --text-primary: #e0e0e8;
+      --text-secondary: #8888a0;
+      --text-dim: #5a5a70;
+      --border: #2a2a3a;
+      --danger: #ff4757;
+      --warning: #ffa502;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+      );
+      z-index: 1000;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 0;
+      background: rgba(10, 10, 15, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    header .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-decoration: none;
+      letter-spacing: -0.5px;
+    }
+
+    .logo::before {
+      content: '>';
+      margin-right: 6px;
+      opacity: 0.5;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 0.5; }
+      51%, 100% { opacity: 0; }
+    }
+
+    nav {
+      display: flex;
+      gap: 24px;
+    }
+
+    nav a {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    nav a:hover {
+      color: var(--accent);
+    }
+
+    /* Hero */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 120px 0 80px;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: var(--accent-glow);
+      border: 1px solid rgba(168, 85, 247, 0.2);
+      padding: 6px 12px;
+      border-radius: 4px;
+      margin-bottom: 24px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .hero-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      letter-spacing: -1px;
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 40px;
+    }
+
+    .cta-group {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 14px 28px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg-primary);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-dim);
+      box-shadow: 0 0 30px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Problem Section */
+    .problem {
+      padding: 100px 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--danger);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-label::before {
+      content: '!';
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      background: rgba(255, 71, 87, 0.15);
+      border: 1px solid var(--danger);
+      border-radius: 50%;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    h2 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+
+    .problem-list {
+      list-style: none;
+      display: grid;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .problem-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+
+    .problem-list li::before {
+      content: '×';
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--danger);
+      font-size: 1.25rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .problem-footer {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      padding: 20px;
+      background: rgba(255, 165, 2, 0.05);
+      border-left: 3px solid var(--warning);
+      border-radius: 0 6px 6px 0;
+    }
+
+    /* Solution Section */
+    .solution {
+      padding: 100px 0;
+    }
+
+    .section-label.success {
+      color: var(--accent);
+    }
+
+    .section-label.success::before {
+      content: '>';
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .trigger-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 40px;
+    }
+
+    .trigger-card {
+      padding: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .trigger-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .trigger-icon {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+
+    .trigger-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .trigger-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Limitations Section */
+    .limitations {
+      padding: 100px 0;
+    }
+
+    .limitations .section-label::before {
+      content: '⚠';
+      background: rgba(255, 165, 2, 0.15);
+      border-color: var(--warning);
+    }
+
+    /* Built With Section */
+    .built-with {
+      padding: 100px 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Install Section */
+    .install {
+      padding: 100px 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .install h2 {
+      margin-bottom: 16px;
+    }
+
+    .install-desc {
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+    }
+
+    .install-block {
+      display: inline-block;
+      max-width: 500px;
+    }
+
+    .install-block .copy-btn {
+      width: auto;
+      padding: 12px 24px;
+      display: inline-flex;
+    }
+
+    .install-command {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 4px 4px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    .install-command code {
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .install-command .prompt {
+      color: var(--accent);
+      user-select: none;
+    }
+
+    .copy-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .copy-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--text-secondary);
+      transition: stroke 0.2s;
+    }
+
+    .copy-btn:hover svg {
+      stroke: var(--accent);
+    }
+
+    .copy-btn.copied svg {
+      stroke: var(--accent);
+    }
+
+    .copy-feedback {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--accent);
+      color: var(--bg-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 12px 24px;
+      border-radius: 6px;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1001;
+    }
+
+    .copy-feedback.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* How It Works */
+    .how-it-works {
+      padding: 100px 0;
+    }
+
+    .workflow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin-top: 40px;
+      position: relative;
+    }
+
+    .workflow::before {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 40px;
+      bottom: 40px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--accent), var(--border));
+    }
+
+    .workflow-step {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      padding: 24px 0;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-content h3 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .step-content p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* Footer */
+    footer {
+      padding: 60px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-logo {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      color: var(--text-dim);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .footer-links a {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--accent);
+    }
+
+    .footer-links svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Terminal decoration */
+    .terminal-block {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 40px;
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot.red { background: #ff5f56; }
+    .terminal-dot.yellow { background: #ffbd2e; }
+    .terminal-dot.green { background: #27c93f; }
+
+    .terminal-body {
+      padding: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.8;
+    }
+
+    .terminal-line {
+      display: flex;
+      gap: 8px;
+    }
+
+    .terminal-prompt {
+      color: var(--accent);
+      user-select: none;
+    }
+
+    .terminal-cmd {
+      color: var(--text-primary);
+    }
+
+    .terminal-output {
+      color: var(--text-secondary);
+      padding-left: 20px;
+    }
+
+    .terminal-highlight {
+      color: var(--accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      nav {
+        display: none;
+      }
+
+      .hero {
+        padding: 100px 0 60px;
+      }
+
+      .problem, .solution, .install, .how-it-works, .limitations, .built-with {
+        padding: 60px 0;
+      }
+
+      .trigger-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .footer-links {
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .workflow::before {
+        display: none;
+      }
+
+      .install-command {
+        flex-direction: column;
+        padding: 16px;
+        gap: 12px;
+      }
+
+      .copy-btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <a href="#" class="logo">sage</a>
+      <nav>
+        <a href="#problem">Problem</a>
+        <a href="#solution">Solution</a>
+        <a href="#limitations">MVP Status</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/b17z/sage">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">Claude Code Extension</div>
+      <h1>Claude that <span>remembers</span><br>across sessions</h1>
+      <p class="hero-sub">Context survives /compact and session restarts. Claude recalls your research, decisions, and breakthroughs — automatically.</p>
+      <div class="cta-group">
+        <a href="#install" class="btn btn-primary">Get Started</a>
+        <a href="https://github.com/b17z/sage" class="btn btn-secondary">View Source</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="problem" id="problem">
+    <div class="container">
+      <div class="section-label">The Problem</div>
+      <h2>You're the orchestration layer</h2>
+      <ul class="problem-list">
+        <li>
+          <div>
+            <strong>Context windows fill up and auto-compact</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">Critical research insights vanish mid-session</div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Sessions end and conversations reset</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">Tomorrow you start from zero, re-explaining everything</div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Projects switch and threads get orphaned</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">That breakthrough from last week? Gone.</div>
+          </div>
+        </li>
+      </ul>
+      <div class="problem-footer">
+        You become a conspiracy board — manually maintaining state, copying insights to notes, re-injecting context every session.
+      </div>
+    </div>
+  </section>
+
+  <section class="solution" id="solution">
+    <div class="container">
+      <div class="section-label success">The Solution</div>
+      <h2>Semantic checkpointing</h2>
+      <p style="color: var(--text-secondary); max-width: 560px;">Not full transcripts — synthesized insights. Sage gives Claude persistent memory that captures the essence: your thesis, key decisions, and open questions. Checkpoints trigger at meaningful moments, not when tokens run out.</p>
+
+      <div class="trigger-grid">
+        <div class="trigger-card">
+          <div class="trigger-icon">&#x21BB;</div>
+          <div class="trigger-title">Topic Shift</div>
+          <div class="trigger-desc">Moving to a new area — checkpoint before context changes</div>
+        </div>
+        <div class="trigger-card">
+          <div class="trigger-icon">&#x26A0;</div>
+          <div class="trigger-title">Constraint Discovered</div>
+          <div class="trigger-desc">Critical limitation that changes the approach</div>
+        </div>
+        <div class="trigger-card">
+          <div class="trigger-icon">&#x2194;</div>
+          <div class="trigger-title">Branch Point</div>
+          <div class="trigger-desc">"We could either X or Y" — decision moments</div>
+        </div>
+        <div class="trigger-card">
+          <div class="trigger-icon">&#x2728;</div>
+          <div class="trigger-title">Synthesis Moment</div>
+          <div class="trigger-desc">"Putting this together..." — emergent understanding</div>
+        </div>
+      </div>
+
+      <p style="color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-top: 24px;">Or say <span style="color: var(--accent);">"checkpoint"</span> or <span style="color: var(--accent);">"save this"</span> anytime to trigger manually.</p>
+
+      <div class="terminal-block">
+        <div class="terminal-header">
+          <div class="terminal-dot red"></div>
+          <div class="terminal-dot yellow"></div>
+          <div class="terminal-dot green"></div>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-line"><span class="terminal-prompt">You:</span> <span class="terminal-cmd">What's the best approach for API rate limiting?</span></div>
+          <br>
+          <div class="terminal-output" style="padding-left: 0; color: var(--accent);">📚 Knowledge recalled (1 item, ~180 tokens)</div>
+          <br>
+          <div class="terminal-line"><span class="terminal-prompt">Claude:</span></div>
+          <div class="terminal-output" style="padding-left: 0; margin-top: 8px;">Based on your earlier research on distributed systems, you found that <span class="terminal-highlight">token bucket algorithms outperform leaky bucket</span> for bursty traffic patterns.</div>
+          <div class="terminal-output" style="padding-left: 0; margin-top: 8px;">Your key constraint was needing <span class="terminal-highlight">sub-millisecond decisions at the edge</span>.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="how-it-works">
+    <div class="container">
+      <div class="section-label success">How It Works</div>
+      <h2>Memory that persists</h2>
+
+      <div class="workflow">
+        <div class="workflow-step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>One-time setup</h3>
+            <p>Install Sage as an MCP server. Claude gains access to knowledge storage and recall tools.</p>
+          </div>
+        </div>
+        <div class="workflow-step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Work normally</h3>
+            <p>Use Claude Code as usual. Research, code, synthesize — nothing changes about your workflow.</p>
+          </div>
+        </div>
+        <div class="workflow-step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Claude saves what matters</h3>
+            <p>When Claude reaches a breakthrough or makes a key decision, it saves the insight automatically. No prompting required.</p>
+          </div>
+        </div>
+        <div class="workflow-step">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Recall across sessions</h3>
+            <p>Run /compact. Start a new session. Switch projects. Claude remembers — your context is always there.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="limitations" id="limitations">
+    <div class="container">
+      <div class="section-label" style="color: var(--warning);">Known Limitations</div>
+      <h2>MVP status</h2>
+      <ul class="problem-list" style="margin-bottom: 24px;">
+        <li>
+          <div>
+            <strong>Arbitrary cooldowns</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">5-minute timer between checkpoints (not smart topic-based)</div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>No code patterns</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">Tuned for research; doesn't detect refactors or architecture decisions</div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Keyword matching</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">Knowledge recall uses keywords, not semantic embeddings</div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Hooks required</strong>
+            <div style="color: var(--text-secondary); margin-top: 4px;">Auto-checkpointing needs <code style="color: var(--accent);">sage hooks install</code> after pip install</div>
+          </div>
+        </li>
+      </ul>
+      <div class="problem-footer" style="border-left-color: var(--text-dim); background: rgba(90, 90, 112, 0.1);">
+        This is MVP — <a href="https://github.com/b17z/sage" style="color: var(--accent);">contributions welcome</a>.
+      </div>
+    </div>
+  </section>
+
+  <section class="built-with">
+    <div class="container">
+      <div class="section-label success">Architecture</div>
+      <h2>Built on Claude Code primitives</h2>
+
+      <div class="trigger-grid" style="margin-top: 32px;">
+        <div class="trigger-card">
+          <div class="trigger-title" style="margin-bottom: 12px;">MCP Server</div>
+          <div class="trigger-desc">
+            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">Model Context Protocol</div>
+            <code style="color: var(--accent); font-size: 0.8rem;">8 tools</code>
+            <div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.6;">
+              save_checkpoint, load_checkpoint, list_checkpoints, autosave_check, save_knowledge, recall_knowledge, list_knowledge, remove_knowledge
+            </div>
+          </div>
+        </div>
+        <div class="trigger-card">
+          <div class="trigger-title" style="margin-bottom: 12px;">Hooks</div>
+          <div class="trigger-desc">
+            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">Claude Code lifecycle events</div>
+            <div style="font-size: 0.8rem; line-height: 1.8;">
+              <div><code style="color: var(--accent);">post-response</code> — semantic detector</div>
+              <div><code style="color: var(--accent);">post-response</code> — context threshold (70%)</div>
+              <div><code style="color: var(--accent);">pre-compact</code> — checkpoint before /compact</div>
+            </div>
+          </div>
+        </div>
+        <div class="trigger-card">
+          <div class="trigger-title" style="margin-bottom: 12px;">Local Storage</div>
+          <div class="trigger-desc">
+            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">No cloud, fully local</div>
+            <code style="color: var(--accent); font-size: 0.8rem;">~/.sage/</code>
+            <div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.6;">
+              checkpoints, knowledge, cooldown markers — all on your machine
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="install" id="install">
+    <div class="container">
+      <h2>Get started</h2>
+      <p class="install-desc">Three commands. No build tools.</p>
+      <div class="install-block">
+        <div class="terminal-block" style="margin-top: 0; text-align: left;">
+          <div class="terminal-header">
+            <div class="terminal-dot red"></div>
+            <div class="terminal-dot yellow"></div>
+            <div class="terminal-dot green"></div>
+          </div>
+          <div class="terminal-body">
+            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage</span></div>
+            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install</span></div>
+            <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage hooks install</span></div>
+          </div>
+        </div>
+        <button class="copy-btn" onclick="copyInstall()" aria-label="Copy to clipboard" style="margin-top: 16px;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+          </svg>
+          <span style="margin-left: 8px;">Copy</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-logo">v0.1.1</div>
+        <div class="footer-links">
+          <a href="https://github.com/b17z/sage">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+            GitHub
+          </a>
+          <a href="https://pypi.org/project/claude-sage">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            PyPI
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="copy-feedback" id="copyFeedback">Copied to clipboard</div>
+
+  <script>
+    function copyInstall() {
+      const command = 'pip install claude-sage && sage mcp install && sage hooks install';
+      navigator.clipboard.writeText(command).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        const feedback = document.getElementById('copyFeedback');
+
+        btn.classList.add('copied');
+        feedback.classList.add('show');
+
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          feedback.classList.remove('show');
+        }, 2000);
+      });
+    }
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
