@@ -17,7 +17,10 @@ session_id=$(echo "$input" | jq -r '.session_id // empty')
 transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
 
 # Check for recent checkpoint marker (cooldown)
-marker_file="/tmp/sage_checkpoint_${session_id}"
+# Use ~/.sage/cooldown/ instead of /tmp for security (predictable /tmp paths risk symlink attacks)
+cooldown_dir="${HOME}/.sage/cooldown"
+mkdir -p "$cooldown_dir"
+marker_file="${cooldown_dir}/checkpoint_${session_id}"
 if [ -f "$marker_file" ]; then
     marker_time=$(cat "$marker_file")
     current_time=$(date +%s)

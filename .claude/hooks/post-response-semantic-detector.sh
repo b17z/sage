@@ -24,10 +24,14 @@ if [ -z "$transcript_path" ] || [ ! -f "$transcript_path" ]; then
     exit 0
 fi
 
+# Use ~/.sage/cooldown/ instead of /tmp for security (predictable /tmp paths risk symlink attacks)
+cooldown_dir="${HOME}/.sage/cooldown"
+mkdir -p "$cooldown_dir"
+
 # Function to check cooldown for a trigger type
 check_cooldown() {
     local trigger_type="$1"
-    local marker_file="/tmp/sage_semantic_${session_id}_${trigger_type}"
+    local marker_file="${cooldown_dir}/semantic_${session_id}_${trigger_type}"
     
     if [ -f "$marker_file" ]; then
         local marker_time=$(cat "$marker_file")
@@ -43,7 +47,7 @@ check_cooldown() {
 # Function to set cooldown for a trigger type
 set_cooldown() {
     local trigger_type="$1"
-    local marker_file="/tmp/sage_semantic_${session_id}_${trigger_type}"
+    local marker_file="${cooldown_dir}/semantic_${session_id}_${trigger_type}"
     date +%s > "$marker_file"
 }
 
