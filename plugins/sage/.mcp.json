@@ -2,7 +2,7 @@
   "mcpServers": {
     "sage": {
       "command": "uvx",
-      "args": ["--from", "claude-sage", "sage-mcp"]
+      "args": ["--from", "claude-sage[mcp]", "sage-mcp"]
     }
   }
 }
