@@ -76,6 +76,31 @@ pip install -e .
 
 This gives you commands like `sage ask <skill> "query"` and `sage chat <skill>`.
 
+### Optional: MCP Server (Tool-Based)
+
+For direct tool execution (Claude calls tools instead of outputting YAML for you to copy):
+
+```bash
+# Install with MCP support
+cd ~/plugins/sage
+pip install -e ".[mcp]"
+```
+
+Add to Claude Code's MCP config (`~/.config/claude-code/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "sage": {
+      "command": "python",
+      "args": ["-m", "sage.mcp_server"]
+    }
+  }
+}
+```
+
+This exposes tools: `sage_save_checkpoint`, `sage_list_checkpoints`, `sage_load_checkpoint`, `sage_save_knowledge`, `sage_recall_knowledge`, `sage_list_knowledge`, `sage_remove_knowledge`.
+
 ## Usage
 
 ### Automatic (Recommended)
@@ -161,6 +186,7 @@ Sage is built as a multi-platform plugin:
 ```
 sage/
 ├── skills/checkpoint/       # Core skill (works across platforms)
+├── sage/mcp_server.py       # MCP server for auto-checkpoint
 ├── .claude-plugin/          # Claude Code adapter
 ├── hooks/                   # Claude Code hooks
 ├── commands/                # Slash commands
@@ -185,6 +211,7 @@ The compression test: *"If I only had this checkpoint, could I make the same dec
 
 - [Checkpoint Methodology](docs/checkpoint.md) — Full framework for semantic checkpointing
 - [Design Doc](docs/design-knowledge-checkpoints.md) — Implementation details and future roadmap
+- [MCP Design](docs/design-mcp-autocheckpoint.md) — MCP server architecture for auto-checkpoint
 
 ## License
 

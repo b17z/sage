@@ -20,9 +20,13 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
+mcp = [
+    "mcp>=1.2.0",
+]
 
 [project.scripts]
 sage = "sage.cli:main"
+sage-mcp = "sage.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
