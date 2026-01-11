@@ -32,74 +32,153 @@ Each checkpoint captures:
 - **Tensions** — Where credible sources disagree (high value!)
 - **Unique contributions** — What YOU discovered, not just aggregated
 
-## Prerequisites
+## Features
 
-**For the Claude Code plugin (recommended):**
-- [Claude Code](https://claude.ai/code) CLI installed
-- Git (to clone this repo)
-- No Python required
+### Auto-Checkpoint (MCP Server)
+Claude automatically saves checkpoints when meaningful events occur:
+- **After web searches** — Captures synthesized findings before they're lost
+- **On synthesis moments** — When Claude combines multiple sources into a conclusion  
+- **Before context compaction** — PreCompact hook ensures nothing is lost to auto-compact
+- **On explicit request** — Say "checkpoint" anytime
 
-**For the optional Python CLI (`sage ask`, `sage chat`):**
-- Python 3.11+
-- pip
+### Knowledge Persistence
+Store and recall facts across sessions:
+- `sage_save_knowledge` — Persist discoveries, constraints, validated facts
+- `sage_recall_knowledge` — Query your knowledge base semantically
+- Knowledge survives context resets and session restarts
 
-## Installation
+### Smart Thresholds
+Auto-checkpoint uses configurable confidence thresholds per trigger type:
+- `synthesis: 0.5` — Save after strong synthesis moments
+- `web_search_complete: 0.3` — Save after research with findings
+- `precompact: 0.0` — Always save before context compaction
+- `explicit: 0.0` — Always save on user request
 
-### Claude Code Plugin (Recommended)
+## Quick Start (5 minutes)
+
+### 1. Clone and install
 
 ```bash
-# 1. Clone to a permanent location
 git clone https://github.com/b17z/sage.git ~/plugins/sage
-
-# 2. Run Claude Code with the plugin
-claude --plugin-dir ~/plugins/sage
-```
-
-This loads Sage for the current session. The checkpoint and knowledge skills are now available.
-
-**For persistent use**, add an alias to your shell config:
-```bash
-# ~/.zshrc or ~/.bashrc
-alias claude-sage='claude --plugin-dir ~/plugins/sage'
-```
-
-Now you can run `claude-sage` from any directory—checkpoints and knowledge are stored globally in `~/.sage/`, so your research persists across projects.
-
-### Optional: Python CLI
-
-If you also want the standalone `sage` CLI for use outside Claude Code:
-
-```bash
-cd ~/plugins/sage
-pip install -e .
-```
-
-This gives you commands like `sage ask <skill> "query"` and `sage chat <skill>`.
-
-### Optional: MCP Server (Tool-Based)
-
-For direct tool execution (Claude calls tools instead of outputting YAML for you to copy):
-
-```bash
-# Install with MCP support
 cd ~/plugins/sage
 pip install -e ".[mcp]"
 ```
 
-Add to Claude Code's MCP config (`~/.config/claude-code/mcp.json`):
+### 2. Add MCP server to Claude Code
 
-```json
-{
-  "mcpServers": {
-    "sage": {
-      "command": "python",
-      "args": ["-m", "sage.mcp_server"]
-    }
-  }
-}
+```bash
+sage mcp install
 ```
 
-This exposes tools: `sage_save_checkpoint`, `sage_list_checkpoints`, `sage_load_checkpoint`, `sage_save_knowledge`, `sage_recall_knowledge`, `sage_list_knowledge`, `sage_remove_knowledge`.
+### 3. Install hooks (optional but recommended)
+
+```bash
+sage hooks install
+```
+
+This copies the hook scripts to `~/.claude/hooks/` and updates `~/.claude/settings.json` automatically.
+
+To check status or uninstall:
+```bash
+sage hooks status
+sage hooks uninstall
+```
+
+### 4. Test it
+
+```bash
+# Start Claude Code
+claude
+
+# Have a conversation, ask for recommendations
+# Watch for "Stop hook error: Synthesis detected..." - that's the hook working
+# Claude will checkpoint automatically
+
+# Later, in a new session:
+sage checkpoint list
+sage checkpoint show <checkpoint-id>
+```
+
+## What Works (MVP - January 2026)
+
+### ✅ Tested and Working
+
+**MCP Tools:**
+- `sage_save_checkpoint` — Full checkpoint with thesis, sources, tensions
+- `sage_load_checkpoint` — Restore checkpoint context
+- `sage_list_checkpoints` — List all checkpoints
+- `sage_autosave_check` — Auto-checkpoint with confidence thresholds
+- `sage_save_knowledge` — Persist facts with keyword triggers
+- `sage_recall_knowledge` — Auto-recall by keyword matching
+- `sage_list_knowledge` — List knowledge items
+- `sage_remove_knowledge` — Delete knowledge items
+
+**Hooks:**
+- Context threshold (70%) — Checkpoints before autocompact
+- Semantic detector — Detects synthesis, branch_point, constraint, topic_shift
+- Priority ordering — topic_shift > branch_point > constraint > synthesis
+- Cooldown mechanism — 5-min per trigger type
+- Meta-ban list — Prevents trigger loops on hook discussion
+
+**CLI:**
+- `sage checkpoint list/show/rm` — Manage checkpoints
+- `sage knowledge add/list/match/rm` — Manage knowledge
+
+### ⚠️ Current Scope: Research First
+
+Sage is currently optimized for **research workflows** — web searches, synthesis, exploring options, validating hypotheses. The semantic patterns and checkpoint structure are tuned for knowledge work.
+
+**Why research first?** Cause we were running into context limits very quickly in Claude UI when doing deep research. Once we nail research checkpointing, extending to code ("I just refactored this module", "Found the bug") is a natural next step.
+
+### 🔧 Known Limitations (MVP)
+
+1. **Quote-stripping** — Quoted/code-block patterns still trigger detection
+2. **Tool-call awareness** — Should skip if `sage_autosave_check` already called this turn
+3. **Pre-compact hook** — Exists but untested (Claude Code's `/compact` had internal errors)
+4. **Arbitrary cooldown** — 5-minute timer is simple but not smart; should use content hashing or topic tracking
+5. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
+
+### 📋 Future Work
+
+- **Code checkpoint patterns** — Detect refactors, bug fixes, architecture decisions
+- Context window tracker MCP tool
+- Obsidian integration for checkpoint export
+- Better cooldown (content hash, topic tracking)
+- Embedding-based semantic matching (vs keyword triggers)
+
+## Prerequisites
+
+- Python 3.11+
+- [Claude Code](https://claude.ai/code) CLI
+- jq (for hooks)
+
+## Installation Options
+
+### Full Install (recommended)
+
+```bash
+git clone https://github.com/b17z/sage.git ~/plugins/sage
+cd ~/plugins/sage
+pip install -e ".[mcp]"
+claude mcp add --transport stdio --scope user sage -- python -m sage.mcp_server
+```
+
+### MCP Tools Only
+
+See Quick Start above.
+
+### Hooks Only
+
+If you just want the hooks without MCP tools:
+
+```bash
+mkdir -p ~/.claude/hooks
+curl -o ~/.claude/hooks/post-response-semantic-detector.sh \
+  https://raw.githubusercontent.com/b17z/sage/main/.claude/hooks/post-response-semantic-detector.sh
+chmod +x ~/.claude/hooks/*.sh
+```
+
+Then update `~/.claude/settings.json` (see Quick Start).
 
 ## Usage
 
@@ -108,8 +187,10 @@ This exposes tools: `sage_save_checkpoint`, `sage_list_checkpoints`, `sage_load_
 Just work normally. Claude will recognize checkpoint-worthy moments and save state automatically. You'll see brief notifications like:
 
 ```
-Checkpointed: "Validated that Clark airport is closer than Manila"
+Stop hook error: Synthesis detected in your response. Call sage_autosave_check...
 ```
+
+("Stop hook error" is cosmetic—it's how Claude Code displays hook instructions.)
 
 ### Manual
 
@@ -122,22 +203,33 @@ Claude: [Extracts and saves semantic checkpoint]
         5 sources, 1 tension, 2 unique discoveries
 ```
 
-### Slash Command
+### Restore in New Session
 
-Use `/checkpoint` for explicit control:
+```bash
+# List checkpoints
+sage checkpoint list
+
+# Show full checkpoint
+sage checkpoint show <checkpoint-id>
+```
+
+Or in Claude Code, just load it:
+```
+You: sage checkpoint show 2026-01-11T07-30-54
+Claude: [Loads and displays full context]
+```
+
+### Keyword Auto-Recall
+
+Knowledge items auto-inject when queries match keywords:
 
 ```
-/checkpoint
+You: What do we know about semantic detector hook testing?
+Claude: [Auto-recalls 195 tokens of stored knowledge]
+        [Formats into structured response]
 ```
 
-### Restore
-
-Start a new session and reference a previous checkpoint:
-
-```
-You: Continue from where I left off on the payment rails research
-Claude: [Loads checkpoint, continues seamlessly]
-```
+![Sage auto-recall in action](docs/assets/sage-recall-knowledge.png)
 
 ## What Gets Saved
 

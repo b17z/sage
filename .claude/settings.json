@@ -6,21 +6,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/.claude/hooks/pre-compact.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-compact.sh"
           }
         ]
       }
     ],
     "Stop": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/.claude/hooks/post-response-context-check.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-response-context-check.sh"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/.claude/hooks/post-response-semantic-detector.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-response-semantic-detector.sh"
           }
         ]
       }
