@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "sage": {
-      "command": "python",
-      "args": ["-m", "sage.mcp_server"],
-      "env": {}
+      "command": "uvx",
+      "args": ["--from", "claude-sage", "sage-mcp"]
     }
   }
 }

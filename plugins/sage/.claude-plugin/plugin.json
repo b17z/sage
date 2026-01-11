@@ -1,17 +1,12 @@
 {
   "name": "sage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Semantic checkpointing for Claude Code. Auto-checkpoint at meaningful moments, recall across sessions.",
   "author": {
     "name": "b17z",
-    "email": "ben@b17z.io",
-    "url": "https://b17z.io"
+    "email": "ben@b17z.io"
   },
   "repository": "https://github.com/b17z/sage",
   "license": "MIT",
-  "keywords": ["checkpointing", "memory", "research", "knowledge", "context"],
-  "components": {
-    "hooks": [".claude/hooks/"],
-    "mcpServers": [".mcp.json"]
-  }
+  "keywords": ["checkpointing", "memory", "research", "knowledge", "context"]
 }
