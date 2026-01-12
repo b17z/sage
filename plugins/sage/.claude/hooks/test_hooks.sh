@@ -162,6 +162,35 @@ test_hook "normal message → approve" \
     "{\"session_id\": \"test-normal\", \"transcript_path\": \"$TEMP_DIR/normal.jsonl\"}" \
     "approve"
 
+# Test: quote stripping - trigger in code block should NOT fire
+echo '{"role": "assistant", "content": "Here is an example:\n```python\n# In conclusion, this is the main function\ndef main():\n    pass\n```\nLet me know if you have questions."}' > "$TEMP_DIR/code_block.jsonl"
+test_hook "code block: 'in conclusion' → approve (stripped)" \
+    "post-response-semantic-detector.sh" \
+    "{\"session_id\": \"test-code1\", \"transcript_path\": \"$TEMP_DIR/code_block.jsonl\"}" \
+    "approve"
+
+# Test: quote stripping - trigger in inline code should NOT fire
+echo '{"role": "assistant", "content": "You can use the `in conclusion` method to finalize."}' > "$TEMP_DIR/inline_code.jsonl"
+test_hook "inline code: 'in conclusion' → approve (stripped)" \
+    "post-response-semantic-detector.sh" \
+    "{\"session_id\": \"test-code2\", \"transcript_path\": \"$TEMP_DIR/inline_code.jsonl\"}" \
+    "approve"
+
+# Test: quote stripping - trigger in quoted string should NOT fire
+echo '{"role": "assistant", "content": "You said \"in conclusion the API is broken\" but I disagree."}' > "$TEMP_DIR/quoted.jsonl"
+test_hook "quoted string: 'in conclusion' → approve (stripped)" \
+    "post-response-semantic-detector.sh" \
+    "{\"session_id\": \"test-quote1\", \"transcript_path\": \"$TEMP_DIR/quoted.jsonl\"}" \
+    "approve"
+
+# Test: trigger outside quotes should still fire
+echo '{"role": "assistant", "content": "You said \"the API is broken\" and in conclusion I agree."}' > "$TEMP_DIR/outside_quote.jsonl"
+test_hook "outside quote: 'in conclusion' → block" \
+    "post-response-semantic-detector.sh" \
+    "{\"session_id\": \"test-quote2\", \"transcript_path\": \"$TEMP_DIR/outside_quote.jsonl\"}" \
+    "block" \
+    "synthesis"
+
 # Test: missing transcript
 test_hook "missing transcript → approve" \
     "post-response-semantic-detector.sh" \

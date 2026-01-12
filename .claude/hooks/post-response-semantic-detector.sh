@@ -76,8 +76,18 @@ fi
 # Convert to lowercase for matching
 msg_lower=$(echo "$last_assistant_msg" | tr '[:upper:]' '[:lower:]')
 
+# --- Strip Quotes and Code Blocks ---
+# Use perl for reliable cross-platform regex (BSD sed on macOS has limited support)
+msg_stripped=$(echo "$msg_lower" | perl -0777 -pe '
+    s/```.*?```//gs;           # Remove fenced code blocks
+    s/`[^`]+`//g;              # Remove inline code
+    s/"[^"]*"//g;              # Remove double-quoted strings
+    s/^>.*$//gm;               # Remove blockquotes
+')
+
 # --- Meta-discussion Ban List ---
 # Skip detection if message is about the hook/checkpoint system itself
+# (use msg_lower here since we want to catch meta-discussion even in quotes)
 if echo "$msg_lower" | grep -qE "(hook|checkpoint|trigger|pattern|detector|cooldown|sage_autosave).*(fire|detect|block|test)|test.*summary|trigger.*loop"; then
     echo '{"decision": "approve"}'
     exit 0
@@ -87,7 +97,7 @@ fi
 
 # --- Topic Shift Detection (HIGHEST PRIORITY) ---
 # Signals context change - checkpoint before losing previous context
-if echo "$msg_lower" | grep -qE "moving on to|let.?s (now )?turn to|shifting (focus|gears)|on a (different|separate) note|changing topics|now.*let.?s (look at|consider)"; then
+if echo "$msg_stripped" | grep -qE "moving on to|let.?s (now )?turn to|shifting (focus|gears)|on a (different|separate) note|changing topics|now.*let.?s (look at|consider)"; then
     if ! check_cooldown "topic_shift"; then
         set_cooldown "topic_shift"
         cat << 'EOF'
@@ -102,7 +112,7 @@ fi
 
 # --- Branch Point Detection ---
 # Decision point - capture the options before choosing
-if echo "$msg_lower" | grep -qE "we could (either|go with)|two (main )?approaches|option (a|b|1|2|one|two)|alternatively[,.]|on one hand.*on the other|trade-?off|versus|choice between|fork in"; then
+if echo "$msg_stripped" | grep -qE "we could (either|go with)|two (main )?approaches|option (a|b|1|2|one|two)|alternatively[,.]|on one hand.*on the other|trade-?off|versus|choice between|fork in"; then
     if ! check_cooldown "branch_point"; then
         set_cooldown "branch_point"
         cat << 'EOF'
@@ -117,7 +127,7 @@ fi
 
 # --- Constraint Discovery Detection ---
 # Blocker found - important pivot point
-if echo "$msg_lower" | grep -qE "this means we can.?t|won.?t work because|unfortunately.*limit|blocked by|show-?stopper|deal-?breaker|rules out|eliminates the possibility|can.?t do.*because"; then
+if echo "$msg_stripped" | grep -qE "this means we can.?t|won.?t work because|unfortunately.*limit|blocked by|show-?stopper|deal-?breaker|rules out|eliminates the possibility|can.?t do.*because"; then
     if ! check_cooldown "constraint"; then
         set_cooldown "constraint"
         cat << 'EOF'
@@ -132,7 +142,7 @@ fi
 
 # --- Synthesis Detection (LOWEST PRIORITY - catch-all) ---
 # Phrases indicating Claude is combining/concluding from multiple sources
-if echo "$msg_lower" | grep -qE "in conclusion|putting (this|these|it all) together|this suggests that|combining these|taken together|synthesizing|the key (insight|takeaway)|overall[,.]|in summary|bottom line|the honest truth|my (take|recommendation|verdict)|if i were (starting|building)|to summarize|tldr|tl;dr"; then
+if echo "$msg_stripped" | grep -qE "in conclusion|putting (this|these|it all) together|this suggests that|combining these|taken together|synthesizing|the key (insight|takeaway)|overall[,.]|in summary|bottom line|the honest truth|my (take|recommendation|verdict)|if i were (starting|building)|to summarize|tldr|tl;dr"; then
     if ! check_cooldown "synthesis"; then
         set_cooldown "synthesis"
         cat << 'EOF'
