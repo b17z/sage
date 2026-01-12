@@ -10,8 +10,10 @@
 # - constraint_discovered: "can't", "won't work because", "limitation"
 #
 # Uses cooldown markers to prevent repeated firing after checkpoint.
+# Note: This is just rate-limiting (prevent spam). Content gating is handled
+# by semantic dedup in sage_autosave_check (embeddings compare to recent checkpoints).
 
-COOLDOWN_SECONDS=${SAGE_SEMANTIC_COOLDOWN:-300}  # 5 minute cooldown per trigger type
+COOLDOWN_SECONDS=${SAGE_SEMANTIC_COOLDOWN:-30}  # 30 second rate limit per trigger type
 
 input=$(cat)
 

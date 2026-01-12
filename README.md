@@ -139,8 +139,7 @@ Sage is currently optimized for **research workflows** — web searches, synthes
 
 1. **Tool-call awareness** — Should skip if `sage_autosave_check` already called this turn
 2. **Pre-compact hook** — Exists but untested (Claude Code's `/compact` had internal errors)
-3. **Arbitrary cooldown** — 5-minute timer is simple but not smart; should use content hashing or topic tracking
-4. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
+3. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
 
 ### 📋 Future Work
 
