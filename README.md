@@ -71,7 +71,7 @@ Auto-checkpoint uses configurable confidence thresholds per trigger type:
 **Option A: Claude Code Plugin (recommended)**
 ```
 /plugin marketplace add b17z/sage
-/plugin install sage@sage-marketplace
+/plugin install sage
 ```
 
 **Option B: PyPI**
@@ -123,7 +123,7 @@ sage checkpoint show <checkpoint-id>
 - Context threshold (70%) — Checkpoints before autocompact
 - Semantic detector — Detects synthesis, branch_point, constraint, topic_shift
 - Priority ordering — topic_shift > branch_point > constraint > synthesis
-- Cooldown mechanism — 5-min per trigger type
+- Cooldown mechanism — 30s rate limit (content dedup via embeddings)
 - Meta-ban list — Prevents trigger loops on hook discussion
 
 **CLI:**
