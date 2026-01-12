@@ -7,7 +7,7 @@
 
 THRESHOLD_PERCENT=${SAGE_CONTEXT_THRESHOLD:-70}  # Default: save at 70% (before autocompact buffer)
 CONTEXT_WINDOW_SIZE=${SAGE_CONTEXT_WINDOW:-200000}  # Claude's context window
-COOLDOWN_SECONDS=${SAGE_CHECKPOINT_COOLDOWN:-300}  # 5 minute cooldown after checkpoint
+COOLDOWN_SECONDS=${SAGE_CONTEXT_COOLDOWN:-60}  # 60 second rate limit after checkpoint
 
 # Read hook input from stdin
 input=$(cat)

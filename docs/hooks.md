@@ -84,7 +84,7 @@ Then add to `~/.claude/settings.json`:
 |----------|---------|-------------|
 | `SAGE_CONTEXT_THRESHOLD` | `70` | Percentage threshold for checkpoint trigger |
 | `SAGE_CONTEXT_WINDOW` | `200000` | Claude's context window size |
-| `SAGE_CHECKPOINT_COOLDOWN` | `300` | Seconds before hook can fire again |
+| `SAGE_CONTEXT_COOLDOWN` | `60` | Seconds before hook can fire again (rate limit) |
 
 **Why 70%?** Claude Code's autocompact buffer is ~45k tokens (22.5%). Setting threshold to 70% gives ~15k token headroom before autocompact kicks in.
 
@@ -127,7 +127,11 @@ The hook skips detection when the message discusses the hook system itself to pr
 
 **Cooldown mechanism:**
 
-Each trigger type has an independent 5-minute cooldown using marker files:
+The cooldown system uses **separation of concerns**:
+- **Rate limiting (hook):** 30-second cooldown prevents rapid-fire triggers
+- **Content gating (MCP):** Semantic deduplication in `sage_autosave_check` prevents saving similar content
+
+Each trigger type has an independent rate-limit using marker files:
 ```
 ~/.sage/cooldown/semantic_${session_id}_${trigger_type}
 ```
@@ -136,7 +140,7 @@ Each trigger type has an independent 5-minute cooldown using marker files:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SAGE_SEMANTIC_COOLDOWN` | `300` | Seconds before same trigger type can fire again |
+| `SAGE_SEMANTIC_COOLDOWN` | `30` | Rate limit in seconds (content gating is done by embeddings) |
 
 ### Pre-Compact Hook
 
@@ -203,8 +207,9 @@ Run the test suite:
 - Check jq is installed: `which jq`
 
 **Hook firing too often:**
-- Cooldown may have expired (5 min default)
-- Adjust `SAGE_SEMANTIC_COOLDOWN` or `SAGE_CHECKPOINT_COOLDOWN`
+- Cooldown may have expired (30s default for semantic, 60s for context)
+- Adjust `SAGE_SEMANTIC_COOLDOWN` or `SAGE_CONTEXT_COOLDOWN`
+- Note: Content deduplication happens in MCP, not the hook
 
 **False positives on meta-discussion:**
 - The meta-ban list should catch most cases
