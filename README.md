@@ -47,6 +47,15 @@ Store and recall facts across sessions:
 - `sage_recall_knowledge` — Query your knowledge base semantically
 - Knowledge survives context resets and session restarts
 
+### Semantic Recall (Optional)
+Install embeddings support for smarter knowledge matching:
+```bash
+pip install claude-sage[embeddings]  # ~2GB for model + torch
+```
+- **70% semantic + 30% keyword** — Combined scoring for best of both worlds
+- **Checkpoint deduplication** — Skips saving when thesis is 90%+ similar to recent checkpoint
+- **Graceful fallback** — Works without embeddings, just uses keyword matching
+
 ### Smart Thresholds
 Auto-checkpoint uses configurable confidence thresholds per trigger type:
 - `synthesis: 0.5` — Save after strong synthesis moments
@@ -128,11 +137,10 @@ Sage is currently optimized for **research workflows** — web searches, synthes
 
 ### 🔧 Known Limitations (MVP)
 
-1. **Quote-stripping** — Quoted/code-block patterns still trigger detection
-2. **Tool-call awareness** — Should skip if `sage_autosave_check` already called this turn
-3. **Pre-compact hook** — Exists but untested (Claude Code's `/compact` had internal errors)
-4. **Arbitrary cooldown** — 5-minute timer is simple but not smart; should use content hashing or topic tracking
-5. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
+1. **Tool-call awareness** — Should skip if `sage_autosave_check` already called this turn
+2. **Pre-compact hook** — Exists but untested (Claude Code's `/compact` had internal errors)
+3. **Arbitrary cooldown** — 5-minute timer is simple but not smart; should use content hashing or topic tracking
+4. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
 
 ### 📋 Future Work
 
@@ -140,7 +148,6 @@ Sage is currently optimized for **research workflows** — web searches, synthes
 - Context window tracker MCP tool
 - Obsidian integration for checkpoint export
 - Better cooldown (content hash, topic tracking)
-- Embedding-based semantic matching (vs keyword triggers)
 
 ## Prerequisites
 

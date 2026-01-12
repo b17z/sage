@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP
 from sage.checkpoint import (
     create_checkpoint_from_dict,
     format_checkpoint_for_context,
+    is_duplicate_checkpoint,
     list_checkpoints,
     load_checkpoint,
     save_checkpoint,
@@ -254,16 +255,16 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
 
 # Minimum confidence thresholds for each trigger type
 AUTOSAVE_THRESHOLDS = {
-    "research_start": 0.0,       # Always save starting point
+    "research_start": 0.0,  # Always save starting point
     "web_search_complete": 0.3,  # Save if we learned something
-    "synthesis": 0.5,            # Save meaningful conclusions
-    "topic_shift": 0.3,          # Save before switching
-    "user_validated": 0.4,       # User confirmed something
+    "synthesis": 0.5,  # Save meaningful conclusions
+    "topic_shift": 0.3,  # Save before switching
+    "user_validated": 0.4,  # User confirmed something
     "constraint_discovered": 0.3,  # Important pivot point
-    "branch_point": 0.4,         # Decision point
-    "precompact": 0.0,           # Always save before context compaction
-    "context_threshold": 0.0,    # Always save when context threshold hit
-    "manual": 0.0,               # Always save manual requests
+    "branch_point": 0.4,  # Decision point
+    "precompact": 0.0,  # Always save before context compaction
+    "context_threshold": 0.0,  # Always save when context threshold hit
+    "manual": 0.0,  # Always save manual requests
 }
 
 
@@ -318,6 +319,15 @@ def sage_autosave_check(
 
     if not core_question or len(core_question.strip()) < 5:
         return "⏸ Not saving: no clear research question. What are we trying to answer?"
+
+    # Check for duplicate (semantic similarity to recent checkpoints)
+    dedup_result = is_duplicate_checkpoint(current_thesis)
+    if dedup_result.is_duplicate:
+        return (
+            f"⏸ Not saving: semantically similar to recent checkpoint "
+            f"({dedup_result.similarity_score:.0%} similarity).\n"
+            f"Similar: {dedup_result.similar_checkpoint_id}"
+        )
 
     # Save the checkpoint
     data = {

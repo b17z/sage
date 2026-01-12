@@ -6,7 +6,6 @@ Sage metadata is stored in ~/.sage/skills/.
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from difflib import get_close_matches
 from pathlib import Path
 

@@ -10,13 +10,11 @@ from rich.prompt import Confirm, Prompt
 from sage.config import (
     CONFIG_PATH,
     REFERENCE_DIR,
-    SAGE_DIR,
     SHARED_MEMORY_PATH,
-    SKILLS_DIR,
     Config,
     ensure_directories,
 )
-from sage.errors import Result, SageError, err, ok
+from sage.errors import Result, SageError, ok
 from sage.skill import create_skill
 
 console = Console()
@@ -151,7 +149,7 @@ def run_init(
     console.print("  claude plugin install /path/to/sage --scope user")
     console.print()
     if skill_name:
-        console.print(f'  # Or use CLI directly')
+        console.print('  # Or use CLI directly')
         console.print(f'  sage ask {skill_name} "your first query"')
     else:
         console.print('  # Create a research skill')

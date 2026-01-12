@@ -4,8 +4,8 @@ Handles API interactions with retry logic and streaming.
 """
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Iterator
 
 import anthropic
 

@@ -73,6 +73,23 @@ items:
 
 ### Recall Algorithm
 
+**With embeddings installed** (`pip install claude-sage[embeddings]`):
+```python
+def recall_knowledge(query: str, skill_name: str) -> list[KnowledgeItem]:
+    """
+    Returns knowledge items relevant to the query.
+    
+    1. Load index.yaml
+    2. Filter by skill scope
+    3. Score each item with combined scoring:
+       - 70% embedding similarity (semantic)
+       - 30% keyword matching (lexical)
+    4. Return items with score > threshold (default: 2.0 on 0-10 scale)
+    5. Cap at max_items (default: 3) to avoid context bloat
+    """
+```
+
+**Without embeddings** (fallback):
 ```python
 def recall_knowledge(query: str, skill_name: str) -> list[KnowledgeItem]:
     """
@@ -81,11 +98,11 @@ def recall_knowledge(query: str, skill_name: str) -> list[KnowledgeItem]:
     1. Load index.yaml
     2. Filter by skill scope
     3. Score each item by trigger matches:
-       - keyword exact match: +2 points
+       - keyword exact match: +3 points
        - keyword substring: +1 point  
-       - pattern regex match: +1 point
-    4. Return items with score > threshold (e.g., 2)
-    5. Cap at max_items (e.g., 3) to avoid context bloat
+       - pattern regex match: +2 points
+    4. Return items with score > threshold (default: 2)
+    5. Cap at max_items (default: 3) to avoid context bloat
     """
 ```
 
@@ -345,10 +362,11 @@ class ChatSession:
 
 ## Open Questions
 
-1. **Knowledge matching**: Simple keyword matching vs. embeddings?
-   - Keywords are fast and predictable
-   - Embeddings catch semantic similarity but need vector DB
-   - **Proposal**: Start with keywords, add embeddings later
+1. **Knowledge matching**: ~~Simple keyword matching vs. embeddings?~~
+   - ✅ **Resolved**: Now supports both! Install `claude-sage[embeddings]` for semantic matching
+   - Combined scoring: 70% embedding similarity + 30% keyword matching
+   - Falls back to keyword-only when embeddings unavailable
+   - Uses `all-MiniLM-L6-v2` model (~80MB, runs locally)
 
 2. **Checkpoint storage**: JSON files vs. SQLite?
    - JSON is simple, human-readable, easy to backup

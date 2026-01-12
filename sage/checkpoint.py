@@ -2,17 +2,23 @@
 
 Saves and restores semantic research state across sessions.
 Checkpoints are stored as YAML files in ~/.sage/checkpoints/ or .sage/checkpoints/.
+
+When embeddings are available, provides deduplication by comparing thesis
+embeddings to avoid saving semantically similar checkpoints.
 """
 
 import hashlib
+import logging
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 from sage.config import SAGE_DIR
+
+logger = logging.getLogger(__name__)
 
 
 # Global checkpoints
@@ -77,7 +83,7 @@ class Checkpoint:
 
 def generate_checkpoint_id(description: str) -> str:
     """Generate a checkpoint ID from timestamp and description."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
     # Slugify description
     slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-")[:40]
     return f"{ts}_{slug}"
@@ -102,6 +108,153 @@ def ensure_checkpoints_dir(project_path: Path | None = None) -> Path:
     checkpoints_dir = get_checkpoints_dir(project_path)
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     return checkpoints_dir
+
+
+# ============================================================================
+# Embedding-based Deduplication
+# ============================================================================
+
+# Default threshold for considering checkpoints as duplicates
+DEDUP_THRESHOLD = 0.9
+
+
+def _get_checkpoint_embedding_store():
+    """Load the checkpoint embedding store."""
+    from sage import embeddings
+
+    path = embeddings.get_checkpoint_embeddings_path()
+    result = embeddings.load_embeddings(path)
+    if result.is_err():
+        logger.warning(f"Failed to load checkpoint embeddings: {result.unwrap_err().message}")
+        return embeddings.EmbeddingStore.empty()
+    return result.unwrap()
+
+
+def _save_checkpoint_embedding_store(store) -> bool:
+    """Save the checkpoint embedding store."""
+    from sage import embeddings
+
+    path = embeddings.get_checkpoint_embeddings_path()
+    embeddings.ensure_embeddings_dir()
+    result = embeddings.save_embeddings(path, store)
+    if result.is_err():
+        logger.warning(f"Failed to save checkpoint embeddings: {result.unwrap_err().message}")
+        return False
+    return True
+
+
+def _add_checkpoint_embedding(checkpoint_id: str, thesis: str) -> bool:
+    """Generate and store embedding for a checkpoint thesis.
+
+    Args:
+        checkpoint_id: The checkpoint ID
+        thesis: The thesis text to embed
+
+    Returns:
+        True if embedding was added successfully
+    """
+    from sage import embeddings
+
+    if not embeddings.is_available():
+        logger.debug("Embeddings not available, skipping")
+        return False
+
+    result = embeddings.get_embedding(thesis)
+    if result.is_err():
+        logger.warning(f"Failed to generate embedding: {result.unwrap_err().message}")
+        return False
+
+    embedding = result.unwrap()
+    store = _get_checkpoint_embedding_store()
+    store = store.add(checkpoint_id, embedding)
+    return _save_checkpoint_embedding_store(store)
+
+
+def _remove_checkpoint_embedding(checkpoint_id: str) -> bool:
+    """Remove embedding for a checkpoint.
+
+    Args:
+        checkpoint_id: The checkpoint ID
+
+    Returns:
+        True if embedding was removed successfully
+    """
+    from sage import embeddings
+
+    if not embeddings.is_available():
+        return True  # Nothing to remove
+
+    store = _get_checkpoint_embedding_store()
+    store = store.remove(checkpoint_id)
+    return _save_checkpoint_embedding_store(store)
+
+
+@dataclass(frozen=True)
+class DuplicateCheckResult:
+    """Result of checking for duplicate checkpoints."""
+
+    is_duplicate: bool
+    similar_checkpoint_id: str | None = None
+    similarity_score: float = 0.0
+
+
+def is_duplicate_checkpoint(
+    thesis: str,
+    threshold: float = DEDUP_THRESHOLD,
+    max_recent: int = 20,
+    project_path: Path | None = None,
+) -> DuplicateCheckResult:
+    """Check if a thesis is semantically similar to recent checkpoints.
+
+    Args:
+        thesis: The thesis text to check
+        threshold: Similarity threshold (0-1), default 0.9
+        max_recent: Maximum number of recent checkpoints to check
+        project_path: Optional project path for project-local checkpoints
+
+    Returns:
+        DuplicateCheckResult with is_duplicate flag and details
+    """
+    from sage import embeddings
+
+    if not embeddings.is_available():
+        logger.debug("Embeddings not available, skipping dedup check")
+        return DuplicateCheckResult(is_duplicate=False)
+
+    # Get thesis embedding
+    result = embeddings.get_embedding(thesis)
+    if result.is_err():
+        logger.warning(f"Failed to generate thesis embedding: {result.unwrap_err().message}")
+        return DuplicateCheckResult(is_duplicate=False)
+
+    thesis_embedding = result.unwrap()
+
+    # Get recent checkpoints
+    recent = list_checkpoints(project_path=project_path, limit=max_recent)
+    if not recent:
+        return DuplicateCheckResult(is_duplicate=False)
+
+    # Load embeddings store
+    store = _get_checkpoint_embedding_store()
+    if len(store) == 0:
+        return DuplicateCheckResult(is_duplicate=False)
+
+    # Check similarity against recent checkpoints
+    for cp in recent:
+        cp_embedding = store.get(cp.id)
+        if cp_embedding is None:
+            continue
+
+        similarity = embeddings.cosine_similarity(thesis_embedding, cp_embedding)
+        if similarity >= threshold:
+            logger.info(f"Duplicate detected: similarity {similarity:.2f} with checkpoint {cp.id}")
+            return DuplicateCheckResult(
+                is_duplicate=True,
+                similar_checkpoint_id=cp.id,
+                similarity_score=float(similarity),
+            )
+
+    return DuplicateCheckResult(is_duplicate=False)
 
 
 def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) -> Path:
@@ -141,6 +294,10 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
     file_path = checkpoints_dir / f"{checkpoint.id}.yaml"
     with open(file_path, "w") as f:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    # Store thesis embedding for deduplication (non-blocking, failures logged)
+    if checkpoint.thesis:
+        _add_checkpoint_embedding(checkpoint.id, checkpoint.thesis)
 
     return file_path
 
@@ -242,16 +399,23 @@ def delete_checkpoint(checkpoint_id: str, project_path: Path | None = None) -> b
     """Delete a checkpoint by ID."""
     checkpoints_dir = get_checkpoints_dir(project_path)
     file_path = checkpoints_dir / f"{checkpoint_id}.yaml"
+    actual_id = checkpoint_id
 
     if not file_path.exists():
         # Try partial match
         matches = list(checkpoints_dir.glob(f"*{checkpoint_id}*.yaml"))
         if len(matches) == 1:
             file_path = matches[0]
+            # Extract actual ID from filename
+            actual_id = file_path.stem
         else:
             return False
 
     file_path.unlink()
+
+    # Remove embedding (non-blocking, failures logged)
+    _remove_checkpoint_embedding(actual_id)
+
     return True
 
 
@@ -306,7 +470,7 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
 
 def create_checkpoint_from_dict(data: dict, trigger: str = "manual") -> Checkpoint:
     """Create a Checkpoint from a dictionary (e.g., parsed from Claude's output)."""
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
 
     # Generate ID
     description = data.get("thesis", "checkpoint")[:50]
