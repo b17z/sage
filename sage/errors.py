@@ -18,6 +18,7 @@ class SageError:
     code: str
     message: str
     suggestion: str | None = None
+    context: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,18 @@ class Ok[T]:
     def ok(self) -> bool:
         return True
 
+    def is_ok(self) -> bool:
+        return True
+
+    def is_err(self) -> bool:
+        return False
+
+    def unwrap(self) -> T:
+        return self.value
+
+    def unwrap_err(self):
+        raise ValueError("Cannot unwrap_err on Ok result")
+
 
 @dataclass(frozen=True)
 class Err[E]:
@@ -40,6 +53,18 @@ class Err[E]:
     @property
     def ok(self) -> bool:
         return False
+
+    def is_ok(self) -> bool:
+        return False
+
+    def is_err(self) -> bool:
+        return True
+
+    def unwrap(self):
+        raise ValueError(f"Cannot unwrap on Err result: {self.error}")
+
+    def unwrap_err(self) -> E:
+        return self.error
 
 
 type Result[T, E] = Ok[T] | Err[E]
@@ -96,7 +121,11 @@ def map_error[T, E, F](result: Result[T, E], fn) -> Result[T, F]:
 # Common error constructors
 def skill_not_found(skill_name: str, similar: list[str] | None = None) -> SageError:
     """Error for missing skill."""
-    suggestion = f"Did you mean: {', '.join(similar)}?" if similar else "Use 'sage list' to see available skills."
+    suggestion = (
+        f"Did you mean: {', '.join(similar)}?"
+        if similar
+        else "Use 'sage list' to see available skills."
+    )
     return SageError(
         code="skill_not_found",
         message=f"Skill '{skill_name}' not found",

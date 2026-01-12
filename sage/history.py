@@ -5,7 +5,7 @@ Append-only JSONL logs for tracking interactions, costs, and analytics.
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sage.config import get_sage_skill_path
@@ -54,7 +54,7 @@ def create_entry(
     total_cost = input_cost + cached_cost + output_cost + search_cost
 
     return HistoryEntry(
-        ts=datetime.now(timezone.utc).isoformat(),
+        ts=datetime.now(UTC).isoformat(),
         type=entry_type,
         query=query,
         model=model,
@@ -131,7 +131,7 @@ def calculate_usage(skill_name: str, days: int = 7) -> dict:
             "entries": 0,
         }
 
-    cutoff = datetime.now(timezone.utc).timestamp() - (days * 86400)
+    cutoff = datetime.now(UTC).timestamp() - (days * 86400)
     recent = [
         e for e in entries
         if datetime.fromisoformat(e.ts.replace("Z", "+00:00")).timestamp() > cutoff

@@ -96,8 +96,9 @@ def new(name, description, docs):
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 def rm(name, force):
     """Delete a research skill."""
-    from sage.config import get_sage_skill_path, get_skill_path
     import shutil
+
+    from sage.config import get_sage_skill_path, get_skill_path
 
     skill_path = get_skill_path(name)
     sage_path = get_sage_skill_path(name)
@@ -543,10 +544,10 @@ def knowledge():
 def knowledge_add(file, knowledge_id, keywords, skill, source):
     """Add a knowledge item from a file."""
     from pathlib import Path
-    
+
     content = Path(file).read_text()
     keyword_list = [k.strip() for k in keywords.split(",")]
-    
+
     item = add_knowledge(
         content=content,
         knowledge_id=knowledge_id,
@@ -554,7 +555,7 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
         skill=skill,
         source=source or "",
     )
-    
+
     scope = f"skill:{skill}" if skill else "global"
     console.print(f"[green]✓[/green] Added knowledge: {item.id} ({scope})")
     console.print(f"  Keywords: {', '.join(item.triggers.keywords)}")
@@ -566,25 +567,25 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
 def knowledge_list(skill):
     """List knowledge items."""
     items = list_knowledge(skill)
-    
+
     if not items:
         console.print("[yellow]No knowledge items found.[/yellow]")
         console.print("Add one with: sage knowledge add <file> --id <id> --keywords <kw1,kw2>")
         return
-    
+
     table = Table()
     table.add_column("ID")
     table.add_column("SCOPE")
     table.add_column("KEYWORDS")
     table.add_column("TOKENS", justify="right")
     table.add_column("ADDED")
-    
+
     for item in items:
         scope = ", ".join(item.scope.skills) if item.scope.skills else "global"
         keywords = ", ".join(item.triggers.keywords[:3])
         if len(item.triggers.keywords) > 3:
             keywords += "..."
-        
+
         table.add_row(
             item.id,
             scope,
@@ -592,7 +593,7 @@ def knowledge_list(skill):
             str(item.metadata.tokens),
             item.metadata.added,
         )
-    
+
     console.print(table)
 
 
@@ -605,7 +606,7 @@ def knowledge_rm(knowledge_id, force):
         if not click.confirm(f"Remove knowledge '{knowledge_id}'?"):
             console.print("Cancelled.")
             return
-    
+
     if remove_knowledge(knowledge_id):
         console.print(f"[green]✓[/green] Removed: {knowledge_id}")
     else:
@@ -618,11 +619,11 @@ def knowledge_rm(knowledge_id, force):
 def knowledge_match(query, skill):
     """Test what knowledge would be recalled for a query."""
     result = recall_knowledge(query, skill)
-    
+
     if result.count == 0:
         console.print("[yellow]No knowledge matched this query.[/yellow]")
         return
-    
+
     console.print(f"📚 [bold]Would recall {result.count} items (~{result.total_tokens} tokens):[/bold]")
     for item in result.items:
         console.print(f"  [green]✓[/green] {item.id}")
@@ -754,54 +755,54 @@ def hooks_install(force):
     import json
     import shutil
     from pathlib import Path
-    
+
     # Find hook source directory (relative to this package)
     package_dir = Path(__file__).parent.parent
     hooks_src = package_dir / ".claude" / "hooks"
-    
+
     if not hooks_src.exists():
         # Try installed package location
         import sage
         package_dir = Path(sage.__file__).parent.parent
         hooks_src = package_dir / ".claude" / "hooks"
-    
+
     if not hooks_src.exists():
         console.print("[red]Could not find hook source files.[/red]")
         console.print("[dim]Expected at: .claude/hooks/ relative to sage package[/dim]")
         sys.exit(1)
-    
+
     # Destination directories
     hooks_dest = Path.home() / ".claude" / "hooks"
     settings_path = Path.home() / ".claude" / "settings.json"
-    
+
     # Create hooks directory
     hooks_dest.mkdir(parents=True, exist_ok=True)
-    
+
     # Copy hook files
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
         "pre-compact.sh",
     ]
-    
+
     copied = []
     for hook_file in hook_files:
         src = hooks_src / hook_file
         dest = hooks_dest / hook_file
-        
+
         if not src.exists():
             console.print(f"[yellow]Warning: {hook_file} not found in source[/yellow]")
             continue
-        
+
         if dest.exists() and not force:
             console.print(f"[yellow]Skipping {hook_file} (exists, use --force to overwrite)[/yellow]")
             continue
-        
+
         shutil.copy2(src, dest)
         dest.chmod(0o755)  # Make executable
         copied.append(hook_file)
         console.print(f"[green]✓[/green] Copied {hook_file}")
-    
+
     # Update settings.json
     settings = {}
     if settings_path.exists():
@@ -809,7 +810,7 @@ def hooks_install(force):
             settings = json.loads(settings_path.read_text())
         except json.JSONDecodeError:
             console.print("[yellow]Warning: Could not parse existing settings.json[/yellow]")
-    
+
     # Build hook configuration with absolute paths
     hook_config = {
         "Stop": [
@@ -830,18 +831,18 @@ def hooks_install(force):
             }
         ]
     }
-    
+
     # Merge with existing hooks (don't overwrite other hooks)
     if "hooks" not in settings:
         settings["hooks"] = {}
-    
+
     settings["hooks"].update(hook_config)
-    
+
     # Write settings
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(settings, indent=2))
     console.print(f"[green]✓[/green] Updated {settings_path}")
-    
+
     console.print()
     console.print("[bold]Sage hooks installed![/bold]")
     console.print("[dim]Restart Claude Code for changes to take effect.[/dim]")
@@ -857,28 +858,28 @@ def hooks_uninstall(force):
     """
     import json
     from pathlib import Path
-    
+
     if not force:
         if not click.confirm("Remove Sage hooks from Claude Code?"):
             console.print("Cancelled.")
             return
-    
+
     hooks_dest = Path.home() / ".claude" / "hooks"
     settings_path = Path.home() / ".claude" / "settings.json"
-    
+
     # Remove hook files
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
         "pre-compact.sh",
     ]
-    
+
     for hook_file in hook_files:
         hook_path = hooks_dest / hook_file
         if hook_path.exists():
             hook_path.unlink()
             console.print(f"[green]✓[/green] Removed {hook_file}")
-    
+
     # Update settings.json
     if settings_path.exists():
         try:
@@ -889,16 +890,16 @@ def hooks_uninstall(force):
                     del settings["hooks"]["Stop"]
                 if "PreCompact" in settings["hooks"]:
                     del settings["hooks"]["PreCompact"]
-                
+
                 # Clean up empty hooks object
                 if not settings["hooks"]:
                     del settings["hooks"]
-                
+
                 settings_path.write_text(json.dumps(settings, indent=2))
                 console.print(f"[green]✓[/green] Updated {settings_path}")
         except json.JSONDecodeError:
             console.print("[yellow]Warning: Could not parse settings.json[/yellow]")
-    
+
     console.print()
     console.print("[bold]Sage hooks uninstalled.[/bold]")
 
@@ -908,40 +909,40 @@ def hooks_status():
     """Show current hook installation status."""
     import json
     from pathlib import Path
-    
+
     hooks_dest = Path.home() / ".claude" / "hooks"
     settings_path = Path.home() / ".claude" / "settings.json"
-    
+
     console.print("[bold]Hook Files:[/bold]")
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
         "pre-compact.sh",
     ]
-    
+
     for hook_file in hook_files:
         hook_path = hooks_dest / hook_file
         if hook_path.exists():
             console.print(f"  [green]✓[/green] {hook_path}")
         else:
             console.print(f"  [red]✗[/red] {hook_path} [dim](not found)[/dim]")
-    
+
     console.print()
     console.print("[bold]Settings Configuration:[/bold]")
     if settings_path.exists():
         try:
             settings = json.loads(settings_path.read_text())
             hooks_config = settings.get("hooks", {})
-            
+
             if "Stop" in hooks_config:
-                console.print(f"  [green]✓[/green] Stop hooks configured")
+                console.print("  [green]✓[/green] Stop hooks configured")
             else:
-                console.print(f"  [red]✗[/red] Stop hooks not configured")
-            
+                console.print("  [red]✗[/red] Stop hooks not configured")
+
             if "PreCompact" in hooks_config:
-                console.print(f"  [green]✓[/green] PreCompact hooks configured")
+                console.print("  [green]✓[/green] PreCompact hooks configured")
             else:
-                console.print(f"  [red]✗[/red] PreCompact hooks not configured")
+                console.print("  [red]✗[/red] PreCompact hooks not configured")
         except json.JSONDecodeError:
             console.print(f"  [red]✗[/red] Could not parse {settings_path}")
     else:
@@ -964,15 +965,15 @@ def mcp_install():
     import json
     import shutil
     from pathlib import Path
-    
+
     claude_json = Path.home() / ".claude.json"
-    
+
     # Find python executable
     python_path = shutil.which("python") or shutil.which("python3")
     if not python_path:
         console.print("[red]Could not find python executable[/red]")
         sys.exit(1)
-    
+
     # Load existing config
     config = {}
     if claude_json.exists():
@@ -980,22 +981,22 @@ def mcp_install():
             config = json.loads(claude_json.read_text())
         except json.JSONDecodeError:
             console.print("[yellow]Warning: Could not parse existing ~/.claude.json[/yellow]")
-    
+
     # Add MCP server config
     if "mcpServers" not in config:
         config["mcpServers"] = {}
-    
+
     config["mcpServers"]["sage"] = {
         "type": "stdio",
         "command": python_path,
         "args": ["-m", "sage.mcp_server"],
         "env": {}
     }
-    
+
     # Write config
     claude_json.write_text(json.dumps(config, indent=2))
     console.print(f"[green]✓[/green] Added sage MCP server to {claude_json}")
-    
+
     console.print()
     console.print("[bold]Sage MCP server installed![/bold]")
     console.print("[dim]Restart Claude Code for changes to take effect.[/dim]")
@@ -1017,34 +1018,34 @@ def mcp_uninstall(force):
     """Remove Sage MCP server from Claude Code."""
     import json
     from pathlib import Path
-    
+
     if not force:
         if not click.confirm("Remove Sage MCP server from Claude Code?"):
             console.print("Cancelled.")
             return
-    
+
     claude_json = Path.home() / ".claude.json"
-    
+
     if not claude_json.exists():
         console.print("[yellow]~/.claude.json not found[/yellow]")
         return
-    
+
     try:
         config = json.loads(claude_json.read_text())
         if "mcpServers" in config and "sage" in config["mcpServers"]:
             del config["mcpServers"]["sage"]
-            
+
             # Clean up empty mcpServers
             if not config["mcpServers"]:
                 del config["mcpServers"]
-            
+
             claude_json.write_text(json.dumps(config, indent=2))
             console.print(f"[green]✓[/green] Removed sage MCP server from {claude_json}")
         else:
             console.print("[yellow]Sage MCP server not found in config[/yellow]")
     except json.JSONDecodeError:
         console.print("[red]Could not parse ~/.claude.json[/red]")
-    
+
     console.print()
     console.print("[bold]Sage MCP server uninstalled.[/bold]")
 
@@ -1054,26 +1055,26 @@ def mcp_status():
     """Show MCP server installation status."""
     import json
     from pathlib import Path
-    
+
     claude_json = Path.home() / ".claude.json"
-    
+
     console.print("[bold]MCP Server Configuration:[/bold]")
-    
+
     if not claude_json.exists():
         console.print(f"  [red]✗[/red] {claude_json} not found")
         return
-    
+
     try:
         config = json.loads(claude_json.read_text())
         mcp_servers = config.get("mcpServers", {})
-        
+
         if "sage" in mcp_servers:
             sage_config = mcp_servers["sage"]
-            console.print(f"  [green]✓[/green] Sage MCP server configured")
+            console.print("  [green]✓[/green] Sage MCP server configured")
             console.print(f"    Command: {sage_config.get('command', 'N/A')}")
             console.print(f"    Args: {' '.join(sage_config.get('args', []))}")
         else:
-            console.print(f"  [red]✗[/red] Sage MCP server not configured")
+            console.print("  [red]✗[/red] Sage MCP server not configured")
             console.print("  [dim]Run 'sage mcp install' to add it[/dim]")
     except json.JSONDecodeError:
         console.print(f"  [red]✗[/red] Could not parse {claude_json}")
