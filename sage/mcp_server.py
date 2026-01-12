@@ -197,9 +197,13 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
     Returns:
         Formatted recalled knowledge or message if none found
     """
+    from sage import embeddings
+
     result = recall_knowledge(query, skill)
 
     if result.count == 0:
+        if not embeddings.is_available():
+            return "No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*"
         return "No relevant knowledge found."
 
     return format_recalled_context(result)

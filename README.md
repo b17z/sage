@@ -52,6 +52,7 @@ Install embeddings support for smarter knowledge matching:
 ```bash
 pip install claude-sage[embeddings]  # ~2GB for model + torch
 ```
+- **Model:** `all-MiniLM-L6-v2` (~80MB, runs locally on CPU)
 - **70% semantic + 30% keyword** — Combined scoring for best of both worlds
 - **Checkpoint deduplication** — Skips saving when thesis is 90%+ similar to recent checkpoint
 - **Graceful fallback** — Works without embeddings, just uses keyword matching
