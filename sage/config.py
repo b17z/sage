@@ -153,3 +153,44 @@ def get_sage_skill_path(skill_name: str) -> Path:
     """Get the path to a skill's Sage metadata directory in ~/.sage/skills/."""
     safe_name = _sanitize_name(skill_name)
     return SAGE_DIR / "skills" / safe_name
+
+
+def detect_project_root(start_path: Path | None = None) -> Path | None:
+    """Detect project root by traversing up from start_path looking for markers.
+
+    Looks for (in order of priority):
+    1. A .sage directory (explicit Sage project)
+    2. A .git directory (git repository root)
+
+    Args:
+        start_path: Starting path for traversal. Defaults to cwd.
+
+    Returns:
+        Project root path, or None if no project markers found.
+    """
+    if start_path is None:
+        start_path = Path.cwd()
+
+    current = start_path.resolve()
+    home = Path.home()
+
+    while current != current.parent:
+        # Stop traversal at or above home directory
+        if current == home or home not in current.parents:
+            # Check current before stopping
+            if (current / ".sage").is_dir() or (current / ".git").exists():
+                return current
+            if current == home or len(current.parts) <= len(home.parts):
+                break
+
+        # Check for .sage first (explicit Sage project)
+        if (current / ".sage").is_dir():
+            return current
+
+        # Check for .git (git repository)
+        if (current / ".git").exists():
+            return current
+
+        current = current.parent
+
+    return None

@@ -18,6 +18,7 @@ Or via Claude Code MCP config:
 
 from mcp.server.fastmcp import FastMCP
 
+from sage.config import detect_project_root
 from sage.checkpoint import (
     create_checkpoint_from_dict,
     format_checkpoint_for_context,
@@ -36,6 +37,9 @@ from sage.knowledge import (
 
 # Initialize MCP server
 mcp = FastMCP("sage")
+
+# Detect project root at startup for project-local checkpoints
+_PROJECT_ROOT = detect_project_root()
 
 
 # =============================================================================
@@ -89,7 +93,7 @@ def sage_save_checkpoint(
     }
 
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger)
-    path = save_checkpoint(checkpoint)
+    path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     return f"✓ Checkpoint saved: {checkpoint.id}\nPath: {path}"
 
@@ -105,7 +109,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     Returns:
         Formatted list of checkpoints with ID, thesis, confidence, and date
     """
-    checkpoints = list_checkpoints(skill=skill, limit=limit)
+    checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
 
     if not checkpoints:
         return "No checkpoints found."
@@ -135,7 +139,7 @@ def sage_load_checkpoint(checkpoint_id: str) -> str:
     Returns:
         Formatted checkpoint context ready for injection
     """
-    checkpoint = load_checkpoint(checkpoint_id)
+    checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
 
     if not checkpoint:
         return f"Checkpoint not found: {checkpoint_id}"
@@ -325,7 +329,7 @@ def sage_autosave_check(
         return "⏸ Not saving: no clear research question. What are we trying to answer?"
 
     # Check for duplicate (semantic similarity to recent checkpoints)
-    dedup_result = is_duplicate_checkpoint(current_thesis)
+    dedup_result = is_duplicate_checkpoint(current_thesis, project_path=_PROJECT_ROOT)
     if dedup_result.is_duplicate:
         return (
             f"⏸ Not saving: semantically similar to recent checkpoint "
@@ -346,7 +350,7 @@ def sage_autosave_check(
     }
 
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
-    save_checkpoint(checkpoint)
+    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis
     thesis_preview = thesis_preview.replace("\n", " ")
