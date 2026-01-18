@@ -317,14 +317,17 @@ def save_embeddings(path: Path, store: EmbeddingStore) -> Result[None, SageError
     
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Save embeddings without pickle (security)
         np.save(path, store.embeddings)
-        
+        # Restrict permissions - embeddings may reveal model behavior
+        path.chmod(0o600)
+
         # Save IDs as JSON (safe, no code execution)
         with open(ids_path, "w") as f:
             json.dump(store.ids, f)
-        
+        ids_path.chmod(0o600)
+
         return ok(None)
     except Exception as e:
         return err(

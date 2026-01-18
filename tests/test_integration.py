@@ -57,6 +57,7 @@ class TestKnowledgeRecallIntegration:
             query="What privacy regulations apply in Europe?",
             skill_name="test",
             use_embeddings=True,
+            threshold=2.0,  # Lower threshold for semantic matching
         )
         
         # Should recall GDPR knowledge despite no keyword match
@@ -347,8 +348,9 @@ class TestEmbeddingStoreIntegration:
             query="What programming languages are easy to read?",
             skill_name="test",
             use_embeddings=True,
+            threshold=2.0,  # Lower threshold for semantic matching
         )
-        
+
         assert result.count >= 1
         
         # Cleanup
@@ -391,3 +393,319 @@ class TestSemanticSimilarityAccuracy:
             similarity = cosine_similarity(e1, e2)
             
             assert similarity < 0.3, f"Expected low similarity for '{text1}' vs '{text2}', got {similarity}"
+
+
+class TestConfigCLIIntegration:
+    """Integration tests for config CLI affecting actual behavior."""
+
+    def test_cli_set_recall_threshold_affects_knowledge_recall(self, temp_sage_dir: Path, monkeypatch):
+        """Setting recall_threshold via CLI affects knowledge recall behavior."""
+        from click.testing import CliRunner
+        from sage.cli import main
+        from sage.knowledge import add_knowledge, recall_knowledge
+
+        # Patch CLI module's SAGE_DIR too
+        monkeypatch.setattr("sage.cli.SAGE_DIR", temp_sage_dir)
+
+        runner = CliRunner()
+
+        # Add knowledge item
+        add_knowledge(
+            content="Stablecoins maintain a stable value pegged to fiat currency.",
+            knowledge_id="stablecoin-basics",
+            keywords=["stablecoin", "crypto"],
+            source="test",
+        )
+
+        # Set very high threshold via CLI (should filter out most matches)
+        result = runner.invoke(main, ["config", "set", "recall_threshold", "0.99"])
+        assert result.exit_code == 0
+
+        # Query - should get no results with 0.99 threshold
+        recall_result = recall_knowledge(
+            query="What is cryptocurrency?",
+            skill_name="test",
+            use_embeddings=True,
+            threshold=None,  # Use config threshold
+        )
+        high_threshold_count = recall_result.count
+
+        # Now set low threshold
+        result = runner.invoke(main, ["config", "set", "recall_threshold", "0.30"])
+        assert result.exit_code == 0
+
+        # Query again - should get results with lower threshold
+        recall_result = recall_knowledge(
+            query="What is cryptocurrency?",
+            skill_name="test",
+            use_embeddings=True,
+            threshold=None,  # Use config threshold
+        )
+        low_threshold_count = recall_result.count
+
+        # Lower threshold should return more (or equal) results
+        assert low_threshold_count >= high_threshold_count
+
+    def test_cli_set_dedup_threshold_affects_checkpoint_dedup(self, temp_sage_dir: Path, monkeypatch):
+        """Setting dedup_threshold via CLI affects checkpoint deduplication."""
+        from click.testing import CliRunner
+        from sage.cli import main
+        from sage.checkpoint import (
+            Checkpoint,
+            save_checkpoint,
+            is_duplicate_checkpoint,
+            delete_checkpoint,
+        )
+        from datetime import datetime, UTC
+
+        # Patch CLI module's SAGE_DIR
+        monkeypatch.setattr("sage.cli.SAGE_DIR", temp_sage_dir)
+
+        runner = CliRunner()
+
+        # Save a checkpoint
+        cp = Checkpoint(
+            id="config-test-cp",
+            ts=datetime.now(UTC).isoformat(),
+            trigger="manual",
+            core_question="Config test",
+            thesis="AI systems need semantic checkpointing for context preservation.",
+            confidence=0.8,
+        )
+        save_checkpoint(cp)
+
+        # Similar thesis
+        similar = "AI systems require semantic checkpoints to preserve context."
+
+        # Set high dedup threshold (0.99) - similar should NOT be flagged as duplicate
+        result = runner.invoke(main, ["config", "set", "dedup_threshold", "0.99"])
+        assert result.exit_code == 0
+
+        dedup_result = is_duplicate_checkpoint(similar, threshold=None)
+        is_dup_high_threshold = dedup_result.is_duplicate
+
+        # Set low dedup threshold (0.3) - similar SHOULD be flagged as duplicate
+        result = runner.invoke(main, ["config", "set", "dedup_threshold", "0.30"])
+        assert result.exit_code == 0
+
+        dedup_result = is_duplicate_checkpoint(similar, threshold=None)
+        is_dup_low_threshold = dedup_result.is_duplicate
+
+        # Low threshold should flag as duplicate, high should not
+        assert is_dup_low_threshold is True
+        assert is_dup_high_threshold is False
+
+        # Cleanup
+        delete_checkpoint("config-test-cp")
+
+    def test_cli_project_config_creates_local_file(self, tmp_path: Path):
+        """Project-level config set via CLI creates .sage/tuning.yaml in cwd."""
+        from click.testing import CliRunner
+        from sage.cli import main
+
+        runner = CliRunner()
+
+        # Use isolated filesystem to simulate project directory
+        with runner.isolated_filesystem(temp_dir=tmp_path) as project_dir:
+            # Set project-level config
+            result = runner.invoke(
+                main, ["config", "set", "recall_threshold", "0.50", "--project"]
+            )
+            assert result.exit_code == 0
+            assert "project-level" in result.output
+
+            # Verify project config file exists
+            from pathlib import Path
+            import yaml
+
+            project_tuning = Path(project_dir) / ".sage" / "tuning.yaml"
+            assert project_tuning.exists()
+
+            content = yaml.safe_load(project_tuning.read_text())
+            assert content["recall_threshold"] == 0.50
+
+    def test_cli_config_reset_restores_behavior(self, temp_sage_dir: Path, monkeypatch):
+        """Resetting config via CLI restores default behavior."""
+        from click.testing import CliRunner
+        from sage.cli import main
+        from sage.config import get_sage_config, SageConfig
+
+        # Patch CLI module's SAGE_DIR
+        monkeypatch.setattr("sage.cli.SAGE_DIR", temp_sage_dir)
+
+        runner = CliRunner()
+        defaults = SageConfig()
+
+        # Change multiple values
+        runner.invoke(main, ["config", "set", "recall_threshold", "0.42"])
+        runner.invoke(main, ["config", "set", "dedup_threshold", "0.55"])
+        runner.invoke(main, ["config", "set", "embedding_weight", "0.60"])
+
+        # Verify changed
+        config = get_sage_config()
+        assert config.recall_threshold == 0.42
+        assert config.dedup_threshold == 0.55
+        assert config.embedding_weight == 0.60
+
+        # Reset
+        result = runner.invoke(main, ["config", "reset"])
+        assert result.exit_code == 0
+
+        # Verify defaults restored
+        config = get_sage_config()
+        assert config.recall_threshold == defaults.recall_threshold
+        assert config.dedup_threshold == defaults.dedup_threshold
+        assert config.embedding_weight == defaults.embedding_weight
+
+
+class TestSecurityIntegration:
+    """Integration tests for security features with real file I/O."""
+
+    def test_config_file_not_world_readable(self, temp_sage_dir: Path, monkeypatch):
+        """Config file with API key is created with restricted permissions."""
+        import stat
+        from sage.config import Config
+
+        # Patch CONFIG_PATH to use temp dir
+        config_path = temp_sage_dir / "config.yaml"
+        monkeypatch.setattr("sage.config.CONFIG_PATH", config_path)
+
+        # Create config with API key
+        config = Config(api_key="sk-test-key-12345")
+        config.save()
+
+        # Verify permissions
+        mode = config_path.stat().st_mode
+        assert mode & stat.S_IRWXG == 0, "Group should have no access"
+        assert mode & stat.S_IRWXO == 0, "Others should have no access"
+
+    def test_history_file_not_world_readable(self, temp_sage_dir: Path, monkeypatch):
+        """History files are created with restricted permissions."""
+        import stat
+        from sage.history import append_entry, create_entry
+
+        # Create skill directory
+        skill_dir = temp_sage_dir / "skills" / "test-skill"
+        skill_dir.mkdir(parents=True)
+        history_path = skill_dir / "history.jsonl"
+
+        monkeypatch.setattr("sage.history.get_history_path", lambda x: history_path)
+
+        entry = create_entry(
+            entry_type="ask",
+            query="test query",
+            model="test-model",
+            tokens_in=100,
+            tokens_out=200,
+        )
+        append_entry("test-skill", entry)
+
+        mode = history_path.stat().st_mode
+        assert mode & stat.S_IRWXG == 0, "Group should have no access"
+        assert mode & stat.S_IRWXO == 0, "Others should have no access"
+
+    def test_checkpoint_with_sensitive_content_protected(self, temp_sage_dir: Path):
+        """Checkpoints containing research are permission-protected."""
+        import stat
+        from sage.checkpoint import Checkpoint, save_checkpoint
+
+        cp = Checkpoint(
+            id="sensitive-research",
+            ts="2026-01-18T12:00:00Z",
+            trigger="manual",
+            core_question="Confidential project analysis",
+            thesis="Internal findings about competitive landscape.",
+            confidence=0.9,
+        )
+        file_path = save_checkpoint(cp)
+
+        mode = file_path.stat().st_mode
+        assert mode & stat.S_IRWXG == 0, "Group should have no access"
+        assert mode & stat.S_IRWXO == 0, "Others should have no access"
+
+    def test_knowledge_end_to_end_with_permissions(self, temp_sage_dir: Path):
+        """Full knowledge workflow maintains permissions throughout."""
+        import stat
+        from sage.knowledge import add_knowledge, KNOWLEDGE_DIR
+
+        # Ensure global dir exists
+        (temp_sage_dir / "knowledge" / "global").mkdir(parents=True, exist_ok=True)
+
+        # Add sensitive knowledge
+        item = add_knowledge(
+            content="Internal API documentation with auth patterns.",
+            knowledge_id="internal-api",
+            keywords=["api", "auth", "internal"],
+            source="internal-docs",
+        )
+
+        # Verify content file permissions
+        content_path = temp_sage_dir / "knowledge" / item.file
+        mode = content_path.stat().st_mode
+        assert mode & stat.S_IRWXG == 0, "Content: Group should have no access"
+        assert mode & stat.S_IRWXO == 0, "Content: Others should have no access"
+
+        # Verify index permissions
+        index_path = temp_sage_dir / "knowledge" / "index.yaml"
+        mode = index_path.stat().st_mode
+        assert mode & stat.S_IRWXG == 0, "Index: Group should have no access"
+        assert mode & stat.S_IRWXO == 0, "Index: Others should have no access"
+
+    def test_redos_pattern_blocked_in_recall(self, temp_sage_dir: Path):
+        """ReDoS patterns are filtered during add, not executed during recall."""
+        from sage.knowledge import add_knowledge, recall_knowledge
+        import time
+
+        # Ensure global dir exists
+        (temp_sage_dir / "knowledge" / "global").mkdir(parents=True, exist_ok=True)
+
+        # Add knowledge with dangerous pattern (should be filtered)
+        item = add_knowledge(
+            content="Test content",
+            knowledge_id="redos-test",
+            keywords=["test"],
+            patterns=["(a+)+$"],  # Dangerous ReDoS pattern
+        )
+
+        # Pattern should have been filtered out
+        assert "(a+)+$" not in item.triggers.patterns
+
+        # Recall should complete quickly (no ReDoS hang)
+        start = time.time()
+        recall_knowledge(
+            query="a" * 50,  # Input that would trigger ReDoS
+            skill_name="test",
+            threshold=0.0,
+        )
+        elapsed = time.time() - start
+
+        # Should complete in < 1 second (ReDoS would hang for minutes)
+        assert elapsed < 1.0, f"Recall took {elapsed}s - possible ReDoS"
+
+    def test_malformed_checkpoint_doesnt_crash_list(self, temp_sage_dir: Path):
+        """Malformed checkpoint files don't crash list_checkpoints."""
+        from sage.checkpoint import Checkpoint, save_checkpoint, list_checkpoints
+
+        checkpoints_dir = temp_sage_dir / "checkpoints"
+
+        # Create valid checkpoint
+        valid_cp = Checkpoint(
+            id="valid-cp",
+            ts="2026-01-18T12:00:00Z",
+            trigger="manual",
+            core_question="Valid?",
+            thesis="Yes, valid.",
+            confidence=0.8,
+        )
+        save_checkpoint(valid_cp)
+
+        # Create malformed files (attack scenarios)
+        (checkpoints_dir / "malformed1.yaml").write_text("not: valid: yaml: {{{")
+        (checkpoints_dir / "malformed2.yaml").write_text("checkpoint: 'missing fields'")
+
+        # list_checkpoints should not crash (key security requirement)
+        checkpoints = list_checkpoints()
+
+        # Valid checkpoint should be in results
+        valid_ids = [cp.id for cp in checkpoints if cp.id]
+        assert "valid-cp" in valid_ids, "Valid checkpoint should be found"

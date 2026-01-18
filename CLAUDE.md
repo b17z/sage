@@ -2,6 +2,9 @@
 
 Research orchestration CLI that manages "skills" - specialized AI research personas powered by Claude. Implements semantic checkpointing for preserving context across conversations.
 
+**Current version:** v1.x → v2.0 upgrade
+**Test count:** 206 tests (maintain or increase)
+
 ## Quick Reference
 
 ```bash
@@ -21,15 +24,18 @@ sage knowledge rm <id>       # Remove knowledge item
 ## Architecture
 
 ```
-~/.sage/                     # Sage metadata and state
-├── config.yaml
-├── shared_memory.md         # Cross-skill insights
-├── knowledge/               # Knowledge recall system
-│   ├── index.yaml           # Registry with triggers
-│   ├── global/              # Available to all skills
-│   └── skills/<name>/       # Skill-scoped knowledge
+~/.sage/                     # User-level (NEVER in repos - contains secrets)
+├── config.yaml              # API key, model preferences
+├── tuning.yaml              # User-level threshold defaults
+├── embeddings/              # Binary embedding caches
 └── skills/<name>/
     └── history.jsonl        # Interaction log
+
+<project>/.sage/             # Project-level (shareable via git)
+├── checkpoints/             # Research checkpoints (team context)
+├── knowledge/               # Knowledge base (team insights)
+├── tuning.yaml              # Project-specific thresholds
+└── local/                   # GITIGNORED - project-local overrides
 
 ~/.claude/skills/            # Skill definitions (Agent Skills standard)
 └── <name>/
@@ -47,7 +53,21 @@ sage knowledge rm <id>       # Remove knowledge item
 | `sage/history.py` | JSONL logging, usage analytics |
 | `sage/errors.py` | Result types (`Ok`/`Err`), error constructors |
 | `sage/config.py` | Config management, path constants |
-| `sage/knowledge.py` | Knowledge recall system |
+| `sage/knowledge.py` | Knowledge storage, retrieval, hybrid scoring |
+| `sage/embeddings.py` | Embedding model, similarity functions |
+| `sage/checkpoint.py` | Checkpoint schema, save/load |
+| `sage/mcp_server.py` | MCP tools for Claude Code |
+| `sage/triggers/` | v2.0: structural, linguistic, combiner |
+
+## Documentation Hierarchy
+
+| Doc | When to Load | Size |
+|-----|--------------|------|
+| `sage-code-spec-v2.md` | **Always** — implementation guide | ~15KB |
+| `sage-memory-framework-v2.5.md` | Design rationale questions only | ~65KB |
+| `ARCHITECTURE.md` | System overview needed | TBD |
+
+**Default:** Load only `sage-code-spec-v2.md`. It has everything needed for implementation.
 
 ## Patterns
 
@@ -76,12 +96,79 @@ black sage/                 # Format
 pytest                      # Run tests
 ```
 
+**Testing commands:**
+```bash
+pytest tests/ -v                    # Run all tests
+pytest tests/test_embeddings.py -v  # Run specific test file
+pytest tests/ -k "test_config"      # Run matching tests
+pytest tests/ --cov=sage            # Coverage report
+pytest tests/ --cov=sage --cov-report=term-missing
+```
+
+**Manual testing:**
+```bash
+sage status                         # Check Sage state
+sage knowledge match "query"        # Test what would be recalled
+sage config list                    # Show config
+sage config set recall_threshold 0.65
+sage config set recall_threshold 0.60 --project  # Project-level
+sage config reset                   # Reset tuning to defaults
+sage admin rebuild-embeddings       # After model swap
+```
+
+## Core Principles
+
+1. **Functional over OOP** — Pure functions, immutable data, errors as values
+2. **Tests are mandatory** — Every feature needs unit + integration tests
+3. **Config is user-tunable** — Thresholds should be configurable, not hardcoded
+4. **Graceful degradation** — Features should work without optional dependencies
+
 ## Code Style
 
 - Python 3.11+ (`match` statements, type parameter syntax)
 - Frozen dataclasses for immutability
 - 100 char line length
 - Functional: pure functions, avoid mutable state
+
+## Testing Patterns
+
+**Every feature implementation MUST include:**
+
+```python
+# Unit test — isolated function
+def test_function_does_expected_thing():
+    result = function_under_test(input)
+    assert result == expected
+
+# Integration test — full workflow
+def test_feature_end_to_end():
+    # Setup
+    session = create_test_session()
+
+    # Action
+    session.do_thing()
+
+    # Assert
+    assert session.state == expected_state
+
+# Edge case — boundaries and errors
+def test_handles_empty_input():
+    result = function_under_test([])
+    assert result == sensible_default  # No crash
+```
+
+## v2.0 Implementation Order
+
+1. ✅ **Config system** (`sage/config.py`) — Foundation for tunable thresholds
+2. ✅ **CLI config commands** — `sage config list/set/reset` subcommands
+3. ✅ **Storage structure** — Secrets vs shareable split, security hardening
+4. **Embedding upgrade** — Swap model, add query prefix
+5. **Knowledge debug** — Uses config, shows tuning tips
+6. **Structural detection** — Uses config thresholds
+7. **Trigger combiner** — Uses structural + linguistic
+8. **Checkpoint key_evidence** — Schema extension
+
+Each step: implement → test → commit.
 
 ## Checkpoint Methodology (docs/checkpoint.md)
 
@@ -139,3 +226,13 @@ Hook detection triggers:
 - **Chat Mode**: Multi-turn REPL with `/checkpoint`, `/restore` commands
 - **Checkpoint Restore**: Resume from saved checkpoints
 - **Checkpoint Branching**: Try different approaches from same point
+
+---
+
+## Don't Forget
+
+- [ ] Run tests before AND after changes
+- [ ] New features need tests (unit + integration)
+- [ ] Update test count in this file when adding tests
+- [ ] Config values should come from `get_config()`, not hardcoded
+- [ ] Structural triggers INITIATE, linguistic triggers CONFIRM

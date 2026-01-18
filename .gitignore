@@ -51,6 +51,9 @@ pnpm-debug.log*
 .env.test.local
 .env.production.local
 
+# Sage - project .sage/ is shareable, .sage/local/ is not
+.sage/local/
+
 # Private keys & certificates
 *.pem
 *.key

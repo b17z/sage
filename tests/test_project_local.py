@@ -201,3 +201,217 @@ class TestProjectLocalCheckpoints:
             global_list = list_checkpoints(project_path=None)
         assert len(global_list) == 1
         assert global_list[0].thesis == "Global checkpoint"
+
+
+class TestMCPProjectIntegration:
+    """Integration tests for MCP tools with project-local checkpoints."""
+
+    @pytest.fixture
+    def project_with_sage(self, tmp_path: Path):
+        """Create a project with .sage directory."""
+        project = tmp_path / "mcp-test-project"
+        project.mkdir()
+        sage_dir = project / ".sage"
+        sage_dir.mkdir()
+        (sage_dir / "checkpoints").mkdir()
+        return project
+
+    @pytest.fixture
+    def global_sage_dir(self, tmp_path: Path):
+        """Create a global .sage directory."""
+        global_dir = tmp_path / "global-sage"
+        global_dir.mkdir()
+        (global_dir / "checkpoints").mkdir()
+        return global_dir
+
+    def test_mcp_save_checkpoint_uses_project_root(self, project_with_sage: Path):
+        """sage_save_checkpoint() saves to project-local when _PROJECT_ROOT is set."""
+        from sage import mcp_server
+
+        # Patch the module-level _PROJECT_ROOT
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            result = mcp_server.sage_save_checkpoint(
+                core_question="MCP integration test question",
+                thesis="MCP saves to project-local directory",
+                confidence=0.8,
+                trigger="manual",
+            )
+
+        assert "✓ Checkpoint saved:" in result
+        assert str(project_with_sage) in result
+
+        # Verify file exists in project-local
+        checkpoints_dir = project_with_sage / ".sage" / "checkpoints"
+        checkpoint_files = list(checkpoints_dir.glob("*.md"))
+        assert len(checkpoint_files) == 1
+
+    def test_mcp_list_checkpoints_uses_project_root(self, project_with_sage: Path):
+        """sage_list_checkpoints() lists from project-local when _PROJECT_ROOT is set."""
+        from sage import mcp_server
+
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            # Save a checkpoint first
+            mcp_server.sage_save_checkpoint(
+                core_question="List test",
+                thesis="Checkpoint for listing",
+                confidence=0.7,
+                trigger="synthesis",
+            )
+
+            # List should find it
+            result = mcp_server.sage_list_checkpoints(limit=10)
+
+        assert "Found 1 checkpoint(s)" in result
+        assert "Checkpoint for listing" in result
+
+    def test_mcp_load_checkpoint_uses_project_root(self, project_with_sage: Path):
+        """sage_load_checkpoint() loads from project-local when _PROJECT_ROOT is set."""
+        from sage import mcp_server
+
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            # Save a checkpoint
+            save_result = mcp_server.sage_save_checkpoint(
+                core_question="Load test question",
+                thesis="Checkpoint for loading test",
+                confidence=0.85,
+                trigger="manual",
+            )
+
+            # Extract checkpoint ID from result
+            checkpoint_id = save_result.split("Checkpoint saved: ")[1].split("\n")[0]
+
+            # Load it back
+            load_result = mcp_server.sage_load_checkpoint(checkpoint_id)
+
+        assert "Load test question" in load_result
+        assert "Checkpoint for loading test" in load_result
+
+    def test_mcp_autosave_check_uses_project_root(self, project_with_sage: Path):
+        """sage_autosave_check() saves to project-local when _PROJECT_ROOT is set."""
+        from sage import mcp_server
+
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            result = mcp_server.sage_autosave_check(
+                trigger_event="synthesis",
+                core_question="Autosave integration test",
+                current_thesis="Testing autosave with project-local storage",
+                confidence=0.75,
+            )
+
+        assert "📍 Autosaved:" in result
+
+        # Verify file exists in project-local
+        checkpoints_dir = project_with_sage / ".sage" / "checkpoints"
+        checkpoint_files = list(checkpoints_dir.glob("*.md"))
+        assert len(checkpoint_files) == 1
+
+    def test_mcp_deduplication_is_project_scoped(
+        self, project_with_sage: Path, global_sage_dir: Path
+    ):
+        """Deduplication only checks within the same project scope."""
+        from sage import mcp_server
+
+        # Save checkpoint to global
+        with (
+            patch.object(mcp_server, "_PROJECT_ROOT", None),
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+        ):
+            mcp_server.sage_save_checkpoint(
+                core_question="Global question",
+                thesis="This thesis exists globally",
+                confidence=0.8,
+                trigger="manual",
+            )
+
+        # Same thesis should save to project-local (different scope = not duplicate)
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            result = mcp_server.sage_autosave_check(
+                trigger_event="synthesis",
+                core_question="Project question",
+                current_thesis="This thesis exists globally",  # Same thesis
+                confidence=0.8,
+            )
+
+        # Should save, not be flagged as duplicate
+        assert "📍 Autosaved:" in result
+
+    def test_mcp_deduplication_within_project(self, project_with_sage: Path):
+        """Deduplication detects duplicates within the same project."""
+        from sage import mcp_server
+
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            # First save
+            mcp_server.sage_save_checkpoint(
+                core_question="Dedup test",
+                thesis="This is a unique thesis for deduplication testing",
+                confidence=0.8,
+                trigger="manual",
+            )
+
+            # Try to save very similar thesis
+            result = mcp_server.sage_autosave_check(
+                trigger_event="synthesis",
+                core_question="Dedup test",
+                current_thesis="This is a unique thesis for deduplication testing",
+                confidence=0.8,
+            )
+
+        # Should be flagged as duplicate
+        assert "⏸ Not saving: semantically similar" in result
+
+    def test_mcp_project_and_global_isolation(
+        self, project_with_sage: Path, global_sage_dir: Path
+    ):
+        """Project-local and global checkpoints are fully isolated through MCP."""
+        from sage import mcp_server
+
+        # Save to project-local
+        with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
+            mcp_server.sage_save_checkpoint(
+                core_question="Project question",
+                thesis="Project-local checkpoint via MCP",
+                confidence=0.8,
+                trigger="manual",
+            )
+            project_list = mcp_server.sage_list_checkpoints()
+
+        # Save to global
+        with (
+            patch.object(mcp_server, "_PROJECT_ROOT", None),
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+        ):
+            mcp_server.sage_save_checkpoint(
+                core_question="Global question",
+                thesis="Global checkpoint via MCP",
+                confidence=0.8,
+                trigger="manual",
+            )
+            global_list = mcp_server.sage_list_checkpoints()
+
+        # Verify isolation
+        assert "Project-local checkpoint via MCP" in project_list
+        assert "Global checkpoint via MCP" not in project_list
+
+        assert "Global checkpoint via MCP" in global_list
+        assert "Project-local checkpoint via MCP" not in global_list
+
+    def test_mcp_with_no_project_root_uses_global(self, global_sage_dir: Path):
+        """When _PROJECT_ROOT is None, MCP tools use global directory."""
+        from sage import mcp_server
+
+        with (
+            patch.object(mcp_server, "_PROJECT_ROOT", None),
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+        ):
+            result = mcp_server.sage_save_checkpoint(
+                core_question="Fallback test",
+                thesis="Should save to global when no project",
+                confidence=0.7,
+                trigger="manual",
+            )
+
+        assert "✓ Checkpoint saved:" in result
+
+        # Verify file exists in global
+        checkpoint_files = list((global_sage_dir / "checkpoints").glob("*.md"))
+        assert len(checkpoint_files) == 1

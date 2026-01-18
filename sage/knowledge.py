@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from sage.config import SAGE_DIR
+from sage.config import SAGE_DIR, get_sage_config
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +334,8 @@ def save_index(items: list[KnowledgeItem]) -> None:
 
     with open(KNOWLEDGE_INDEX, "w") as f:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+    # Restrict permissions - knowledge index may contain sensitive metadata
+    KNOWLEDGE_INDEX.chmod(0o600)
 
 
 def _is_safe_path(base: Path, target: Path) -> bool:
@@ -343,6 +345,17 @@ def _is_safe_path(base: Path, target: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _strip_frontmatter(content: str) -> str:
+    """Strip YAML frontmatter from markdown content."""
+    if not content.startswith("---"):
+        return content
+    # Find end of frontmatter
+    end_idx = content.find("---", 3)
+    if end_idx == -1:
+        return content
+    return content[end_idx + 3:].strip()
 
 
 def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
@@ -356,7 +369,10 @@ def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
     if not file_path.exists():
         return item
 
-    content = file_path.read_text()
+    raw_content = file_path.read_text()
+    # Strip frontmatter for display/injection
+    content = _strip_frontmatter(raw_content)
+
     # Return new item with content loaded (immutable dataclass)
     return KnowledgeItem(
         id=item.id,
@@ -414,11 +430,6 @@ def score_item_keyword(item: KnowledgeItem, query: str, skill_name: str) -> int:
 score_item = score_item_keyword
 
 
-# Scoring weights for combined scoring
-EMBEDDING_WEIGHT = 0.7  # 70% embedding similarity
-KEYWORD_WEIGHT = 0.3  # 30% keyword matching
-
-
 def score_item_combined(
     item: KnowledgeItem,
     query: str,
@@ -428,9 +439,9 @@ def score_item_combined(
     """
     Score a knowledge item using combined embedding and keyword scoring.
 
-    When embeddings are available, uses a weighted combination:
-    - 70% embedding similarity (semantic)
-    - 30% keyword matching (lexical)
+    When embeddings are available, uses a weighted combination from SageConfig:
+    - embedding_weight (default 70%) for semantic similarity
+    - keyword_weight (default 30%) for lexical matching
 
     Falls back to keyword-only scoring when embeddings unavailable.
 
@@ -458,11 +469,14 @@ def score_item_combined(
     if embedding_similarity is None:
         return float(keyword_score)
 
+    # Get weights from config
+    config = get_sage_config()
+
     # Normalize keyword score to 0-1 range (assuming max ~9)
     keyword_normalized = min(keyword_score / 9.0, 1.0)
 
     # Combined weighted score
-    combined = EMBEDDING_WEIGHT * embedding_similarity + KEYWORD_WEIGHT * keyword_normalized
+    combined = config.embedding_weight * embedding_similarity + config.keyword_weight * keyword_normalized
 
     # Scale back to 0-10 for threshold compatibility
     return combined * 10.0
@@ -471,7 +485,7 @@ def score_item_combined(
 def recall_knowledge(
     query: str,
     skill_name: str,
-    threshold: float = 2.0,
+    threshold: float | None = None,
     max_items: int = 3,
     max_tokens: int = 2000,
     use_embeddings: bool = True,
@@ -485,7 +499,8 @@ def recall_knowledge(
     Args:
         query: The user's query
         skill_name: Current skill being used
-        threshold: Minimum score to include item (0-10 scale)
+        threshold: Minimum score to include item (0-10 scale). If None, uses
+                   recall_threshold from SageConfig (converted to 0-10 scale).
         max_items: Maximum number of items to recall
         max_tokens: Maximum total tokens to recall
         use_embeddings: Whether to use embedding similarity (if available)
@@ -493,6 +508,12 @@ def recall_knowledge(
     Returns:
         RecallResult with matching items and total tokens
     """
+    # Get threshold from config if not specified
+    if threshold is None:
+        config = get_sage_config()
+        # Config uses 0-1 scale, function uses 0-10 scale
+        threshold = config.recall_threshold * 10.0
+
     items = load_index()
 
     if not items:
@@ -540,6 +561,53 @@ def _sanitize_id(raw_id: str) -> str:
     return sanitized or "unnamed"
 
 
+# Maximum regex pattern length to prevent ReDoS
+MAX_PATTERN_LENGTH = 200
+
+# Patterns that indicate potential ReDoS vulnerability
+# These match common catastrophic backtracking patterns
+DANGEROUS_REGEX_PATTERNS = [
+    r"\([^)]*[+*]\)[+*]",  # (x+)+ or (x*)* - nested quantifiers
+    r"\(\[[^\]]+\][+*]\)[+*]",  # ([a-z]+)+ style nested quantifiers
+]
+
+
+def _validate_regex_pattern(pattern: str) -> str | None:
+    """Validate a regex pattern for safety.
+
+    Returns None if valid, or an error message if invalid/dangerous.
+    """
+    # Length check
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        return f"Pattern too long ({len(pattern)} > {MAX_PATTERN_LENGTH})"
+
+    # Compilation check
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        return f"Invalid regex: {e}"
+
+    # Check for dangerous patterns (potential ReDoS)
+    pattern_lower = pattern.lower()
+    for dangerous in DANGEROUS_REGEX_PATTERNS:
+        if re.search(dangerous, pattern_lower):
+            return "Pattern contains potentially dangerous nested quantifiers"
+
+    return None
+
+
+def _validate_patterns(patterns: list[str]) -> list[str]:
+    """Validate and filter regex patterns, logging warnings for invalid ones."""
+    valid = []
+    for p in patterns:
+        error = _validate_regex_pattern(p)
+        if error:
+            logger.warning(f"Skipping invalid pattern '{p}': {error}")
+        else:
+            valid.append(p)
+    return valid
+
+
 def add_knowledge(
     content: str,
     knowledge_id: str,
@@ -576,10 +644,32 @@ def add_knowledge(
     else:
         file_path = f"global/{safe_id}.md"
 
+    # Build markdown content with frontmatter (Obsidian-compatible)
+    added_date = datetime.now().strftime("%Y-%m-%d")
+    frontmatter = {
+        "id": safe_id,
+        "type": "knowledge",
+        "keywords": keywords,
+        "source": source or None,
+        "added": added_date,
+    }
+    if safe_skill:
+        frontmatter["skill"] = safe_skill
+    # Remove None values for cleaner YAML
+    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+
+    fm_yaml = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    md_content = f"---\n{fm_yaml}---\n\n{content}"
+
     # Write content file
     full_path = KNOWLEDGE_DIR / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_text(content)
+    full_path.write_text(md_content)
+    # Restrict permissions - knowledge content may be sensitive
+    full_path.chmod(0o600)
+
+    # Validate patterns to prevent ReDoS
+    safe_patterns = _validate_patterns(patterns or [])
 
     # Create item (use safe_id for storage, original for display)
     item = KnowledgeItem(
@@ -587,14 +677,14 @@ def add_knowledge(
         file=file_path,
         triggers=KnowledgeTriggers(
             keywords=tuple(keywords),
-            patterns=tuple(patterns or []),
+            patterns=tuple(safe_patterns),
         ),
         scope=KnowledgeScope(
             skills=(safe_skill,) if safe_skill else (),
             always=False,
         ),
         metadata=KnowledgeMetadata(
-            added=datetime.now().strftime("%Y-%m-%d"),
+            added=added_date,
             source=source,
             tokens=len(content) // 4,
         ),
