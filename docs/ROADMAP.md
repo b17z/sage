@@ -128,9 +128,8 @@ Version timeline and planned features.
 | Version | Date | Highlights |
 |---------|------|------------|
 | v0.1 | Jan 2026 | Initial release, basic checkpointing |
-| v0.2 | Jan 2026 | Security fix (pickle vulnerability) |
-| v1.0 | Jan 2026 | Knowledge system, hooks, embeddings |
-| v1.x | Jan 2026 | Project-local, config system, markdown format |
+| v0.2 | Jan 2026 | Semantic embeddings, checkpoint dedup, security fix |
+| v1.0 | Jan 2026 | Config system, CLI subcommands, security hardening, 206 tests |
 
 ---
 

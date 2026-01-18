@@ -1,11 +1,11 @@
 [project]
 name = "claude-sage"
-version = "0.2.0"
+version = "1.0.0"
 description = "Semantic checkpointing for Claude Code"
 readme = "README.md"
 keywords = ["claude", "claude-code", "checkpointing", "memory", "mcp", "ai"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
 ]
 requires-python = ">=3.11"
