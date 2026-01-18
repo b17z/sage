@@ -39,15 +39,13 @@ def main():
 
 @main.command()
 @click.option("--api-key", help="Anthropic API key")
-@click.option("--hooks/--no-hooks", default=None, help="Install Claude Code hooks")
 @click.option("--skill", help="Create first skill with this name")
 @click.option("--description", help="Skill description (requires --skill)")
 @click.option("--non-interactive", is_flag=True, help="Run without prompts")
-def init(api_key, hooks, skill, description, non_interactive):
-    """Initialize Sage (first-time setup)."""
+def init(api_key, skill, description, non_interactive):
+    """Initialize Sage (first-time setup). Use 'sage hooks install' for hooks."""
     result = run_init(
         api_key=api_key,
-        install_hooks=hooks or False,
         skill_name=skill,
         skill_description=description,
         non_interactive=non_interactive,
@@ -449,7 +447,6 @@ def config_list():
         api_display = "*" * 20 + cfg.api_key[-8:]
     console.print(f"  api_key: {api_display}")
     console.print(f"  model: {cfg.model}")
-    console.print(f"  default_depth: {cfg.default_depth}")
     console.print(f"  max_history: {cfg.max_history}")
     console.print(f"  cache_ttl: {cfg.cache_ttl}")
 
@@ -503,7 +500,7 @@ def config_set(key: str, value: str, project: bool):
     tuning = get_sage_config() if not project else SageConfig.load(sage_dir)
 
     # Define which keys belong to which config
-    legacy_keys = {"api_key", "model", "default_depth", "max_history", "cache_ttl"}
+    legacy_keys = {"api_key", "model", "max_history", "cache_ttl"}
     tuning_keys = {f.name for f in SageConfig.__dataclass_fields__.values()}
 
     # Normalize key (allow hyphens)
@@ -515,8 +512,6 @@ def config_set(key: str, value: str, project: bool):
             cfg.api_key = value
         elif key == "model":
             cfg.model = value
-        elif key == "default_depth":
-            cfg.default_depth = value
         elif key == "max_history":
             try:
                 cfg.max_history = int(value)
@@ -562,7 +557,7 @@ def config_set(key: str, value: str, project: bool):
     else:
         console.print(f"[red]Unknown config key: {key}[/red]")
         console.print()
-        console.print("[dim]Runtime keys: api_key, model, default_depth, max_history, cache_ttl[/dim]")
+        console.print("[dim]Runtime keys: api_key, model, max_history, cache_ttl[/dim]")
         console.print("[dim]Tuning keys: recall_threshold, dedup_threshold, embedding_weight, ...[/dim]")
         sys.exit(1)
 

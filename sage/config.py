@@ -48,32 +48,13 @@ REFERENCE_DIR = SAGE_DIR / "reference"
 
 
 @dataclass
-class ResearchDepth:
-    """Configuration for a research depth level."""
-
-    max_searches: int
-    max_loops: int
-
-
-@dataclass
-class ResearchConfig:
-    """Research mode configuration."""
-
-    shallow: ResearchDepth = field(default_factory=lambda: ResearchDepth(max_searches=3, max_loops=1))
-    medium: ResearchDepth = field(default_factory=lambda: ResearchDepth(max_searches=7, max_loops=3))
-    deep: ResearchDepth = field(default_factory=lambda: ResearchDepth(max_searches=15, max_loops=5))
-
-
-@dataclass
 class Config:
     """Sage configuration."""
 
     api_key: str | None = None
     model: str = "claude-sonnet-4-20250514"
-    default_depth: str = "medium"
     max_history: int = 10
     cache_ttl: int = 300
-    research: ResearchConfig = field(default_factory=ResearchConfig)
 
     @classmethod
     def load(cls) -> "Config":
@@ -95,20 +76,11 @@ class Config:
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> "Config":
         """Create config from dictionary."""
-        research_data = data.get("research", {})
-        research = ResearchConfig(
-            shallow=ResearchDepth(**research_data.get("shallow", {"max_searches": 3, "max_loops": 1})),
-            medium=ResearchDepth(**research_data.get("medium", {"max_searches": 7, "max_loops": 3})),
-            deep=ResearchDepth(**research_data.get("deep", {"max_searches": 15, "max_loops": 5})),
-        )
-
         return cls(
             api_key=data.get("api_key"),
             model=data.get("model", "claude-sonnet-4-20250514"),
-            default_depth=data.get("default_depth", "medium"),
             max_history=data.get("max_history", 10),
             cache_ttl=data.get("cache_ttl", 300),
-            research=research,
         )
 
     def save(self) -> None:
@@ -118,41 +90,14 @@ class Config:
         data = {
             "api_key": self.api_key,
             "model": self.model,
-            "default_depth": self.default_depth,
             "max_history": self.max_history,
             "cache_ttl": self.cache_ttl,
-            "research": {
-                "shallow": {
-                    "max_searches": self.research.shallow.max_searches,
-                    "max_loops": self.research.shallow.max_loops,
-                },
-                "medium": {
-                    "max_searches": self.research.medium.max_searches,
-                    "max_loops": self.research.medium.max_loops,
-                },
-                "deep": {
-                    "max_searches": self.research.deep.max_searches,
-                    "max_loops": self.research.deep.max_loops,
-                },
-            },
         }
 
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False)
         # Restrict permissions - config may contain API key
         CONFIG_PATH.chmod(0o600)
-
-    def get_depth_config(self, depth: str) -> ResearchDepth:
-        """Get research configuration for a depth level."""
-        match depth:
-            case "shallow":
-                return self.research.shallow
-            case "medium":
-                return self.research.medium
-            case "deep":
-                return self.research.deep
-            case _:
-                return self.research.medium
 
 
 def ensure_directories() -> None:

@@ -631,3 +631,211 @@ class TestCheckpointSecurity:
         assert mode & stat.S_IRWXU == stat.S_IRUSR | stat.S_IWUSR  # Owner: rw
         assert mode & stat.S_IRWXG == 0  # Group: none
         assert mode & stat.S_IRWXO == 0  # Other: none
+
+
+class TestContextHydration:
+    """Tests for context hydration fields (key_evidence, reasoning_trace)."""
+
+    @pytest.fixture
+    def checkpoint_with_hydration(self):
+        """Create a checkpoint with context hydration fields."""
+        return Checkpoint(
+            id="2026-01-18T12-00-00_hydration-test",
+            ts="2026-01-18T12:00:00+00:00",
+            trigger="synthesis",
+            core_question="What is the best payment processor for crypto?",
+            thesis="Stripe offers the best balance of features and compliance for crypto payments.",
+            confidence=0.75,
+            key_evidence=[
+                "Stripe supports 135+ currencies including USDC",
+                "Stripe Connect enables marketplace payouts",
+                "Competitor analysis: Square lacks international support",
+            ],
+            reasoning_trace=(
+                "Started by evaluating major processors: Stripe, Square, PayPal, Adyen. "
+                "Eliminated PayPal due to crypto policy restrictions. "
+                "Square lacks the international coverage needed. "
+                "Adyen requires higher volume minimums. "
+                "Stripe emerged as the clear winner after considering compliance, "
+                "feature set, and integration complexity."
+            ),
+            open_questions=["What about emerging processors?"],
+        )
+
+    def test_key_evidence_serialized_to_markdown(self, checkpoint_with_hydration):
+        """key_evidence is serialized as bullet list in markdown."""
+        md = _checkpoint_to_markdown(checkpoint_with_hydration)
+
+        assert "## Key Evidence" in md
+        assert "- Stripe supports 135+ currencies including USDC" in md
+        assert "- Stripe Connect enables marketplace payouts" in md
+        assert "- Competitor analysis: Square lacks international support" in md
+
+    def test_reasoning_trace_serialized_to_markdown(self, checkpoint_with_hydration):
+        """reasoning_trace is serialized as paragraph in markdown."""
+        md = _checkpoint_to_markdown(checkpoint_with_hydration)
+
+        assert "## Reasoning Trace" in md
+        assert "Started by evaluating major processors" in md
+        assert "Stripe emerged as the clear winner" in md
+
+    def test_key_evidence_roundtrip(self, checkpoint_with_hydration):
+        """key_evidence survives markdown round-trip."""
+        md = _checkpoint_to_markdown(checkpoint_with_hydration)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert len(parsed.key_evidence) == 3
+        assert "Stripe supports 135+ currencies including USDC" in parsed.key_evidence
+        assert "Stripe Connect enables marketplace payouts" in parsed.key_evidence
+
+    def test_reasoning_trace_roundtrip(self, checkpoint_with_hydration):
+        """reasoning_trace survives markdown round-trip."""
+        md = _checkpoint_to_markdown(checkpoint_with_hydration)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert "Started by evaluating major processors" in parsed.reasoning_trace
+        assert "Stripe emerged as the clear winner" in parsed.reasoning_trace
+
+    def test_empty_hydration_fields_omitted(self):
+        """Empty key_evidence and reasoning_trace are not in markdown."""
+        cp = Checkpoint(
+            id="test-no-hydration",
+            ts="2026-01-18T12:00:00Z",
+            trigger="manual",
+            core_question="Minimal checkpoint",
+            thesis="Simple thesis without hydration fields",
+            confidence=0.5,
+            key_evidence=[],
+            reasoning_trace="",
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "## Key Evidence" not in md
+        assert "## Reasoning Trace" not in md
+
+    def test_empty_hydration_fields_default(self):
+        """Checkpoints without hydration fields get empty defaults."""
+        md = """---
+id: test-legacy
+type: checkpoint
+ts: "2026-01-18T12:00:00Z"
+trigger: manual
+confidence: 0.5
+---
+
+# Legacy question?
+
+## Thesis
+Legacy thesis without new fields.
+"""
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert parsed.key_evidence == []
+        assert parsed.reasoning_trace == ""
+
+    def test_format_checkpoint_includes_key_evidence(self, checkpoint_with_hydration):
+        """format_checkpoint_for_context includes key_evidence."""
+        formatted = format_checkpoint_for_context(checkpoint_with_hydration)
+
+        assert "## Key Evidence" in formatted
+        assert "- Stripe supports 135+ currencies including USDC" in formatted
+
+    def test_format_checkpoint_includes_reasoning_trace(self, checkpoint_with_hydration):
+        """format_checkpoint_for_context includes reasoning_trace."""
+        formatted = format_checkpoint_for_context(checkpoint_with_hydration)
+
+        assert "## Reasoning Trace" in formatted
+        assert "Started by evaluating major processors" in formatted
+
+    def test_create_checkpoint_from_dict_with_hydration(self):
+        """create_checkpoint_from_dict handles hydration fields."""
+        data = {
+            "core_question": "What's the approach?",
+            "thesis": "Use approach A",
+            "confidence": 0.8,
+            "key_evidence": [
+                "Evidence point 1",
+                "Evidence point 2",
+            ],
+            "reasoning_trace": "We compared A and B, then chose A because...",
+        }
+
+        cp = create_checkpoint_from_dict(data, trigger="synthesis")
+
+        assert len(cp.key_evidence) == 2
+        assert "Evidence point 1" in cp.key_evidence
+        assert "We compared A and B" in cp.reasoning_trace
+
+    def test_save_load_preserves_hydration(self, mock_checkpoint_paths, checkpoint_with_hydration):
+        """save_checkpoint and load_checkpoint preserve hydration fields."""
+        save_checkpoint(checkpoint_with_hydration)
+
+        loaded = load_checkpoint(checkpoint_with_hydration.id)
+
+        assert loaded is not None
+        assert len(loaded.key_evidence) == 3
+        assert loaded.reasoning_trace == checkpoint_with_hydration.reasoning_trace
+
+
+class TestDepthMetadata:
+    """Tests for depth metadata fields (message_count, token_estimate)."""
+
+    def test_depth_fields_in_frontmatter(self, mock_checkpoint_paths):
+        """message_count and token_estimate are stored in frontmatter."""
+        cp = Checkpoint(
+            id="2026-01-18T12-00-00_depth-test",
+            ts="2026-01-18T12:00:00Z",
+            trigger="synthesis",
+            core_question="Depth test?",
+            thesis="Testing depth fields",
+            confidence=0.7,
+            message_count=15,
+            token_estimate=5000,
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "message_count: 15" in md
+        assert "token_estimate: 5000" in md
+
+    def test_depth_fields_roundtrip(self, mock_checkpoint_paths):
+        """Depth metadata fields survive markdown round-trip."""
+        cp = Checkpoint(
+            id="2026-01-18T12-00-00_depth-roundtrip",
+            ts="2026-01-18T12:00:00Z",
+            trigger="synthesis",
+            core_question="Depth roundtrip?",
+            thesis="Testing depth roundtrip",
+            confidence=0.7,
+            message_count=20,
+            token_estimate=8000,
+        )
+        md = _checkpoint_to_markdown(cp)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert parsed.message_count == 20
+        assert parsed.token_estimate == 8000
+
+    def test_depth_fields_default_to_zero(self):
+        """Depth metadata fields default to 0 if not present."""
+        md = """---
+id: test-no-depth
+type: checkpoint
+ts: "2026-01-18T12:00:00Z"
+trigger: manual
+confidence: 0.5
+---
+
+# No depth metadata?
+
+## Thesis
+Checkpoint without depth fields.
+"""
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert parsed.message_count == 0
+        assert parsed.token_estimate == 0

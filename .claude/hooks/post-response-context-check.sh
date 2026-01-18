@@ -5,9 +5,9 @@
 # If above threshold, blocks stop and instructs Claude to checkpoint first.
 # Uses a marker file to prevent repeated firing after checkpoint.
 
-THRESHOLD_PERCENT=${SAGE_CONTEXT_THRESHOLD:-70}  # Default: save at 70% (before autocompact buffer)
+THRESHOLD_PERCENT=${SAGE_CONTEXT_THRESHOLD:-80}  # Default: save at 80% (gives buffer after compaction)
 CONTEXT_WINDOW_SIZE=${SAGE_CONTEXT_WINDOW:-200000}  # Claude's context window
-COOLDOWN_SECONDS=${SAGE_CONTEXT_COOLDOWN:-60}  # 60 second rate limit after checkpoint
+COOLDOWN_SECONDS=${SAGE_CONTEXT_COOLDOWN:-300}  # 5 min cooldown to prevent re-triggering
 
 # Read hook input from stdin
 input=$(cat)

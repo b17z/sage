@@ -34,20 +34,6 @@ DEFAULT_MODEL = "all-MiniLM-L6-v2"
 # Directory for embedding storage
 EMBEDDINGS_DIR = SAGE_DIR / "embeddings"
 
-# Similarity thresholds
-RECALL_THRESHOLD = 0.7  # For knowledge recall
-DEDUP_THRESHOLD = 0.9  # For checkpoint deduplication
-
-
-@dataclass(frozen=True)
-class EmbeddingConfig:
-    """Configuration for embedding operations."""
-
-    model_name: str = DEFAULT_MODEL
-    recall_threshold: float = RECALL_THRESHOLD
-    dedup_threshold: float = DEDUP_THRESHOLD
-
-
 # Global model instance (lazy-loaded)
 _model: SentenceTransformer | None = None
 _model_name: str | None = None
