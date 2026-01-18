@@ -10,6 +10,12 @@ from sage.checkpoint import (
     Contribution,
     Source,
     Tension,
+    _checkpoint_to_markdown,
+    _markdown_to_checkpoint,
+    _parse_contribution_line,
+    _parse_source_line,
+    _parse_tension_line,
+    _validate_checkpoint_schema,
     create_checkpoint_from_dict,
     delete_checkpoint,
     format_checkpoint_for_context,
@@ -107,7 +113,7 @@ class TestSaveLoadCheckpoint:
         file_path = save_checkpoint(sample_checkpoint)
 
         assert file_path.exists()
-        assert file_path.suffix == ".yaml"
+        assert file_path.suffix == ".md"
 
         loaded = load_checkpoint(sample_checkpoint.id)
 
@@ -249,3 +255,379 @@ class TestCreateCheckpointFromDict:
         assert cp.confidence == 0.75
         assert cp.trigger == "synthesis"
         assert len(cp.sources) == 1
+
+
+class TestCheckpointMarkdownSerialization:
+    """Tests for checkpoint markdown serialization/deserialization."""
+
+    def test_checkpoint_to_markdown_includes_frontmatter(self, sample_checkpoint):
+        """_checkpoint_to_markdown() generates valid YAML frontmatter."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert md.startswith("---\n")
+        assert "\n---\n" in md
+        assert "id: " in md
+        assert "type: checkpoint" in md
+        assert "confidence: 0.8" in md
+
+    def test_checkpoint_to_markdown_includes_core_question_as_title(self, sample_checkpoint):
+        """_checkpoint_to_markdown() uses core question as H1 title."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "# How does GDPR affect our AI training pipeline?" in md
+
+    def test_checkpoint_to_markdown_includes_thesis_section(self, sample_checkpoint):
+        """_checkpoint_to_markdown() includes thesis section."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "## Thesis" in md
+        assert "GDPR Article 6 requires explicit consent" in md
+
+    def test_checkpoint_to_markdown_includes_open_questions(self, sample_checkpoint):
+        """_checkpoint_to_markdown() includes open questions as list."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "## Open Questions" in md
+        assert "- Does legitimate interest apply?" in md
+
+    def test_checkpoint_to_markdown_includes_sources(self, sample_checkpoint):
+        """_checkpoint_to_markdown() formats sources correctly."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "## Sources" in md
+        assert "**gdpr-article-6**" in md
+        assert "(document)" in md
+        assert "_supports_" in md
+
+    def test_checkpoint_to_markdown_includes_tensions(self, sample_checkpoint):
+        """_checkpoint_to_markdown() formats tensions correctly."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "## Tensions" in md
+        assert "**gdpr-article-6** vs **internal-legal**" in md
+        assert "_unresolved_" in md
+
+    def test_checkpoint_to_markdown_includes_contributions(self, sample_checkpoint):
+        """_checkpoint_to_markdown() formats contributions correctly."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+
+        assert "## Unique Contributions" in md
+        assert "**discovery**:" in md
+
+    def test_markdown_roundtrip_preserves_data(self, sample_checkpoint):
+        """Checkpoint survives markdown round-trip."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert parsed.id == sample_checkpoint.id
+        assert parsed.thesis == sample_checkpoint.thesis
+        assert parsed.confidence == sample_checkpoint.confidence
+        assert parsed.core_question == sample_checkpoint.core_question
+        assert len(parsed.open_questions) == len(sample_checkpoint.open_questions)
+        assert len(parsed.sources) == len(sample_checkpoint.sources)
+        assert len(parsed.tensions) == len(sample_checkpoint.tensions)
+        assert len(parsed.unique_contributions) == len(sample_checkpoint.unique_contributions)
+
+    def test_markdown_roundtrip_preserves_source_details(self, sample_checkpoint):
+        """Source details survive markdown round-trip."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed.sources[0].id == sample_checkpoint.sources[0].id
+        assert parsed.sources[0].type == sample_checkpoint.sources[0].type
+        assert parsed.sources[0].relation == sample_checkpoint.sources[0].relation
+
+    def test_markdown_roundtrip_preserves_tension_details(self, sample_checkpoint):
+        """Tension details survive markdown round-trip."""
+        md = _checkpoint_to_markdown(sample_checkpoint)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed.tensions[0].between == sample_checkpoint.tensions[0].between
+        assert parsed.tensions[0].resolution == sample_checkpoint.tensions[0].resolution
+
+    def test_markdown_to_checkpoint_handles_empty_sections(self):
+        """_markdown_to_checkpoint() handles checkpoints with empty sections."""
+        cp = Checkpoint(
+            id="test-minimal",
+            ts="2026-01-16T12:00:00Z",
+            trigger="manual",
+            core_question="Minimal checkpoint",
+            thesis="Simple thesis",
+            confidence=0.5,
+        )
+        md = _checkpoint_to_markdown(cp)
+        parsed = _markdown_to_checkpoint(md)
+
+        assert parsed is not None
+        assert parsed.open_questions == []
+        assert parsed.sources == []
+        assert parsed.tensions == []
+        assert parsed.unique_contributions == []
+
+    def test_markdown_to_checkpoint_returns_none_for_invalid(self):
+        """_markdown_to_checkpoint() returns None for invalid markdown."""
+        assert _markdown_to_checkpoint("not valid markdown") is None
+        assert _markdown_to_checkpoint("no frontmatter here") is None
+        assert _markdown_to_checkpoint("---\nincomplete") is None
+
+
+class TestMarkdownParsingHelpers:
+    """Tests for markdown line parsing helper functions."""
+
+    def test_parse_source_line_valid(self):
+        """_parse_source_line() parses valid source line."""
+        line = "- **doc-123** (document): Key insight here — _supports_"
+        source = _parse_source_line(line)
+
+        assert source is not None
+        assert source.id == "doc-123"
+        assert source.type == "document"
+        assert source.take == "Key insight here"
+        assert source.relation == "supports"
+
+    def test_parse_source_line_without_relation(self):
+        """_parse_source_line() handles missing relation."""
+        line = "- **doc-123** (api): Just the take"
+        source = _parse_source_line(line)
+
+        assert source is not None
+        assert source.id == "doc-123"
+        assert source.type == "api"
+        assert source.take == "Just the take"
+        assert source.relation == ""
+
+    def test_parse_source_line_invalid(self):
+        """_parse_source_line() returns None for invalid lines."""
+        assert _parse_source_line("not a source line") is None
+        assert _parse_source_line("- no bold markers") is None
+        assert _parse_source_line("- **id** missing parens") is None
+
+    def test_parse_tension_line_valid(self):
+        """_parse_tension_line() parses valid tension line."""
+        line = "- **source-a** vs **source-b**: They disagree — _unresolved_"
+        tension = _parse_tension_line(line)
+
+        assert tension is not None
+        assert tension.between == ("source-a", "source-b")
+        assert tension.nature == "They disagree"
+        assert tension.resolution == "unresolved"
+
+    def test_parse_tension_line_without_resolution(self):
+        """_parse_tension_line() handles missing resolution."""
+        line = "- **src1** vs **src2**: Just the nature"
+        tension = _parse_tension_line(line)
+
+        assert tension is not None
+        assert tension.between == ("src1", "src2")
+        assert tension.nature == "Just the nature"
+        assert tension.resolution == ""
+
+    def test_parse_tension_line_invalid(self):
+        """_parse_tension_line() returns None for invalid lines."""
+        assert _parse_tension_line("not a tension line") is None
+        assert _parse_tension_line("- **only-one** source") is None
+
+    def test_parse_contribution_line_valid(self):
+        """_parse_contribution_line() parses valid contribution line."""
+        line = "- **insight**: This is the contribution content"
+        contrib = _parse_contribution_line(line)
+
+        assert contrib is not None
+        assert contrib.type == "insight"
+        assert contrib.content == "This is the contribution content"
+
+    def test_parse_contribution_line_invalid(self):
+        """_parse_contribution_line() returns None for invalid lines."""
+        assert _parse_contribution_line("not a contribution") is None
+        assert _parse_contribution_line("- no bold type") is None
+
+
+class TestCheckpointBackwardCompatibility:
+    """Tests for backward compatibility with legacy .yaml format."""
+
+    def test_load_checkpoint_reads_legacy_yaml(self, mock_checkpoint_paths: Path):
+        """load_checkpoint() can read legacy .yaml files."""
+        import yaml
+
+        # Create a legacy .yaml checkpoint file
+        legacy_data = {
+            "checkpoint": {
+                "id": "legacy-checkpoint",
+                "ts": "2026-01-10T12:00:00Z",
+                "trigger": "manual",
+                "core_question": "Legacy question?",
+                "thesis": "Legacy thesis",
+                "confidence": 0.7,
+                "open_questions": ["Legacy question 1"],
+                "sources": [],
+                "tensions": [],
+                "unique_contributions": [],
+                "action": {"goal": "", "type": ""},
+                "metadata": {"skill": None, "project": None},
+            }
+        }
+
+        yaml_path = mock_checkpoint_paths / "legacy-checkpoint.yaml"
+        with open(yaml_path, "w") as f:
+            yaml.safe_dump(legacy_data, f)
+
+        # Load should work
+        loaded = load_checkpoint("legacy-checkpoint")
+
+        assert loaded is not None
+        assert loaded.id == "legacy-checkpoint"
+        assert loaded.thesis == "Legacy thesis"
+        assert loaded.confidence == 0.7
+
+    def test_list_checkpoints_includes_both_formats(self, mock_checkpoint_paths: Path, sample_checkpoint):
+        """list_checkpoints() finds both .md and .yaml files."""
+        import yaml
+
+        # Save a new .md checkpoint
+        save_checkpoint(sample_checkpoint)
+
+        # Create a legacy .yaml checkpoint
+        legacy_data = {
+            "checkpoint": {
+                "id": "legacy-2026-01-09",
+                "ts": "2026-01-09T12:00:00Z",
+                "trigger": "manual",
+                "core_question": "Legacy?",
+                "thesis": "Legacy",
+                "confidence": 0.5,
+                "open_questions": [],
+                "sources": [],
+                "tensions": [],
+                "unique_contributions": [],
+                "action": {"goal": "", "type": ""},
+                "metadata": {},
+            }
+        }
+        yaml_path = mock_checkpoint_paths / "legacy-2026-01-09.yaml"
+        with open(yaml_path, "w") as f:
+            yaml.safe_dump(legacy_data, f)
+
+        # List should include both
+        checkpoints = list_checkpoints()
+
+        assert len(checkpoints) == 2
+        ids = [cp.id for cp in checkpoints]
+        assert sample_checkpoint.id in ids
+        assert "legacy-2026-01-09" in ids
+
+
+class TestCheckpointSecurity:
+    """Security tests for checkpoint module."""
+
+    def test_schema_validation_rejects_missing_checkpoint_key(self):
+        """Schema validation rejects data without 'checkpoint' key."""
+        from sage.checkpoint import _validate_checkpoint_schema
+
+        invalid_data = {"not_checkpoint": {"id": "test"}}
+        result = _validate_checkpoint_schema(invalid_data)
+
+        assert result is not None
+        assert "checkpoint" in result.lower()
+
+    def test_schema_validation_rejects_missing_required_fields(self):
+        """Schema validation rejects data with missing required fields."""
+        from sage.checkpoint import _validate_checkpoint_schema
+
+        # Missing 'thesis' field
+        invalid_data = {
+            "checkpoint": {
+                "id": "test",
+                "ts": "2026-01-01",
+                "trigger": "manual",
+                "core_question": "test?",
+                # "thesis" is missing
+                "confidence": 0.8,
+            }
+        }
+        result = _validate_checkpoint_schema(invalid_data)
+
+        assert result is not None
+        assert "thesis" in result.lower()
+
+    def test_schema_validation_rejects_invalid_types(self):
+        """Schema validation rejects invalid field types."""
+        from sage.checkpoint import _validate_checkpoint_schema
+
+        # confidence should be a number, not a string
+        invalid_data = {
+            "checkpoint": {
+                "id": "test",
+                "ts": "2026-01-01",
+                "trigger": "manual",
+                "core_question": "test?",
+                "thesis": "test thesis",
+                "confidence": "high",  # Should be float
+            }
+        }
+        result = _validate_checkpoint_schema(invalid_data)
+
+        assert result is not None
+        assert "confidence" in result.lower()
+
+    def test_schema_validation_accepts_valid_data(self):
+        """Schema validation accepts well-formed data."""
+        from sage.checkpoint import _validate_checkpoint_schema
+
+        valid_data = {
+            "checkpoint": {
+                "id": "test",
+                "ts": "2026-01-01T12:00:00Z",
+                "trigger": "manual",
+                "core_question": "What is the answer?",
+                "thesis": "The answer is 42.",
+                "confidence": 0.95,
+            }
+        }
+        result = _validate_checkpoint_schema(valid_data)
+
+        assert result is None
+
+    def test_malformed_yaml_skipped_gracefully(self, mock_checkpoint_paths: Path):
+        """Malformed YAML files are skipped without crashing."""
+        # Create a valid checkpoint
+        valid_cp = Checkpoint(
+            id="valid-checkpoint",
+            ts="2026-01-10T12:00:00Z",
+            trigger="manual",
+            core_question="Valid?",
+            thesis="Yes, valid.",
+            confidence=0.9,
+        )
+        save_checkpoint(valid_cp)
+
+        # Create a malformed YAML file
+        malformed_path = mock_checkpoint_paths / "malformed-2026-01-09.yaml"
+        malformed_path.write_text("this: is: not: valid: yaml: {{{{")
+
+        # list_checkpoints should not crash, just skip the malformed file
+        checkpoints = list_checkpoints()
+
+        assert len(checkpoints) == 1
+        assert checkpoints[0].id == "valid-checkpoint"
+
+    def test_checkpoint_file_permissions(self, mock_checkpoint_paths: Path):
+        """Checkpoint files are created with restricted permissions."""
+        import stat
+
+        cp = Checkpoint(
+            id="perm-test-checkpoint",
+            ts="2026-01-10T12:00:00Z",
+            trigger="manual",
+            core_question="Permissions?",
+            thesis="Should be restricted.",
+            confidence=0.8,
+        )
+        file_path = save_checkpoint(cp)
+
+        mode = file_path.stat().st_mode
+
+        # Should be owner read/write only (0o600)
+        assert mode & stat.S_IRWXU == stat.S_IRUSR | stat.S_IWUSR  # Owner: rw
+        assert mode & stat.S_IRWXG == 0  # Group: none
+        assert mode & stat.S_IRWXO == 0  # Other: none

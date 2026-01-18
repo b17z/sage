@@ -8,7 +8,7 @@ from rich.table import Table
 
 from sage import __version__
 from sage.client import Message, create_client, send_message
-from sage.config import Config, ensure_directories
+from sage.config import Config, SageConfig, ensure_directories, get_sage_config, SAGE_DIR
 from sage.errors import format_error
 from sage.history import append_entry, calculate_usage, create_entry, read_history
 from sage.init import run_init
@@ -420,16 +420,97 @@ def context(skill):
     console.print(f"  [bold]Estimated Total: {total:>8} tokens[/bold]")
 
 
-@main.command()
-@click.option("--set", "set_value", nargs=2, help="Set a config value: --set KEY VALUE")
-def config(set_value):
-    """Manage configuration."""
+@main.group()
+def config():
+    """Manage configuration.
+
+    Sage has two config files:
+    - config.yaml: Runtime settings (api_key, model, etc.)
+    - tuning.yaml: Retrieval/detection thresholds (recall_threshold, etc.)
+    """
+    pass
+
+
+@config.command("list")
+def config_list():
+    """Show current configuration.
+
+    Examples:
+        sage config list
+    """
     cfg = Config.load()
+    effective = get_sage_config()
+    defaults = SageConfig()
 
-    if set_value:
-        key, value = set_value
-        key = key.replace("-", "_")
+    console.print("[bold]Runtime Configuration[/bold] [dim](~/.sage/config.yaml)[/dim]")
+    console.print()
+    api_display = "[not set]"
+    if cfg.api_key:
+        api_display = "*" * 20 + cfg.api_key[-8:]
+    console.print(f"  api_key: {api_display}")
+    console.print(f"  model: {cfg.model}")
+    console.print(f"  default_depth: {cfg.default_depth}")
+    console.print(f"  max_history: {cfg.max_history}")
+    console.print(f"  cache_ttl: {cfg.cache_ttl}")
 
+    console.print()
+    console.print("[bold]Tuning Configuration[/bold] [dim](tuning.yaml)[/dim]")
+    console.print()
+
+    console.print("  [dim]# Retrieval[/dim]")
+    _show_tuning_value("recall_threshold", effective.recall_threshold, defaults.recall_threshold)
+    _show_tuning_value("dedup_threshold", effective.dedup_threshold, defaults.dedup_threshold)
+    _show_tuning_value("embedding_weight", effective.embedding_weight, defaults.embedding_weight)
+    _show_tuning_value("keyword_weight", effective.keyword_weight, defaults.keyword_weight)
+
+    console.print("  [dim]# Structural detection[/dim]")
+    _show_tuning_value("topic_drift_threshold", effective.topic_drift_threshold, defaults.topic_drift_threshold)
+    _show_tuning_value("convergence_question_drop", effective.convergence_question_drop, defaults.convergence_question_drop)
+    _show_tuning_value("depth_min_messages", effective.depth_min_messages, defaults.depth_min_messages)
+    _show_tuning_value("depth_min_tokens", effective.depth_min_tokens, defaults.depth_min_tokens)
+
+    console.print("  [dim]# Model[/dim]")
+    _show_tuning_value("embedding_model", effective.embedding_model, defaults.embedding_model)
+
+    console.print()
+    console.print("[dim]sage config set KEY VALUE      Set a value[/dim]")
+    console.print("[dim]sage config set KEY VALUE --project   Set project-level[/dim]")
+    console.print("[dim]sage config reset              Reset tuning to defaults[/dim]")
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+@click.option("--project", is_flag=True, help="Set in project-level config")
+def config_set(key: str, value: str, project: bool):
+    """Set a configuration value.
+
+    Examples:
+        sage config set model claude-opus-4
+        sage config set recall_threshold 0.65
+        sage config set recall_threshold 0.60 --project
+    """
+    from pathlib import Path
+
+    # Determine SageConfig location
+    if project:
+        sage_dir = Path.cwd() / ".sage"
+    else:
+        sage_dir = SAGE_DIR
+
+    # Load configs
+    cfg = Config.load()
+    tuning = get_sage_config() if not project else SageConfig.load(sage_dir)
+
+    # Define which keys belong to which config
+    legacy_keys = {"api_key", "model", "default_depth", "max_history", "cache_ttl"}
+    tuning_keys = {f.name for f in SageConfig.__dataclass_fields__.values()}
+
+    # Normalize key (allow hyphens)
+    key = key.replace("-", "_")
+
+    if key in legacy_keys:
+        # Runtime Config
         if key == "api_key":
             cfg.api_key = value
         elif key == "model":
@@ -437,27 +518,83 @@ def config(set_value):
         elif key == "default_depth":
             cfg.default_depth = value
         elif key == "max_history":
-            cfg.max_history = int(value)
-        else:
-            console.print(f"[red]Unknown config key: {key}[/red]")
-            sys.exit(1)
-
+            try:
+                cfg.max_history = int(value)
+            except ValueError:
+                console.print(f"[red]Invalid integer value: {value}[/red]")
+                sys.exit(1)
+        elif key == "cache_ttl":
+            try:
+                cfg.cache_ttl = int(value)
+            except ValueError:
+                console.print(f"[red]Invalid integer value: {value}[/red]")
+                sys.exit(1)
         cfg.save()
-        console.print(f"[green]✓[/green] Set {key}")
+        console.print(f"[green]✓[/green] Set {key} (runtime config)")
+
+    elif key in tuning_keys:
+        # SageConfig (tuning)
+        # Type coercion
+        field_type = SageConfig.__dataclass_fields__[key].type
+        if field_type == float:
+            try:
+                typed_value = float(value)
+            except ValueError:
+                console.print(f"[red]Invalid float value: {value}[/red]")
+                sys.exit(1)
+        elif field_type == int:
+            try:
+                typed_value = int(value)
+            except ValueError:
+                console.print(f"[red]Invalid integer value: {value}[/red]")
+                sys.exit(1)
+        else:
+            typed_value = value
+
+        # Create new config with updated value
+        current_dict = tuning.to_dict()
+        current_dict[key] = typed_value
+        new_tuning = SageConfig(**current_dict)
+        new_tuning.save(sage_dir)
+
+        location = "project" if project else "user"
+        console.print(f"[green]✓[/green] Set {key} = {typed_value} ({location}-level tuning)")
     else:
-        # Show config
-        console.print("[bold]Current Configuration[/bold]")
+        console.print(f"[red]Unknown config key: {key}[/red]")
         console.print()
-        api_display = '[not set]'
-        if cfg.api_key:
-            api_display = '*' * 20 + cfg.api_key[-8:]
-        console.print(f"  api_key: {api_display}")
-        console.print(f"  model: {cfg.model}")
-        console.print(f"  default_depth: {cfg.default_depth}")
-        console.print(f"  max_history: {cfg.max_history}")
-        console.print(f"  cache_ttl: {cfg.cache_ttl}")
-        console.print()
-        console.print("[dim]Use --set KEY VALUE to change settings[/dim]")
+        console.print("[dim]Runtime keys: api_key, model, default_depth, max_history, cache_ttl[/dim]")
+        console.print("[dim]Tuning keys: recall_threshold, dedup_threshold, embedding_weight, ...[/dim]")
+        sys.exit(1)
+
+
+@config.command("reset")
+@click.option("--project", is_flag=True, help="Reset project-level config")
+def config_reset(project: bool):
+    """Reset tuning configuration to defaults.
+
+    Examples:
+        sage config reset
+        sage config reset --project
+    """
+    from pathlib import Path
+
+    if project:
+        sage_dir = Path.cwd() / ".sage"
+    else:
+        sage_dir = SAGE_DIR
+
+    defaults = SageConfig()
+    defaults.save(sage_dir)
+    location = "project" if project else "user"
+    console.print(f"[green]✓[/green] Reset tuning config to defaults ({location}-level)")
+
+
+def _show_tuning_value(key: str, value, default):
+    """Display a tuning value, highlighting if non-default."""
+    if value != default:
+        console.print(f"  {key}: [cyan]{value}[/cyan] [dim](default: {default})[/dim]")
+    else:
+        console.print(f"  {key}: {value}")
 
 
 @main.command()

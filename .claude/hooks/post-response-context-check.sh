@@ -12,6 +12,14 @@ COOLDOWN_SECONDS=${SAGE_CONTEXT_COOLDOWN:-60}  # 60 second rate limit after chec
 # Read hook input from stdin
 input=$(cat)
 
+# Check hook_event_name - only process Stop events, skip others
+hook_event=$(echo "$input" | jq -r '.hook_event_name // empty')
+if [ -n "$hook_event" ] && [ "$hook_event" != "Stop" ]; then
+    # Not a Stop event - approve and exit
+    echo '{"decision": "approve"}'
+    exit 0
+fi
+
 # Extract session info from input
 session_id=$(echo "$input" | jq -r '.session_id // empty')
 transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
@@ -20,7 +28,7 @@ transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
 # Use ~/.sage/cooldown/ instead of /tmp for security (predictable /tmp paths risk symlink attacks)
 cooldown_dir="${HOME}/.sage/cooldown"
 mkdir -p "$cooldown_dir"
-marker_file="${cooldown_dir}/checkpoint_${session_id}"
+marker_file="${cooldown_dir}/context_threshold"
 if [ -f "$marker_file" ]; then
     marker_time=$(cat "$marker_file")
     current_time=$(date +%s)

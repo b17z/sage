@@ -1,12 +1,23 @@
 #!/bin/bash
 # PreCompact hook for Sage autosave
 # Triggers checkpoint before context compaction
+#
+# Schema: input has `trigger` field ("auto" or "manual")
+# Output uses `continue` (boolean), NOT `decision`
 
-# Output JSON that blocks compaction until checkpoint is done
-# PreCompact hooks only accept: approve, block (not SUGGEST)
+input=$(cat)
+trigger=$(echo "$input" | jq -r '.trigger // "unknown"')
+
+# Auto-compact (context overflow) - approve immediately to prevent deadlock
+if [ "$trigger" = "auto" ]; then
+    echo '{"continue": true}'
+    exit 0
+fi
+
+# Manual compact (/compact command) - block for checkpoint
 cat << 'EOF'
 {
-  "decision": "block",
-  "reason": "⚠️ CONTEXT COMPACTING - CHECKPOINT REQUIRED\n\nYou MUST call sage_autosave_check NOW before context is lost.\nUse trigger_event='precompact' and capture:\n- core_question: What you've been researching\n- current_thesis: Your synthesized findings\n- confidence: How confident you are\n- open_questions: What remains unanswered\n\nAfter checkpointing, run /compact again."
+  "continue": false,
+  "stopReason": "⚠️ CHECKPOINT BEFORE COMPACTING\n\nCall sage_autosave_check with trigger_event='precompact' to save:\n- core_question: What you've been researching\n- current_thesis: Your synthesized findings\n- confidence: How confident (0-1)\n- open_questions: What remains unanswered\n\nThen run /compact again."
 }
 EOF

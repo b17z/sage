@@ -1,7 +1,11 @@
 """Checkpoint system for Sage.
 
 Saves and restores semantic research state across sessions.
-Checkpoints are stored as YAML files in ~/.sage/checkpoints/ or .sage/checkpoints/.
+Checkpoints are stored as Markdown files with YAML frontmatter in
+~/.sage/checkpoints/ or .sage/checkpoints/.
+
+Format: .md files with YAML frontmatter (PKM/Obsidian compatible).
+Legacy: .yaml files are still readable for backward compatibility.
 
 When embeddings are available, provides deduplication by comparing thesis
 embeddings to avoid saving semantically similar checkpoints.
@@ -16,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from sage.config import SAGE_DIR
+from sage.config import SAGE_DIR, get_sage_config
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +115,273 @@ def ensure_checkpoints_dir(project_path: Path | None = None) -> Path:
 
 
 # ============================================================================
-# Embedding-based Deduplication
+# Markdown Serialization (PKM/Obsidian compatible)
 # ============================================================================
 
-# Default threshold for considering checkpoints as duplicates
-DEDUP_THRESHOLD = 0.9
 
+def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
+    """Convert a checkpoint to Markdown with YAML frontmatter."""
+    # Frontmatter contains structured metadata
+    frontmatter = {
+        "id": checkpoint.id,
+        "type": "checkpoint",
+        "ts": checkpoint.ts,
+        "trigger": checkpoint.trigger,
+        "confidence": checkpoint.confidence,
+        "skill": checkpoint.skill,
+        "project": checkpoint.project,
+        "parent_checkpoint": checkpoint.parent_checkpoint,
+        "message_count": checkpoint.message_count,
+        "token_estimate": checkpoint.token_estimate,
+        "action_goal": checkpoint.action_goal or None,
+        "action_type": checkpoint.action_type or None,
+    }
+    # Remove None values for cleaner YAML
+    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+
+    # Build markdown body
+    lines = []
+
+    # Core question as title
+    lines.append(f"# {checkpoint.core_question}")
+    lines.append("")
+
+    # Thesis
+    lines.append("## Thesis")
+    lines.append(checkpoint.thesis)
+    lines.append("")
+
+    # Open questions
+    if checkpoint.open_questions:
+        lines.append("## Open Questions")
+        for q in checkpoint.open_questions:
+            lines.append(f"- {q}")
+        lines.append("")
+
+    # Sources
+    if checkpoint.sources:
+        lines.append("## Sources")
+        for s in checkpoint.sources:
+            lines.append(f"- **{s.id}** ({s.type}): {s.take} — _{s.relation}_")
+        lines.append("")
+
+    # Tensions
+    if checkpoint.tensions:
+        lines.append("## Tensions")
+        for t in checkpoint.tensions:
+            lines.append(f"- **{t.between[0]}** vs **{t.between[1]}**: {t.nature} — _{t.resolution}_")
+        lines.append("")
+
+    # Unique contributions
+    if checkpoint.unique_contributions:
+        lines.append("## Unique Contributions")
+        for c in checkpoint.unique_contributions:
+            lines.append(f"- **{c.type}**: {c.content}")
+        lines.append("")
+
+    body = "\n".join(lines)
+
+    # Combine frontmatter and body
+    fm_yaml = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return f"---\n{fm_yaml}---\n\n{body}"
+
+
+def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
+    """Parse a Markdown checkpoint file into a Checkpoint object."""
+    try:
+        # Split frontmatter and body
+        if not content.startswith("---"):
+            return None
+
+        # Find end of frontmatter
+        end_idx = content.find("---", 3)
+        if end_idx == -1:
+            return None
+
+        fm_text = content[3:end_idx].strip()
+        body = content[end_idx + 3:].strip()
+
+        # Parse frontmatter
+        fm = yaml.safe_load(fm_text) or {}
+
+        # Parse body sections
+        core_question = ""
+        thesis = ""
+        open_questions: list[str] = []
+        sources: list[Source] = []
+        tensions: list[Tension] = []
+        contributions: list[Contribution] = []
+
+        current_section = None
+        section_lines: list[str] = []
+
+        for line in body.split("\n"):
+            if line.startswith("# "):
+                core_question = line[2:].strip()
+            elif line.startswith("## "):
+                # Save previous section
+                if current_section == "thesis":
+                    thesis = "\n".join(section_lines).strip()
+                elif current_section == "open_questions":
+                    for sl in section_lines:
+                        if sl.startswith("- "):
+                            open_questions.append(sl[2:].strip())
+                elif current_section == "sources":
+                    for sl in section_lines:
+                        src = _parse_source_line(sl)
+                        if src:
+                            sources.append(src)
+                elif current_section == "tensions":
+                    for sl in section_lines:
+                        tens = _parse_tension_line(sl)
+                        if tens:
+                            tensions.append(tens)
+                elif current_section == "unique_contributions":
+                    for sl in section_lines:
+                        contrib = _parse_contribution_line(sl)
+                        if contrib:
+                            contributions.append(contrib)
+
+                # Start new section
+                section_name = line[3:].strip().lower().replace(" ", "_")
+                current_section = section_name
+                section_lines = []
+            elif line.strip():
+                section_lines.append(line)
+
+        # Save last section
+        if current_section == "thesis":
+            thesis = "\n".join(section_lines).strip()
+        elif current_section == "open_questions":
+            for sl in section_lines:
+                if sl.startswith("- "):
+                    open_questions.append(sl[2:].strip())
+        elif current_section == "sources":
+            for sl in section_lines:
+                src = _parse_source_line(sl)
+                if src:
+                    sources.append(src)
+        elif current_section == "tensions":
+            for sl in section_lines:
+                tens = _parse_tension_line(sl)
+                if tens:
+                    tensions.append(tens)
+        elif current_section == "unique_contributions":
+            for sl in section_lines:
+                contrib = _parse_contribution_line(sl)
+                if contrib:
+                    contributions.append(contrib)
+
+        return Checkpoint(
+            id=fm.get("id", ""),
+            ts=fm.get("ts", ""),
+            trigger=fm.get("trigger", ""),
+            core_question=core_question,
+            thesis=thesis,
+            confidence=fm.get("confidence", 0.0),
+            open_questions=open_questions,
+            sources=sources,
+            tensions=tensions,
+            unique_contributions=contributions,
+            action_goal=fm.get("action_goal", ""),
+            action_type=fm.get("action_type", ""),
+            skill=fm.get("skill"),
+            project=fm.get("project"),
+            parent_checkpoint=fm.get("parent_checkpoint"),
+            message_count=fm.get("message_count", 0),
+            token_estimate=fm.get("token_estimate", 0),
+        )
+    except (yaml.YAMLError, KeyError, ValueError):
+        return None
+
+
+def _parse_source_line(line: str) -> Source | None:
+    """Parse a source line: - **id** (type): take — _relation_"""
+    if not line.startswith("- **"):
+        return None
+    try:
+        # Extract id
+        id_end = line.find("**", 4)
+        if id_end == -1:
+            return None
+        source_id = line[4:id_end]
+
+        # Extract type (in parentheses)
+        type_start = line.find("(", id_end)
+        type_end = line.find(")", type_start)
+        if type_start == -1 or type_end == -1:
+            return None
+        source_type = line[type_start + 1:type_end]
+
+        # Extract take and relation
+        rest = line[type_end + 2:].strip()  # Skip ):
+        if " — _" in rest:
+            take, relation = rest.rsplit(" — _", 1)
+            relation = relation.rstrip("_")
+        else:
+            take = rest
+            relation = ""
+
+        return Source(id=source_id, type=source_type, take=take, relation=relation)
+    except (IndexError, ValueError):
+        return None
+
+
+def _parse_tension_line(line: str) -> Tension | None:
+    """Parse a tension line: - **src1** vs **src2**: nature — _resolution_"""
+    if not line.startswith("- **"):
+        return None
+    try:
+        # Extract first source
+        src1_end = line.find("**", 4)
+        if src1_end == -1:
+            return None
+        src1 = line[4:src1_end]
+
+        # Find "vs **"
+        vs_idx = line.find(" vs **", src1_end)
+        if vs_idx == -1:
+            return None
+
+        # Extract second source
+        src2_start = vs_idx + 6
+        src2_end = line.find("**", src2_start)
+        if src2_end == -1:
+            return None
+        src2 = line[src2_start:src2_end]
+
+        # Extract nature and resolution
+        rest = line[src2_end + 3:].strip()  # Skip **:
+        if " — _" in rest:
+            nature, resolution = rest.rsplit(" — _", 1)
+            resolution = resolution.rstrip("_")
+        else:
+            nature = rest
+            resolution = ""
+
+        return Tension(between=(src1, src2), nature=nature, resolution=resolution)
+    except (IndexError, ValueError):
+        return None
+
+
+def _parse_contribution_line(line: str) -> Contribution | None:
+    """Parse a contribution line: - **type**: content"""
+    if not line.startswith("- **"):
+        return None
+    try:
+        type_end = line.find("**", 4)
+        if type_end == -1:
+            return None
+        contrib_type = line[4:type_end]
+        content = line[type_end + 3:].strip()  # Skip **:
+        return Contribution(type=contrib_type, content=content)
+    except (IndexError, ValueError):
+        return None
+
+
+# ============================================================================
+# Embedding-based Deduplication
+# ============================================================================
 
 def _get_checkpoint_embedding_store():
     """Load the checkpoint embedding store."""
@@ -200,7 +465,7 @@ class DuplicateCheckResult:
 
 def is_duplicate_checkpoint(
     thesis: str,
-    threshold: float = DEDUP_THRESHOLD,
+    threshold: float | None = None,
     max_recent: int = 20,
     project_path: Path | None = None,
 ) -> DuplicateCheckResult:
@@ -208,7 +473,8 @@ def is_duplicate_checkpoint(
 
     Args:
         thesis: The thesis text to check
-        threshold: Similarity threshold (0-1), default 0.9
+        threshold: Similarity threshold (0-1). If None, uses dedup_threshold
+                   from SageConfig (default 0.9).
         max_recent: Maximum number of recent checkpoints to check
         project_path: Optional project path for project-local checkpoints
 
@@ -216,6 +482,11 @@ def is_duplicate_checkpoint(
         DuplicateCheckResult with is_duplicate flag and details
     """
     from sage import embeddings
+
+    # Get threshold from config if not specified
+    if threshold is None:
+        config = get_sage_config(project_path)
+        threshold = config.dedup_threshold
 
     if not embeddings.is_available():
         logger.debug("Embeddings not available, skipping dedup check")
@@ -258,42 +529,17 @@ def is_duplicate_checkpoint(
 
 
 def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) -> Path:
-    """Save a checkpoint to disk."""
+    """Save a checkpoint to disk as Markdown with YAML frontmatter."""
     checkpoints_dir = ensure_checkpoints_dir(project_path)
 
-    # Convert to dict for YAML
-    data = {
-        "checkpoint": {
-            "id": checkpoint.id,
-            "ts": checkpoint.ts,
-            "trigger": checkpoint.trigger,
-            "core_question": checkpoint.core_question,
-            "thesis": checkpoint.thesis,
-            "confidence": checkpoint.confidence,
-            "open_questions": checkpoint.open_questions,
-            "sources": [asdict(s) for s in checkpoint.sources],
-            "tensions": [
-                {"between": list(t.between), "nature": t.nature, "resolution": t.resolution}
-                for t in checkpoint.tensions
-            ],
-            "unique_contributions": [asdict(c) for c in checkpoint.unique_contributions],
-            "action": {
-                "goal": checkpoint.action_goal,
-                "type": checkpoint.action_type,
-            },
-            "metadata": {
-                "skill": checkpoint.skill,
-                "project": checkpoint.project,
-                "parent_checkpoint": checkpoint.parent_checkpoint,
-                "message_count": checkpoint.message_count,
-                "token_estimate": checkpoint.token_estimate,
-            },
-        }
-    }
+    # Convert to markdown format
+    content = _checkpoint_to_markdown(checkpoint)
 
-    file_path = checkpoints_dir / f"{checkpoint.id}.yaml"
+    file_path = checkpoints_dir / f"{checkpoint.id}.md"
     with open(file_path, "w") as f:
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        f.write(content)
+    # Restrict permissions - checkpoints may contain research context
+    file_path.chmod(0o600)
 
     # Store thesis embedding for deduplication (non-blocking, failures logged)
     if checkpoint.thesis:
@@ -303,28 +549,75 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
 
 
 def load_checkpoint(checkpoint_id: str, project_path: Path | None = None) -> Checkpoint | None:
-    """Load a checkpoint by ID."""
+    """Load a checkpoint by ID. Supports both .md and legacy .yaml formats."""
     checkpoints_dir = get_checkpoints_dir(project_path)
-    file_path = checkpoints_dir / f"{checkpoint_id}.yaml"
 
-    if not file_path.exists():
-        # Try partial match
-        matches = list(checkpoints_dir.glob(f"*{checkpoint_id}*.yaml"))
-        if len(matches) == 1:
-            file_path = matches[0]
-        elif len(matches) > 1:
-            return None  # Ambiguous
-        else:
-            return None
+    # Try .md first (new format), then .yaml (legacy)
+    for ext in [".md", ".yaml"]:
+        file_path = checkpoints_dir / f"{checkpoint_id}{ext}"
+        if file_path.exists():
+            return _load_checkpoint_file(file_path)
 
-    return _load_checkpoint_file(file_path)
+    # Try partial match for both formats
+    matches = list(checkpoints_dir.glob(f"*{checkpoint_id}*.md"))
+    matches.extend(checkpoints_dir.glob(f"*{checkpoint_id}*.yaml"))
+    if len(matches) == 1:
+        return _load_checkpoint_file(matches[0])
+    elif len(matches) > 1:
+        return None  # Ambiguous
+
+    return None
+
+
+def _validate_checkpoint_schema(data: dict) -> str | None:
+    """Validate checkpoint data structure.
+
+    Returns None if valid, or an error message if invalid.
+    """
+    if not isinstance(data, dict):
+        return "Checkpoint data must be a dictionary"
+
+    if "checkpoint" not in data:
+        return "Missing 'checkpoint' key"
+
+    cp = data["checkpoint"]
+    if not isinstance(cp, dict):
+        return "'checkpoint' must be a dictionary"
+
+    # Required fields
+    required = ["id", "ts", "trigger", "core_question", "thesis", "confidence"]
+    for field in required:
+        if field not in cp:
+            return f"Missing required field: {field}"
+
+    # Type validation for critical fields
+    if not isinstance(cp.get("confidence"), (int, float)):
+        return "'confidence' must be a number"
+
+    if not isinstance(cp.get("thesis"), str):
+        return "'thesis' must be a string"
+
+    return None
 
 
 def _load_checkpoint_file(file_path: Path) -> Checkpoint | None:
-    """Load a checkpoint from a file path."""
+    """Load a checkpoint from a file path. Supports both .md and .yaml formats."""
     try:
         with open(file_path) as f:
-            data = yaml.safe_load(f)
+            content = f.read()
+
+        # Detect format by extension or content
+        if file_path.suffix == ".md" or content.startswith("---"):
+            return _markdown_to_checkpoint(content)
+
+        # Legacy YAML format
+        data = yaml.safe_load(content)
+
+        # Validate schema before accessing
+        validation_error = _validate_checkpoint_schema(data)
+        if validation_error:
+            logger.warning(f"Invalid checkpoint {file_path}: {validation_error}")
+            return None
 
         cp = data["checkpoint"]
         meta = cp.get("metadata", {})
@@ -376,14 +669,18 @@ def list_checkpoints(
     skill: str | None = None,
     limit: int = 20,
 ) -> list[Checkpoint]:
-    """List checkpoints, most recent first."""
+    """List checkpoints, most recent first. Supports both .md and .yaml formats."""
     checkpoints_dir = get_checkpoints_dir(project_path)
 
     if not checkpoints_dir.exists():
         return []
 
+    # Gather both .md and .yaml files
+    files = list(checkpoints_dir.glob("*.md"))
+    files.extend(checkpoints_dir.glob("*.yaml"))
+
     checkpoints = []
-    for file_path in sorted(checkpoints_dir.glob("*.yaml"), reverse=True):
+    for file_path in sorted(files, reverse=True):
         cp = _load_checkpoint_file(file_path)
         if cp:
             if skill and cp.skill != skill:
@@ -396,14 +693,22 @@ def list_checkpoints(
 
 
 def delete_checkpoint(checkpoint_id: str, project_path: Path | None = None) -> bool:
-    """Delete a checkpoint by ID."""
+    """Delete a checkpoint by ID. Supports both .md and .yaml formats."""
     checkpoints_dir = get_checkpoints_dir(project_path)
-    file_path = checkpoints_dir / f"{checkpoint_id}.yaml"
     actual_id = checkpoint_id
+    file_path = None
 
-    if not file_path.exists():
-        # Try partial match
-        matches = list(checkpoints_dir.glob(f"*{checkpoint_id}*.yaml"))
+    # Try exact match for both formats
+    for ext in [".md", ".yaml"]:
+        candidate = checkpoints_dir / f"{checkpoint_id}{ext}"
+        if candidate.exists():
+            file_path = candidate
+            break
+
+    if file_path is None:
+        # Try partial match for both formats
+        matches = list(checkpoints_dir.glob(f"*{checkpoint_id}*.md"))
+        matches.extend(checkpoints_dir.glob(f"*{checkpoint_id}*.yaml"))
         if len(matches) == 1:
             file_path = matches[0]
             # Extract actual ID from filename

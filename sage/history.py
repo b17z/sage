@@ -85,6 +85,8 @@ def append_entry(skill_name: str, entry: HistoryEntry) -> None:
 
     with open(path, "a") as f:
         f.write(json.dumps(data) + "\n")
+    # Restrict permissions - history may contain sensitive queries
+    path.chmod(0o600)
 
 
 def read_history(skill_name: str, limit: int | None = None) -> list[HistoryEntry]:

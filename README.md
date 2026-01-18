@@ -32,60 +32,20 @@ Each checkpoint captures:
 - **Tensions** — Where credible sources disagree (high value!)
 - **Unique contributions** — What YOU discovered, not just aggregated
 
-## Features
-
-### Auto-Checkpoint (MCP Server)
-Claude automatically saves checkpoints when meaningful events occur:
-- **After web searches** — Captures synthesized findings before they're lost
-- **On synthesis moments** — When Claude combines multiple sources into a conclusion  
-- **Before context compaction** — PreCompact hook ensures nothing is lost to auto-compact
-- **On explicit request** — Say "checkpoint" anytime
-
-### Knowledge Persistence
-Store and recall facts across sessions:
-- `sage_save_knowledge` — Persist discoveries, constraints, validated facts
-- `sage_recall_knowledge` — Query your knowledge base semantically
-- Knowledge survives context resets and session restarts
-
-### Semantic Recall (Optional)
-Install embeddings support for smarter knowledge matching:
-```bash
-pip install claude-sage[embeddings]  # ~2GB for model + torch
-```
-- **Model:** `all-MiniLM-L6-v2` (~80MB, runs locally on CPU)
-- **70% semantic + 30% keyword** — Combined scoring for best of both worlds
-- **Checkpoint deduplication** — Skips saving when thesis is 90%+ similar to recent checkpoint
-- **Graceful fallback** — Works without embeddings, just uses keyword matching
-
-### Smart Thresholds
-Auto-checkpoint uses configurable confidence thresholds per trigger type:
-- `synthesis: 0.5` — Save after strong synthesis moments
-- `web_search_complete: 0.3` — Save after research with findings
-- `precompact: 0.0` — Always save before context compaction
-- `explicit: 0.0` — Always save on user request
-
-## Quick Start (5 minutes)
+## Quick Start
 
 ### 1. Install
 
-**Option A: Claude Code Plugin (recommended)**
-```
-/plugin marketplace add b17z/sage
-/plugin install sage
-```
-
-**Option B: PyPI**
 ```bash
+# From PyPI
 pip install claude-sage
-sage mcp install
-sage hooks install
-```
 
-**Option C: From source**
-```bash
+# Or from source
 git clone https://github.com/b17z/sage.git
 cd sage
 pip install -e ".[mcp]"
+
+# Install MCP server and hooks
 sage mcp install
 sage hooks install
 ```
@@ -96,58 +56,181 @@ sage hooks install
 # Start Claude Code
 claude
 
-# Have a conversation, ask for recommendations
-# Watch for "Stop hook error: Synthesis detected..." - that's the hook working
-# Claude will checkpoint automatically
+# Have a conversation, do some research
+# Watch for checkpoint notifications
+# Claude will checkpoint automatically on synthesis moments
 
-# Later, in a new session:
+# Later, list your checkpoints:
 sage checkpoint list
 sage checkpoint show <checkpoint-id>
 ```
 
-## What Works (MVP - January 2026)
+## Features
 
-### ✅ Tested and Working
+### Auto-Checkpoint (MCP Server)
 
-**MCP Tools:**
-- `sage_save_checkpoint` — Full checkpoint with thesis, sources, tensions
-- `sage_load_checkpoint` — Restore checkpoint context
-- `sage_list_checkpoints` — List all checkpoints
-- `sage_autosave_check` — Auto-checkpoint with confidence thresholds
-- `sage_save_knowledge` — Persist facts with keyword triggers
-- `sage_recall_knowledge` — Auto-recall by keyword matching
-- `sage_list_knowledge` — List knowledge items
-- `sage_remove_knowledge` — Delete knowledge items
+Claude automatically saves checkpoints when meaningful events occur:
 
-**Hooks:**
-- Context threshold (70%) — Checkpoints before autocompact
-- Semantic detector — Detects synthesis, branch_point, constraint, topic_shift
-- Priority ordering — topic_shift > branch_point > constraint > synthesis
-- Cooldown mechanism — 30s rate limit (content dedup via embeddings)
-- Meta-ban list — Prevents trigger loops on hook discussion
+| Trigger | When | Confidence |
+|---------|------|------------|
+| `synthesis` | Claude combines sources into a conclusion | 0.5 |
+| `web_search_complete` | After research with findings | 0.3 |
+| `topic_shift` | Conversation changes direction | 0.4 |
+| `branch_point` | Decision point identified | 0.4 |
+| `constraint_discovered` | Critical limitation found | 0.4 |
+| `precompact` | Before context compaction | 0.0 (always) |
+| `manual` | You say "checkpoint" | 0.0 (always) |
 
-**CLI:**
-- `sage checkpoint list/show/rm` — Manage checkpoints
-- `sage knowledge add/list/match/rm` — Manage knowledge
+### Knowledge Persistence
 
-### ⚠️ Current Scope: Research First
+Store and recall facts across sessions:
 
-Sage is currently optimized for **research workflows** — web searches, synthesis, exploring options, validating hypotheses. The semantic patterns and checkpoint structure are tuned for knowledge work.
+```bash
+# Save knowledge
+sage knowledge add "GDPR requires consent" --id gdpr-consent --keywords gdpr,consent
 
-**Why research first?** Cause we were running into context limits very quickly in Claude UI when doing deep research. Once we nail research checkpointing, extending to code ("I just refactored this module", "Found the bug") is a natural next step.
+# Query knowledge (auto-recalls on matching keywords)
+sage knowledge match "What about GDPR?"
 
-### 🔧 Known Limitations (MVP)
+# List all knowledge
+sage knowledge list
+```
 
-1. **Tool-call awareness** — Should skip if `sage_autosave_check` already called this turn
-2. **Pre-compact hook** — Exists but untested (Claude Code's `/compact` had internal errors)
-3. **No code patterns** — Doesn't detect code-specific moments (refactors, bug fixes, architecture decisions)
+### Semantic Recall (Embeddings)
 
-### 📋 Future Work
+Install for smarter matching:
 
-- **Code checkpoint patterns** — Detect refactors, bug fixes, architecture decisions
-- Context window tracker MCP tool
-- Obsidian integration for checkpoint export
-- Better cooldown (content hash, topic tracking)
+```bash
+pip install claude-sage[embeddings]  # ~2GB for model + torch
+```
+
+- **Model:** `all-MiniLM-L6-v2` (~80MB, runs locally on CPU)
+- **Hybrid scoring:** 70% semantic + 30% keyword matching (configurable)
+- **Checkpoint deduplication:** Skips saving when thesis is 90%+ similar
+- **Graceful fallback:** Works without embeddings using keyword matching
+
+### Project-Local Checkpoints
+
+Checkpoints can be stored per-project:
+
+```bash
+# In a project directory
+mkdir .sage  # Checkpoints go here instead of ~/.sage
+
+# Or explicitly
+sage checkpoint list --project /path/to/project
+```
+
+### Configurable Thresholds
+
+Tune retrieval and detection via `~/.sage/tuning.yaml` or `.sage/tuning.yaml`:
+
+```yaml
+# Retrieval thresholds
+recall_threshold: 0.70      # Knowledge recall sensitivity (0-1)
+dedup_threshold: 0.90       # Checkpoint deduplication threshold
+embedding_weight: 0.70      # Weight for semantic similarity
+keyword_weight: 0.30        # Weight for keyword matching
+
+# Structural detection (future)
+topic_drift_threshold: 0.50
+```
+
+Project config overrides user config. See `sage config` commands.
+
+## Storage Format
+
+Checkpoints are stored as **Markdown with YAML frontmatter** (Obsidian-compatible):
+
+```markdown
+---
+id: 2026-01-16T14-30-00_payment-rails-synthesis
+type: checkpoint
+confidence: 0.75
+trigger: synthesis
+skill: crypto-payments
+---
+
+# Where do stablecoins win vs traditional payment rails?
+
+## Thesis
+Integrate, don't replace. Stablecoins win middle-mile + new primitives,
+not POS checkout. Most companies have pieces but not packaging.
+
+## Open Questions
+- What's the unified customer object strategy?
+- Timeline for Stripe's full stack vs current fragmentation?
+
+## Sources
+- **sheel_mohnot** (person): No forcing function for stablecoin POS — _contradicts_
+- **simon_taylor** (person): Not about price—about TAM expansion — _nuances_
+
+## Tensions
+- **sheel_mohnot** vs **sam_broner**: Whether merchant profitability is sufficient — _unresolved_
+
+## Unique Contributions
+- **discovery**: Platform team didn't know about existing SDK integration
+```
+
+Checkpoints live in `~/.sage/checkpoints/` (global) or `.sage/checkpoints/` (project-local).
+
+## CLI Reference
+
+```bash
+# Checkpoints
+sage checkpoint list              # List all checkpoints
+sage checkpoint show <id>         # Show checkpoint details
+sage checkpoint rm <id>           # Delete a checkpoint
+
+# Knowledge
+sage knowledge list               # List all knowledge items
+sage knowledge add <file>         # Add knowledge from file
+sage knowledge match "query"      # Test what would be recalled
+sage knowledge rm <id>            # Remove knowledge item
+
+# Config
+sage config list                  # Show current config
+sage config set <key> <value>     # Set a value (user-level)
+sage config set <key> <value> --project  # Set project-level
+sage config reset                 # Reset tuning to defaults
+
+# MCP/Hooks
+sage mcp install                  # Install MCP server
+sage hooks install                # Install Claude Code hooks
+
+# Admin
+sage admin rebuild-embeddings     # Rebuild all embeddings
+```
+
+## MCP Tools
+
+Available to Claude via MCP:
+
+| Tool | Purpose |
+|------|---------|
+| `sage_save_checkpoint` | Save full checkpoint with thesis, sources, tensions |
+| `sage_load_checkpoint` | Restore checkpoint context |
+| `sage_list_checkpoints` | List all checkpoints |
+| `sage_autosave_check` | Auto-checkpoint with confidence thresholds |
+| `sage_save_knowledge` | Persist facts with keyword triggers |
+| `sage_recall_knowledge` | Query knowledge base semantically |
+| `sage_list_knowledge` | List knowledge items |
+| `sage_remove_knowledge` | Delete knowledge items |
+
+## Hooks
+
+Claude Code hooks for automatic detection:
+
+| Hook | Purpose |
+|------|---------|
+| `post-response-semantic-detector.sh` | Detects synthesis, branch points, constraints, topic shifts |
+| `post-response-context-check.sh` | Triggers checkpoint at 70% context usage |
+| `pre-compact.sh` | Checkpoints before `/compact` (approves auto-compact) |
+
+Hooks have:
+- **Priority ordering:** topic_shift > branch_point > constraint > synthesis
+- **Cooldown mechanism:** Prevents duplicate triggers
+- **Meta-ban list:** Avoids trigger loops on hook discussion
 
 ## Prerequisites
 
@@ -155,153 +238,27 @@ Sage is currently optimized for **research workflows** — web searches, synthes
 - [Claude Code](https://claude.ai/code) CLI
 - jq (for hooks)
 
-## Installation Options
-
-### Full Install (recommended)
-
-```bash
-pip install claude-sage
-sage mcp install
-sage hooks install
-```
-
-### MCP Tools Only
-
-See Quick Start above.
-
-### Manual Hook Installation
-
-If you prefer to install hooks manually (MCP server still required for checkpoint tools):
-
-```bash
-sage hooks install
-# Or manually copy from .claude/hooks/ and update ~/.claude/settings.json
-```
-
-## Usage
-
-### Automatic (Recommended)
-
-Just work normally. Claude will recognize checkpoint-worthy moments and save state automatically. You'll see brief notifications like:
-
-```
-Stop hook error: Synthesis detected in your response. Call sage_autosave_check...
-```
-
-("Stop hook error" is cosmetic—it's how Claude Code displays hook instructions.)
-
-### Manual
-
-Say "checkpoint" or "save this" anytime:
-
-```
-You: checkpoint
-Claude: [Extracts and saves semantic checkpoint]
-        Saved: core question, thesis (confidence: 0.8), 3 open questions,
-        5 sources, 1 tension, 2 unique discoveries
-```
-
-### Restore in New Session
-
-```bash
-# List checkpoints
-sage checkpoint list
-
-# Show full checkpoint
-sage checkpoint show <checkpoint-id>
-```
-
-Or in Claude Code, just load it:
-```
-You: sage checkpoint show 2026-01-11T07-30-54
-Claude: [Loads and displays full context]
-```
-
-### Keyword Auto-Recall
-
-Knowledge items auto-inject when queries match keywords:
-
-```
-You: What do we know about semantic detector hook testing?
-Claude: [Auto-recalls 195 tokens of stored knowledge]
-        [Formats into structured response]
-```
-
-![Sage auto-recall in action](docs/assets/sage-recall-knowledge.png)
-
-## What Gets Saved
-
-Checkpoints live in `~/.sage/checkpoints/` (global, accessible from any project).
-
-Example checkpoint (98% compression from 45,000 token conversation):
-
-```yaml
-checkpoint:
-  id: 2026-01-10T14-30-00_payment-rails-synthesis
-
-  core_question: |
-    Where do stablecoins actually win vs traditional payment rails?
-
-  thesis: |
-    Integrate, don't replace. Stablecoins win middle-mile + new primitives,
-    not POS checkout. Most companies have pieces but not packaging.
-  confidence: 0.75
-
-  open_questions:
-    - What's the unified customer object strategy?
-    - Timeline for Stripe's full stack vs current fragmentation?
-
-  sources:
-    - id: sheel_mohnot
-      take: "No forcing function for stablecoin POS—every successful payment network had exclusivity or killer reward"
-      relation: contradicts
-    - id: simon_taylor
-      take: "Not about price—about TAM expansion. Stablecoins enable payments that couldn't exist before"
-      relation: nuances
-
-  tensions:
-    - between: [sheel_mohnot, sam_broner]
-      nature: "Whether merchant profitability is sufficient forcing function"
-      resolution: unresolved
-
-  unique_contributions:
-    - type: discovery
-      content: "Platform team didn't know about existing SDK integration possibilities"
-```
-
-## Architecture
-
-Sage is built as a multi-platform plugin:
-
-```
-sage/
-├── skills/checkpoint/       # Core skill (works across platforms)
-├── sage/mcp_server.py       # MCP server for auto-checkpoint
-├── .claude-plugin/          # Claude Code adapter
-├── hooks/                   # Claude Code hooks
-├── commands/                # Slash commands
-├── WARP.md                  # Warp adapter
-└── docs/                    # Methodology documentation
-```
-
-Future adapters can be added for Codex, Gemini, etc. The core checkpoint methodology remains shared.
-
-## Why "Semantic" Checkpointing?
-
-Traditional approaches compress reactively (when tokens run out) and lossily (summarizing everything equally).
-
-Semantic checkpointing is:
-- **Proactive** — Triggered by state transitions, not token pressure
-- **Selective** — Preserves high-value signals (tensions, discoveries), drops low-value (tangents, process chatter)
-- **Decision-oriented** — Organized around the question being answered, not chronology
-
-The compression test: *"If I only had this checkpoint, could I make the same decision I would with the full conversation?"*
-
 ## Documentation
 
+- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
+- [Features](docs/FEATURES.md) — Complete feature reference
 - [Checkpoint Methodology](docs/checkpoint.md) — Full framework for semantic checkpointing
-- [Design Doc](docs/design-knowledge-checkpoints.md) — Implementation details and future roadmap
-- [MCP Design](docs/design-mcp-autocheckpoint.md) — MCP server architecture for auto-checkpoint
+- [Hooks](docs/hooks.md) — Hook system documentation
+- [Security](docs/security-deserialization-checklist.md) — Security practices
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests (206 tests)
+pytest tests/ -v
+
+# Lint and format
+ruff check sage/ --fix
+black sage/
+```
 
 ## License
 
