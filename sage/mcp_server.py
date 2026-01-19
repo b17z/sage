@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from sage.config import detect_project_root
 from sage.checkpoint import (
+    Checkpoint,
     create_checkpoint_from_dict,
     format_checkpoint_for_context,
     is_duplicate_checkpoint,
@@ -59,6 +60,8 @@ def sage_save_checkpoint(
     unique_contributions: list[dict] | None = None,
     action_goal: str = "",
     action_type: str = "",
+    key_evidence: list[str] | None = None,
+    reasoning_trace: str = "",
 ) -> str:
     """Save a semantic checkpoint of the current research state.
 
@@ -77,10 +80,16 @@ def sage_save_checkpoint(
         unique_contributions: Your discoveries with {type, content}
         action_goal: What's being done with this research
         action_type: Type of action (decision, implementation, learning, exploration)
+        key_evidence: Concrete facts/data points supporting the thesis (for context hydration)
+        reasoning_trace: Narrative explaining the thinking process that led to conclusions
 
     Returns:
         Confirmation message with checkpoint ID
     """
+    # Validate confidence bounds
+    if not (0.0 <= confidence <= 1.0):
+        return f"⏸ Invalid confidence {confidence}: must be between 0.0 and 1.0"
+
     data = {
         "core_question": core_question,
         "thesis": thesis,
@@ -90,6 +99,8 @@ def sage_save_checkpoint(
         "tensions": tensions or [],
         "unique_contributions": unique_contributions or [],
         "action": {"goal": action_goal, "type": action_type},
+        "key_evidence": key_evidence or [],
+        "reasoning_trace": reasoning_trace,
     }
 
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger)
@@ -145,6 +156,76 @@ def sage_load_checkpoint(checkpoint_id: str) -> str:
         return f"Checkpoint not found: {checkpoint_id}"
 
     return format_checkpoint_for_context(checkpoint)
+
+
+@mcp.tool()
+def sage_search_checkpoints(query: str, limit: int = 5) -> str:
+    """Search checkpoints by semantic similarity to a query.
+
+    Finds checkpoints whose thesis is semantically similar to your query.
+    Use this to find relevant past research before starting a new task.
+
+    Args:
+        query: What you're looking for (e.g., "JWT authentication patterns")
+        limit: Maximum results to return (default 5)
+
+    Returns:
+        Ranked list of relevant checkpoints with similarity scores
+    """
+    from sage import embeddings
+    from sage.checkpoint import _get_checkpoint_embedding_store
+
+    if not embeddings.is_available():
+        return (
+            "Semantic search unavailable (embeddings not installed).\n"
+            "Install with: pip install claude-sage[embeddings]"
+        )
+
+    # Get query embedding
+    result = embeddings.get_embedding(query)
+    if result.is_err():
+        return f"Failed to embed query: {result.unwrap_err().message}"
+
+    query_embedding = result.unwrap()
+
+    # Load checkpoints and their embeddings
+    checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
+    if not checkpoints:
+        return "No checkpoints found."
+
+    store = _get_checkpoint_embedding_store()
+    if len(store) == 0:
+        return "No checkpoint embeddings found. Save some checkpoints first."
+
+    # Score and rank
+    scored = []
+    for cp in checkpoints:
+        cp_embedding = store.get(cp.id)
+        if cp_embedding is None:
+            continue
+        similarity = float(embeddings.cosine_similarity(query_embedding, cp_embedding))
+        scored.append((similarity, cp))
+
+    if not scored:
+        return "No checkpoints with embeddings found."
+
+    # Sort by similarity descending
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top_results = scored[:limit]
+
+    # Format output
+    lines = [f"Found {len(scored)} checkpoints. Top {len(top_results)} matches:\n"]
+    for i, (similarity, cp) in enumerate(top_results, 1):
+        thesis_preview = cp.thesis[:70] + "..." if len(cp.thesis) > 70 else cp.thesis
+        thesis_preview = thesis_preview.replace("\n", " ")
+        lines.append(f"{i}. **[{similarity:.0%}]** {cp.id}")
+        lines.append(f"   {thesis_preview}")
+        lines.append(f"   _Confidence: {cp.confidence:.0%} | {cp.trigger}_")
+        lines.append("")
+
+    lines.append("Use `sage_load_checkpoint(id)` to inject a checkpoint into context.")
+
+    return "\n".join(lines)
 
 
 # =============================================================================
@@ -286,6 +367,10 @@ def sage_autosave_check(
     sources: list[dict] | None = None,
     tensions: list[dict] | None = None,
     unique_contributions: list[dict] | None = None,
+    key_evidence: list[str] | None = None,
+    reasoning_trace: str = "",
+    message_count: int = 0,
+    token_estimate: int = 0,
 ) -> str:
     """Check if an autosave checkpoint should be created.
 
@@ -304,10 +389,22 @@ def sage_autosave_check(
         sources: Sources with {id, type, take, relation} (optional)
         tensions: Disagreements with {between, nature, resolution} (optional)
         unique_contributions: Discoveries with {type, content} (optional)
+        key_evidence: Concrete facts/data points supporting the thesis (optional)
+        reasoning_trace: Narrative explaining the thinking process (optional)
+        message_count: Number of messages in conversation (for depth threshold)
+        token_estimate: Estimated tokens used (for depth threshold)
 
     Returns:
         Confirmation if saved, or explanation if not saved
     """
+    from sage.config import get_sage_config
+
+    config = get_sage_config(_PROJECT_ROOT)
+
+    # Validate confidence bounds
+    if not (0.0 <= confidence <= 1.0):
+        return f"⏸ Invalid confidence {confidence}: must be between 0.0 and 1.0"
+
     # Validate trigger event
     threshold = AUTOSAVE_THRESHOLDS.get(trigger_event)
     if threshold is None:
@@ -328,6 +425,21 @@ def sage_autosave_check(
     if not core_question or len(core_question.strip()) < 5:
         return "⏸ Not saving: no clear research question. What are we trying to answer?"
 
+    # Depth threshold check - prevent shallow/noisy checkpoints
+    # Skip depth check for manual, precompact, and context_threshold triggers
+    exempt_triggers = {"manual", "precompact", "context_threshold", "research_start"}
+    if trigger_event not in exempt_triggers:
+        if message_count > 0 and message_count < config.depth_min_messages:
+            return (
+                f"⏸ Not saving: conversation too shallow ({message_count} messages, "
+                f"need {config.depth_min_messages}). Continue research to build depth."
+            )
+        if token_estimate > 0 and token_estimate < config.depth_min_tokens:
+            return (
+                f"⏸ Not saving: conversation too shallow ({token_estimate} tokens, "
+                f"need {config.depth_min_tokens}). Continue research to build depth."
+            )
+
     # Check for duplicate (semantic similarity to recent checkpoints)
     dedup_result = is_duplicate_checkpoint(current_thesis, project_path=_PROJECT_ROOT)
     if dedup_result.is_duplicate:
@@ -347,9 +459,35 @@ def sage_autosave_check(
         "tensions": tensions or [],
         "unique_contributions": unique_contributions or [],
         "action": {"goal": "", "type": "learning"},
+        "key_evidence": key_evidence or [],
+        "reasoning_trace": reasoning_trace,
     }
 
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
+
+    # Add depth metadata to checkpoint
+    checkpoint = Checkpoint(
+        id=checkpoint.id,
+        ts=checkpoint.ts,
+        trigger=checkpoint.trigger,
+        core_question=checkpoint.core_question,
+        thesis=checkpoint.thesis,
+        confidence=checkpoint.confidence,
+        open_questions=checkpoint.open_questions,
+        sources=checkpoint.sources,
+        tensions=checkpoint.tensions,
+        unique_contributions=checkpoint.unique_contributions,
+        key_evidence=checkpoint.key_evidence,
+        reasoning_trace=checkpoint.reasoning_trace,
+        action_goal=checkpoint.action_goal,
+        action_type=checkpoint.action_type,
+        skill=checkpoint.skill,
+        project=checkpoint.project,
+        parent_checkpoint=checkpoint.parent_checkpoint,
+        message_count=message_count,
+        token_estimate=token_estimate,
+    )
+
     save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis

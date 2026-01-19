@@ -709,3 +709,410 @@ class TestSecurityIntegration:
         # Valid checkpoint should be in results
         valid_ids = [cp.id for cp in checkpoints if cp.id]
         assert "valid-cp" in valid_ids, "Valid checkpoint should be found"
+
+
+class TestInputValidationIntegration:
+    """Integration tests for input validation."""
+
+    def test_confidence_bounds_rejected_in_save(self, temp_sage_dir: Path):
+        """sage_save_checkpoint rejects out-of-bounds confidence."""
+        from sage.mcp_server import sage_save_checkpoint
+
+        # Test confidence > 1.0
+        result = sage_save_checkpoint(
+            core_question="Test question",
+            thesis="Test thesis",
+            confidence=1.5,  # Invalid
+            trigger="manual",
+        )
+        assert "Invalid confidence" in result
+        assert "0.0 and 1.0" in result
+
+        # Test confidence < 0.0
+        result = sage_save_checkpoint(
+            core_question="Test question",
+            thesis="Test thesis",
+            confidence=-0.5,  # Invalid
+            trigger="manual",
+        )
+        assert "Invalid confidence" in result
+
+    def test_confidence_bounds_rejected_in_autosave(self, temp_sage_dir: Path):
+        """sage_autosave_check rejects out-of-bounds confidence."""
+        from sage.mcp_server import sage_autosave_check
+
+        result = sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="Test question",
+            current_thesis="Test thesis that is long enough to pass validation.",
+            confidence=2.0,  # Invalid
+        )
+        assert "Invalid confidence" in result
+
+    def test_valid_confidence_accepted(self, temp_sage_dir: Path):
+        """Valid confidence values are accepted."""
+        from sage.mcp_server import sage_save_checkpoint
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+
+        # Edge cases: 0.0 and 1.0 should work
+        result = sage_save_checkpoint(
+            core_question="Zero confidence",
+            thesis="Thesis with zero confidence",
+            confidence=0.0,
+            trigger="manual",
+        )
+        assert "Checkpoint saved" in result
+
+        result = sage_save_checkpoint(
+            core_question="Full confidence",
+            thesis="Thesis with full confidence",
+            confidence=1.0,
+            trigger="manual",
+        )
+        assert "Checkpoint saved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+
+class TestCheckpointSearchIntegration:
+    """Integration tests for semantic checkpoint search."""
+
+    def test_search_finds_relevant_checkpoint(self, temp_sage_dir: Path):
+        """sage_search_checkpoints finds semantically similar checkpoints."""
+        from sage.mcp_server import sage_save_checkpoint, sage_search_checkpoints
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+
+        # Save checkpoints about different topics
+        sage_save_checkpoint(
+            core_question="How should we implement authentication?",
+            thesis="JWT tokens with refresh mechanism provide secure stateless auth.",
+            confidence=0.85,
+            trigger="synthesis",
+        )
+        sage_save_checkpoint(
+            core_question="What database should we use?",
+            thesis="PostgreSQL offers ACID compliance and JSON support.",
+            confidence=0.80,
+            trigger="synthesis",
+        )
+        sage_save_checkpoint(
+            core_question="How to handle API rate limiting?",
+            thesis="Token bucket algorithm balances fairness and throughput.",
+            confidence=0.75,
+            trigger="synthesis",
+        )
+
+        # Search for auth-related checkpoint
+        result = sage_search_checkpoints("login and authentication patterns")
+
+        assert "JWT" in result or "auth" in result.lower()
+        assert "[" in result  # Has similarity scores
+        assert "%" in result  # Percentage format
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_search_returns_ranked_results(self, temp_sage_dir: Path):
+        """Search results are ranked by similarity."""
+        from sage.mcp_server import sage_save_checkpoint, sage_search_checkpoints
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+
+        # Save two checkpoints
+        sage_save_checkpoint(
+            core_question="Machine learning basics",
+            thesis="Neural networks learn patterns through gradient descent.",
+            confidence=0.8,
+            trigger="synthesis",
+        )
+        sage_save_checkpoint(
+            core_question="Pizza recipes",
+            thesis="Good pizza requires high heat and quality ingredients.",
+            confidence=0.8,
+            trigger="synthesis",
+        )
+
+        # Search for ML topic
+        result = sage_search_checkpoints("deep learning and neural networks")
+
+        # ML checkpoint should rank higher than pizza
+        lines = result.split("\n")
+        first_result_line = next((l for l in lines if "Neural" in l or "neural" in l), None)
+        pizza_line = next((l for l in lines if "pizza" in l.lower()), None)
+
+        # Neural networks should appear (and hopefully before pizza)
+        assert first_result_line is not None
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_search_with_no_embeddings_returns_message(self, temp_sage_dir: Path, monkeypatch):
+        """Search gracefully handles missing embeddings."""
+        from sage.mcp_server import sage_search_checkpoints
+        from sage import embeddings
+
+        # Mock embeddings as unavailable
+        monkeypatch.setattr(embeddings, "is_available", lambda: False)
+
+        result = sage_search_checkpoints("anything")
+
+        assert "unavailable" in result.lower() or "install" in result.lower()
+
+
+class TestContextHydrationIntegration:
+    """Integration tests for context hydration fields."""
+
+    def test_save_checkpoint_with_hydration_fields(self, temp_sage_dir: Path):
+        """MCP save_checkpoint accepts and stores hydration fields."""
+        from sage.mcp_server import sage_save_checkpoint, sage_load_checkpoint
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+
+        result = sage_save_checkpoint(
+            core_question="How should we implement authentication?",
+            thesis="JWT tokens with refresh mechanism provide the best security/UX balance.",
+            confidence=0.85,
+            trigger="synthesis",
+            key_evidence=[
+                "JWT stateless nature reduces server load by 40%",
+                "Refresh tokens enable 30-day sessions securely",
+                "Competitor analysis: 8/10 top apps use JWT",
+            ],
+            reasoning_trace=(
+                "Evaluated session-based vs JWT vs OAuth-only approaches. "
+                "Session-based requires Redis, adding infrastructure cost. "
+                "OAuth-only limits flexibility for mobile apps. "
+                "JWT with refresh tokens offers best balance."
+            ),
+        )
+
+        assert "Checkpoint saved" in result
+
+        # Load and verify hydration fields persisted
+        checkpoints = list_checkpoints()
+        assert len(checkpoints) >= 1
+
+        loaded = sage_load_checkpoint(checkpoints[0].id)
+        assert "JWT stateless nature" in loaded
+        assert "Evaluated session-based" in loaded
+
+        # Cleanup
+        for cp in checkpoints:
+            delete_checkpoint(cp.id)
+
+    def test_autosave_with_hydration_fields(self, temp_sage_dir: Path):
+        """MCP autosave accepts and stores hydration fields."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint, load_checkpoint
+
+        result = sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="What database should we use?",
+            current_thesis="PostgreSQL offers the best combination of features and reliability.",
+            confidence=0.80,
+            key_evidence=[
+                "PostgreSQL JSONB enables flexible schema",
+                "PostGIS extension needed for geospatial",
+                "Benchmark: 50k QPS on modest hardware",
+            ],
+            reasoning_trace="Compared Postgres, MySQL, MongoDB. MongoDB lacks ACID for transactions.",
+        )
+
+        assert "Autosaved" in result
+
+        # Verify fields persisted
+        checkpoints = list_checkpoints()
+        cp = load_checkpoint(checkpoints[0].id)
+
+        assert len(cp.key_evidence) == 3
+        assert "PostgreSQL JSONB" in cp.key_evidence[0]
+        assert "Compared Postgres" in cp.reasoning_trace
+
+        # Cleanup
+        for cp in checkpoints:
+            delete_checkpoint(cp.id)
+
+
+class TestDepthThresholdIntegration:
+    """Integration tests for depth threshold enforcement."""
+
+    def test_shallow_conversation_blocked(self, temp_sage_dir: Path, monkeypatch):
+        """Autosave rejects checkpoints from shallow conversations."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.config import SageConfig
+
+        # Set strict depth thresholds
+        config = SageConfig(depth_min_messages=10, depth_min_tokens=3000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        # Try to save with shallow conversation (5 messages, 1000 tokens)
+        result = sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="Quick question",
+            current_thesis="Quick answer that is long enough to pass content check validation.",
+            confidence=0.8,
+            message_count=5,  # Below threshold of 10
+            token_estimate=1000,  # Below threshold of 3000
+        )
+
+        assert "Not saving" in result
+        assert "shallow" in result.lower() or "messages" in result.lower()
+
+    def test_deep_conversation_allowed(self, temp_sage_dir: Path, monkeypatch):
+        """Autosave allows checkpoints from deep conversations."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+        from sage.config import SageConfig
+
+        # Set depth thresholds
+        config = SageConfig(depth_min_messages=8, depth_min_tokens=2000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        # Save with deep conversation (20 messages, 8000 tokens)
+        result = sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="In-depth analysis",
+            current_thesis="Comprehensive answer after thorough research.",
+            confidence=0.85,
+            message_count=20,  # Above threshold
+            token_estimate=8000,  # Above threshold
+        )
+
+        assert "Autosaved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_manual_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
+        """Manual triggers bypass depth threshold checks."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+        from sage.config import SageConfig
+
+        # Set strict depth thresholds
+        config = SageConfig(depth_min_messages=100, depth_min_tokens=50000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        # Manual trigger with shallow conversation should still work
+        result = sage_autosave_check(
+            trigger_event="manual",  # Exempt trigger
+            core_question="Manual save",
+            current_thesis="User explicitly requested this checkpoint.",
+            confidence=0.5,
+            message_count=2,  # Way below threshold
+            token_estimate=500,  # Way below threshold
+        )
+
+        assert "Autosaved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_precompact_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
+        """Precompact triggers bypass depth threshold checks."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+        from sage.config import SageConfig
+
+        # Set strict depth thresholds
+        config = SageConfig(depth_min_messages=100, depth_min_tokens=50000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        # Precompact trigger with shallow conversation should still work
+        result = sage_autosave_check(
+            trigger_event="precompact",  # Exempt trigger
+            core_question="Pre-compaction save",
+            current_thesis="Saving before context compaction.",
+            confidence=0.3,
+            message_count=3,
+            token_estimate=800,
+        )
+
+        assert "Autosaved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_context_threshold_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
+        """Context threshold triggers bypass depth checks."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+        from sage.config import SageConfig
+
+        config = SageConfig(depth_min_messages=100, depth_min_tokens=50000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        result = sage_autosave_check(
+            trigger_event="context_threshold",  # Exempt trigger
+            core_question="Context limit approaching",
+            current_thesis="Saving at 70% context usage.",
+            confidence=0.4,
+            message_count=5,
+            token_estimate=1000,
+        )
+
+        assert "Autosaved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)
+
+    def test_depth_fields_stored_in_checkpoint(self, temp_sage_dir: Path, monkeypatch):
+        """Depth metadata is stored in saved checkpoint."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint, load_checkpoint
+        from sage.config import SageConfig
+
+        config = SageConfig(depth_min_messages=5, depth_min_tokens=1000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="Depth metadata test",
+            current_thesis="Testing that depth fields are stored.",
+            confidence=0.75,
+            message_count=15,
+            token_estimate=6000,
+        )
+
+        checkpoints = list_checkpoints()
+        cp = load_checkpoint(checkpoints[0].id)
+
+        assert cp.message_count == 15
+        assert cp.token_estimate == 6000
+
+        # Cleanup
+        for c in checkpoints:
+            delete_checkpoint(c.id)
+
+    def test_zero_depth_values_skip_check(self, temp_sage_dir: Path, monkeypatch):
+        """Zero message_count/token_estimate skips depth check (legacy callers)."""
+        from sage.mcp_server import sage_autosave_check
+        from sage.checkpoint import list_checkpoints, delete_checkpoint
+        from sage.config import SageConfig
+
+        # Set strict thresholds
+        config = SageConfig(depth_min_messages=100, depth_min_tokens=50000)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
+
+        # Zero values should skip depth check (backward compatibility)
+        result = sage_autosave_check(
+            trigger_event="synthesis",
+            core_question="Legacy caller test",
+            current_thesis="Caller didn't provide depth info.",
+            confidence=0.7,
+            message_count=0,  # Zero = skip check
+            token_estimate=0,  # Zero = skip check
+        )
+
+        # Should be allowed (depth check skipped due to zero values)
+        assert "Autosaved" in result
+
+        # Cleanup
+        for cp in list_checkpoints():
+            delete_checkpoint(cp.id)

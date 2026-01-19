@@ -14,7 +14,7 @@ embeddings to avoid saving semantically similar checkpoints.
 import hashlib
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -72,6 +72,10 @@ class Checkpoint:
     sources: list[Source] = field(default_factory=list)
     tensions: list[Tension] = field(default_factory=list)
     unique_contributions: list[Contribution] = field(default_factory=list)
+
+    # Context hydration (v1.1) - helps Claude reconstruct mental state on restore
+    key_evidence: list[str] = field(default_factory=list)  # Concrete facts supporting thesis
+    reasoning_trace: str = ""  # Narrative of thinking process
 
     # Action context
     action_goal: str = ""
@@ -151,6 +155,19 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
     lines.append(checkpoint.thesis)
     lines.append("")
 
+    # Key evidence (v1.1 - context hydration)
+    if checkpoint.key_evidence:
+        lines.append("## Key Evidence")
+        for evidence in checkpoint.key_evidence:
+            lines.append(f"- {evidence}")
+        lines.append("")
+
+    # Reasoning trace (v1.1 - context hydration)
+    if checkpoint.reasoning_trace:
+        lines.append("## Reasoning Trace")
+        lines.append(checkpoint.reasoning_trace)
+        lines.append("")
+
     # Open questions
     if checkpoint.open_questions:
         lines.append("## Open Questions")
@@ -207,6 +224,8 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
         # Parse body sections
         core_question = ""
         thesis = ""
+        key_evidence: list[str] = []
+        reasoning_trace = ""
         open_questions: list[str] = []
         sources: list[Source] = []
         tensions: list[Tension] = []
@@ -222,6 +241,12 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
                 # Save previous section
                 if current_section == "thesis":
                     thesis = "\n".join(section_lines).strip()
+                elif current_section == "key_evidence":
+                    for sl in section_lines:
+                        if sl.startswith("- "):
+                            key_evidence.append(sl[2:].strip())
+                elif current_section == "reasoning_trace":
+                    reasoning_trace = "\n".join(section_lines).strip()
                 elif current_section == "open_questions":
                     for sl in section_lines:
                         if sl.startswith("- "):
@@ -252,6 +277,12 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
         # Save last section
         if current_section == "thesis":
             thesis = "\n".join(section_lines).strip()
+        elif current_section == "key_evidence":
+            for sl in section_lines:
+                if sl.startswith("- "):
+                    key_evidence.append(sl[2:].strip())
+        elif current_section == "reasoning_trace":
+            reasoning_trace = "\n".join(section_lines).strip()
         elif current_section == "open_questions":
             for sl in section_lines:
                 if sl.startswith("- "):
@@ -283,6 +314,8 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             sources=sources,
             tensions=tensions,
             unique_contributions=contributions,
+            key_evidence=key_evidence,
+            reasoning_trace=reasoning_trace,
             action_goal=fm.get("action_goal", ""),
             action_type=fm.get("action_type", ""),
             skill=fm.get("skill"),
@@ -736,6 +769,18 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
         f"{checkpoint.thesis}\n\n",
     ]
 
+    # Key evidence (v1.1 - context hydration)
+    if checkpoint.key_evidence:
+        parts.append("## Key Evidence\n")
+        for evidence in checkpoint.key_evidence:
+            parts.append(f"- {evidence}\n")
+        parts.append("\n")
+
+    # Reasoning trace (v1.1 - context hydration)
+    if checkpoint.reasoning_trace:
+        parts.append("## Reasoning Trace\n")
+        parts.append(f"{checkpoint.reasoning_trace}\n\n")
+
     if checkpoint.open_questions:
         parts.append("## Open Questions\n")
         for q in checkpoint.open_questions:
@@ -813,6 +858,8 @@ def create_checkpoint_from_dict(data: dict, trigger: str = "manual") -> Checkpoi
             )
             for c in data.get("unique_contributions", [])
         ],
+        key_evidence=data.get("key_evidence", []),
+        reasoning_trace=data.get("reasoning_trace", ""),
         action_goal=data.get("action", {}).get("goal", ""),
         action_type=data.get("action", {}).get("type", ""),
     )

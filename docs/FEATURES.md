@@ -34,6 +34,8 @@ Each checkpoint captures:
 - **Core question** — What decision is this driving toward?
 - **Thesis** — Current synthesized position
 - **Confidence** — How confident (0.0-1.0)
+- **Key evidence** — Concrete facts/data points supporting the thesis (context hydration)
+- **Reasoning trace** — Narrative explaining the thinking process (context hydration)
 - **Open questions** — What's still unknown
 - **Sources** — Decision-relevant summaries with relations (supports/contradicts/nuances)
 - **Tensions** — Where credible sources disagree
@@ -41,12 +43,35 @@ Each checkpoint captures:
 - **Action context** — Goal and type (decision/implementation/learning/exploration)
 - **Metadata** — Skill, project, parent checkpoint, message count, token estimate
 
+### Context Hydration
+
+The `key_evidence` and `reasoning_trace` fields help Claude reconstruct its mental state when restoring from a checkpoint:
+
+- **key_evidence**: List of concrete facts, data points, or observations that support the thesis
+- **reasoning_trace**: Narrative prose explaining the thinking process that led to conclusions
+
+These fields improve checkpoint restore quality by providing not just *what* was concluded, but *why*.
+
 ### Checkpoint Deduplication
 
 When embeddings are available, Sage checks thesis similarity against recent checkpoints:
 - Default threshold: 90% similarity
 - Skips saving if too similar to recent checkpoint
 - Configurable via `dedup_threshold` in tuning.yaml
+
+### Depth Threshold Enforcement
+
+Prevents shallow/noisy checkpoints by requiring minimum conversation depth:
+- **depth_min_messages**: Minimum messages before checkpoint allowed (default: 8)
+- **depth_min_tokens**: Minimum tokens before checkpoint allowed (default: 2000)
+
+**Exempt triggers** (bypass depth check):
+- `manual` — User explicitly requested
+- `precompact` — Before compaction (critical)
+- `context_threshold` — At 70% context usage
+- `research_start` — Initial state capture
+
+Callers that don't provide `message_count`/`token_estimate` (zero values) skip the check for backward compatibility.
 
 ### Project-Local Checkpoints
 
@@ -71,12 +96,22 @@ trigger: synthesis
 confidence: 0.85
 skill: my-skill
 project: my-project
+message_count: 15
+token_estimate: 6000
 ---
 
 # Core Question Here
 
 ## Thesis
 The synthesized position...
+
+## Key Evidence
+- Concrete fact 1 supporting the thesis
+- Data point from research
+
+## Reasoning Trace
+Started by evaluating options A and B. Eliminated A due to constraint X.
+B emerged as the better choice after considering factors Y and Z.
 
 ## Open Questions
 - Question 1
@@ -292,10 +327,31 @@ Tools available to Claude via MCP protocol:
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `sage_save_checkpoint` | core_question, thesis, confidence, open_questions, sources, tensions, unique_contributions, action_goal, action_type | Confirmation |
+| `sage_save_checkpoint` | core_question, thesis, confidence, open_questions, sources, tensions, unique_contributions, action_goal, action_type, key_evidence, reasoning_trace | Confirmation |
 | `sage_load_checkpoint` | checkpoint_id | Formatted context |
 | `sage_list_checkpoints` | limit, skill | List of checkpoints |
-| `sage_autosave_check` | trigger_event, core_question, current_thesis, confidence, open_questions, sources, tensions, unique_contributions | Save result |
+| `sage_search_checkpoints` | query, limit | Ranked matches with similarity scores |
+| `sage_autosave_check` | trigger_event, core_question, current_thesis, confidence, open_questions, sources, tensions, unique_contributions, key_evidence, reasoning_trace, message_count, token_estimate | Save result |
+
+### Checkpoint Search
+
+Find relevant past research before starting a new task:
+
+```
+sage_search_checkpoints("JWT authentication patterns")
+
+→ Found 12 checkpoints. Top 5 matches:
+
+1. **[89%]** 2026-01-15T12-00-00_jwt-refresh-tokens
+   JWT with refresh tokens provides secure stateless authentication...
+   _Confidence: 85% | synthesis_
+
+2. **[72%]** 2026-01-10T09-30-00_oauth-comparison
+   OAuth 2.0 vs session-based auth comparison...
+   _Confidence: 80% | synthesis_
+
+Use `sage_load_checkpoint(id)` to inject a checkpoint into context.
+```
 
 ### Knowledge Tools
 
