@@ -38,9 +38,9 @@ class TestSageConfigDefaults:
         assert cfg.topic_drift_threshold == 0.50
 
     def test_default_embedding_model(self):
-        """Default embedding model is MiniLM."""
+        """Default embedding model is BGE-large."""
         cfg = SageConfig()
-        assert cfg.embedding_model == "all-MiniLM-L6-v2"
+        assert cfg.embedding_model == "BAAI/bge-large-en-v1.5"
 
     def test_weights_sum_to_one(self):
         """Embedding + keyword weights sum to 1.0."""

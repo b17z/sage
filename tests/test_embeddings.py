@@ -1,5 +1,6 @@
 """Tests for sage.embeddings module."""
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,11 +8,18 @@ import numpy as np
 import pytest
 
 from sage.embeddings import (
+    DEFAULT_MODEL,
+    EMBEDDINGS_DIR,
+    EMBEDDINGS_META_FILE,
+    MODEL_INFO,
     EmbeddingStore,
     SimilarItem,
+    check_model_mismatch,
     cosine_similarity,
     cosine_similarity_matrix,
     find_similar,
+    get_configured_model,
+    get_model_info,
     is_available,
     load_embeddings,
     save_embeddings,
@@ -181,9 +189,15 @@ class TestEmbeddingStore:
 class TestSaveLoadEmbeddings:
     """Tests for embedding persistence."""
 
-    def test_save_and_load(self, mock_embeddings_dir: Path):
+    def test_save_and_load(self, mock_embeddings_dir: Path, monkeypatch):
         """Save and load embeddings."""
-        store = EmbeddingStore.empty()
+        # Mock get_model_info to return matching dimension for test embeddings
+        monkeypatch.setattr(
+            "sage.embeddings.get_model_info",
+            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0}
+        )
+
+        store = EmbeddingStore.empty(dim=3)
         e1 = np.array([1.0, 0.0, 0.0])
         e2 = np.array([0.0, 1.0, 0.0])
         store = store.add("item1", e1)
@@ -352,3 +366,278 @@ class TestIntegrationWithKnowledge:
 
         assert path.name == "checkpoints.npy"
         assert "embeddings" in str(path)
+
+
+class TestModelInfo:
+    """Tests for model info and configuration."""
+
+    def test_default_model_is_bge_large(self):
+        """Default model is BGE-large-en-v1.5."""
+        assert DEFAULT_MODEL == "BAAI/bge-large-en-v1.5"
+
+    def test_model_info_has_known_models(self):
+        """MODEL_INFO contains expected models."""
+        expected_models = [
+            "BAAI/bge-large-en-v1.5",
+            "BAAI/bge-base-en-v1.5",
+            "BAAI/bge-small-en-v1.5",
+            "all-MiniLM-L6-v2",
+        ]
+        for model in expected_models:
+            assert model in MODEL_INFO
+
+    def test_model_info_has_required_fields(self):
+        """Each model info has dim, query_prefix, size_mb."""
+        for model_name, info in MODEL_INFO.items():
+            assert "dim" in info, f"{model_name} missing dim"
+            assert "query_prefix" in info, f"{model_name} missing query_prefix"
+            assert "size_mb" in info, f"{model_name} missing size_mb"
+
+    def test_bge_models_have_query_prefix(self):
+        """BGE models require query prefix for optimal retrieval."""
+        bge_models = [m for m in MODEL_INFO if m.startswith("BAAI/bge")]
+        for model in bge_models:
+            prefix = MODEL_INFO[model]["query_prefix"]
+            assert len(prefix) > 0, f"{model} should have query prefix"
+            assert "Represent this sentence" in prefix
+
+    def test_minilm_no_query_prefix(self):
+        """MiniLM models don't need query prefix."""
+        assert MODEL_INFO["all-MiniLM-L6-v2"]["query_prefix"] == ""
+
+    def test_get_model_info_known_model(self):
+        """get_model_info returns info for known models."""
+        info = get_model_info("BAAI/bge-large-en-v1.5")
+        assert info["dim"] == 1024
+        assert info["size_mb"] == 1340
+
+    def test_get_model_info_unknown_model(self):
+        """get_model_info returns defaults for unknown models."""
+        info = get_model_info("unknown/model")
+        assert info["dim"] == 384  # Conservative default
+        assert info["query_prefix"] == ""
+
+
+class TestGetConfiguredModel:
+    """Tests for get_configured_model."""
+
+    def test_returns_model_from_config(self):
+        """get_configured_model returns model from SageConfig."""
+        from sage.config import SageConfig
+
+        with patch("sage.config.get_sage_config") as mock_config:
+            mock_config.return_value = SageConfig(embedding_model="BAAI/bge-base-en-v1.5")
+            result = get_configured_model()
+            assert result == "BAAI/bge-base-en-v1.5"
+
+    def test_default_is_bge_large(self):
+        """Default configured model is BGE-large."""
+        from sage.config import SageConfig
+
+        with patch("sage.config.get_sage_config") as mock_config:
+            mock_config.return_value = SageConfig()  # Use defaults
+            result = get_configured_model()
+            assert result == "BAAI/bge-large-en-v1.5"
+
+
+class TestQueryEmbedding:
+    """Tests for get_query_embedding with prefix support."""
+
+    def test_query_embedding_adds_prefix_for_bge(self):
+        """Query embedding adds prefix for BGE models."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with patch("sage.embeddings.is_available", return_value=True), \
+             patch("sage.embeddings.get_model") as mock_get_model, \
+             patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"):
+            from sage.embeddings import get_query_embedding, ok
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_query_embedding("test query")
+
+            assert result.is_ok()
+            # Check that encode was called with prefixed text
+            call_args = mock_model.encode.call_args
+            text_arg = call_args[0][0]
+            assert text_arg.startswith("Represent this sentence")
+            assert "test query" in text_arg
+
+    def test_query_embedding_no_prefix_for_minilm(self):
+        """Query embedding skips prefix for MiniLM models."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with patch("sage.embeddings.is_available", return_value=True), \
+             patch("sage.embeddings.get_model") as mock_get_model, \
+             patch("sage.embeddings.get_configured_model", return_value="all-MiniLM-L6-v2"):
+            from sage.embeddings import get_query_embedding, ok
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_query_embedding("test query")
+
+            assert result.is_ok()
+            # Check that encode was called without prefix
+            call_args = mock_model.encode.call_args
+            text_arg = call_args[0][0]
+            assert text_arg == "test query"
+
+    def test_document_embedding_no_prefix(self):
+        """Document embedding never adds prefix."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with patch("sage.embeddings.is_available", return_value=True), \
+             patch("sage.embeddings.get_model") as mock_get_model, \
+             patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"):
+            from sage.embeddings import get_embedding, ok
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_embedding("document text")
+
+            assert result.is_ok()
+            # Check that encode was called without prefix
+            call_args = mock_model.encode.call_args
+            text_arg = call_args[0][0]
+            assert text_arg == "document text"
+
+
+class TestModelMismatchDetection:
+    """Tests for model mismatch detection."""
+
+    def test_check_mismatch_no_metadata(self, tmp_path, monkeypatch):
+        """No metadata file means no mismatch."""
+        # Point to empty temp dir
+        monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", tmp_path / "meta.json")
+        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+
+        is_mismatch, stored, current = check_model_mismatch()
+
+        assert is_mismatch is False
+        assert stored is None
+        assert current == "BAAI/bge-large-en-v1.5"
+
+    def test_check_mismatch_same_model(self, tmp_path, monkeypatch):
+        """Same model in metadata means no mismatch."""
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text(json.dumps({"model": "BAAI/bge-large-en-v1.5"}))
+        monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
+        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+
+        is_mismatch, stored, current = check_model_mismatch()
+
+        assert is_mismatch is False
+        assert stored == "BAAI/bge-large-en-v1.5"
+        assert current == "BAAI/bge-large-en-v1.5"
+
+    def test_check_mismatch_different_model(self, tmp_path, monkeypatch):
+        """Different model in metadata triggers mismatch."""
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text(json.dumps({"model": "all-MiniLM-L6-v2"}))
+        monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
+        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+
+        is_mismatch, stored, current = check_model_mismatch()
+
+        assert is_mismatch is True
+        assert stored == "all-MiniLM-L6-v2"
+        assert current == "BAAI/bge-large-en-v1.5"
+
+    def test_load_embeddings_returns_empty_on_mismatch(self, tmp_path, monkeypatch):
+        """Loading embeddings returns empty store when model changed."""
+        # Create embeddings file
+        embeddings_path = tmp_path / "test.npy"
+        ids_path = tmp_path / "test.json"
+        np.save(embeddings_path, np.array([[1.0, 0.0, 0.0]]))
+        ids_path.write_text(json.dumps(["item1"]))
+
+        # Create metadata with different model
+        meta_file = tmp_path / "meta.json"
+        meta_file.write_text(json.dumps({"model": "all-MiniLM-L6-v2"}))
+
+        monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
+        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+
+        result = load_embeddings(embeddings_path)
+
+        assert result.is_ok()
+        store = result.unwrap()
+        assert len(store) == 0  # Empty due to mismatch
+
+
+class TestDownloadWarning:
+    """Tests for download warning on first load."""
+
+    def test_warning_shown_for_large_model(self, capsys, monkeypatch):
+        """Warning shown for models > 100MB on first load."""
+        import sage.embeddings
+
+        # Reset warning flag
+        monkeypatch.setattr(sage.embeddings, "_first_load_warning_shown", False)
+
+        sage.embeddings._show_download_warning("BAAI/bge-large-en-v1.5")
+
+        captured = capsys.readouterr()
+        assert "1340MB" in captured.err
+        assert sage.embeddings._first_load_warning_shown is True
+
+    def test_warning_not_shown_twice(self, capsys, monkeypatch):
+        """Warning only shown once per session."""
+        import sage.embeddings
+
+        # Set flag as already shown
+        monkeypatch.setattr(sage.embeddings, "_first_load_warning_shown", True)
+
+        sage.embeddings._show_download_warning("BAAI/bge-large-en-v1.5")
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_warning_not_shown_for_small_model(self, capsys, monkeypatch):
+        """Warning not shown for models < 100MB."""
+        import sage.embeddings
+
+        # Reset warning flag
+        monkeypatch.setattr(sage.embeddings, "_first_load_warning_shown", False)
+
+        sage.embeddings._show_download_warning("all-MiniLM-L6-v2")  # 80MB
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+
+class TestBatchEmbeddings:
+    """Tests for batch embedding generation."""
+
+    def test_batch_embeddings_empty_list(self):
+        """Empty list returns empty array."""
+        from sage.embeddings import get_embeddings_batch
+
+        result = get_embeddings_batch([])
+
+        assert result.is_ok()
+        assert len(result.unwrap()) == 0
+
+    def test_batch_embeddings_returns_correct_shape(self):
+        """Batch embeddings returns correct shape."""
+        mock_model = MagicMock()
+        mock_embeddings = np.array([
+            [0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, -0.5],
+        ])
+        # Normalize
+        mock_embeddings = mock_embeddings / np.linalg.norm(mock_embeddings, axis=1, keepdims=True)
+        mock_model.encode.return_value = mock_embeddings
+
+        with patch("sage.embeddings.is_available", return_value=True), \
+             patch("sage.embeddings.get_model") as mock_get_model:
+            from sage.embeddings import get_embeddings_batch, ok
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_embeddings_batch(["text1", "text2"])
+
+            assert result.is_ok()
+            assert result.unwrap().shape == (2, 4)
