@@ -452,7 +452,7 @@ class TestAutosaveCheck:
         """Enforces depth thresholds for non-exempt triggers."""
         # Create a config with depth requirements
         mock_config = SageConfig(depth_min_messages=8, depth_min_tokens=2000)
-        monkeypatch.setattr("sage.config.get_sage_config", lambda _: mock_config)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         # synthesis is NOT exempt, so depth is enforced
         result = sage_autosave_check(
@@ -470,7 +470,7 @@ class TestAutosaveCheck:
     def test_autosave_exempt_triggers_skip_depth(self, isolated_project, monkeypatch):
         """Exempt triggers skip depth threshold checks."""
         mock_config = SageConfig(depth_min_messages=8, depth_min_tokens=2000)
-        monkeypatch.setattr("sage.config.get_sage_config", lambda _: mock_config)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         # manual is exempt
         result = sage_autosave_check(
@@ -488,7 +488,7 @@ class TestAutosaveCheck:
     def test_autosave_saves_valid_checkpoint(self, isolated_project, monkeypatch):
         """Saves checkpoint when all validations pass."""
         mock_config = SageConfig(depth_min_messages=5, depth_min_tokens=1000)
-        monkeypatch.setattr("sage.config.get_sage_config", lambda _: mock_config)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         result = sage_autosave_check(
             trigger_event="synthesis",
@@ -505,7 +505,7 @@ class TestAutosaveCheck:
     def test_autosave_includes_depth_metadata(self, isolated_project, monkeypatch):
         """Saved checkpoint includes depth metadata."""
         mock_config = SageConfig(depth_min_messages=5, depth_min_tokens=1000)
-        monkeypatch.setattr("sage.config.get_sage_config", lambda _: mock_config)
+        monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         result = sage_autosave_check(
             trigger_event="synthesis",

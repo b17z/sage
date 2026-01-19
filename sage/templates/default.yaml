@@ -1,0 +1,34 @@
+# Default checkpoint template - matches current Sage checkpoint format
+name: default
+description: Standard research checkpoint with full context preservation
+
+fields:
+  - name: core_question
+    required: true
+    description: What decision/action is this research driving toward?
+
+  - name: thesis
+    required: true
+    description: Current synthesized position (1-2 sentences)
+
+  - name: confidence
+    required: true
+    description: Confidence in thesis (0.0-1.0)
+
+  - name: key_evidence
+    description: Concrete facts/data points supporting the thesis
+
+  - name: reasoning_trace
+    description: Narrative explaining the thinking process
+
+  - name: open_questions
+    description: What's still unknown or needs more research
+
+  - name: sources
+    description: List of sources with {id, type, take, relation}
+
+  - name: tensions
+    description: Source disagreements with {between, nature, resolution}
+
+  - name: unique_contributions
+    description: Discoveries with {type, content}

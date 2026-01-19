@@ -88,6 +88,10 @@ class Checkpoint:
     message_count: int = 0
     token_estimate: int = 0
 
+    # Template support (v1.2)
+    template: str = "default"  # Template name for rendering
+    custom_fields: dict = field(default_factory=dict)  # Extra fields for non-default templates
+
 
 def generate_checkpoint_id(description: str) -> str:
     """Generate a checkpoint ID from timestamp and description."""
@@ -139,6 +143,7 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
         "token_estimate": checkpoint.token_estimate,
         "action_goal": checkpoint.action_goal or None,
         "action_type": checkpoint.action_type or None,
+        "template": checkpoint.template if checkpoint.template != "default" else None,
     }
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
@@ -323,6 +328,7 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             parent_checkpoint=fm.get("parent_checkpoint"),
             message_count=fm.get("message_count", 0),
             token_estimate=fm.get("token_estimate", 0),
+            template=fm.get("template", "default"),
         )
     except (yaml.YAMLError, KeyError, ValueError):
         return None
@@ -818,13 +824,35 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
     return "".join(parts)
 
 
-def create_checkpoint_from_dict(data: dict, trigger: str = "manual") -> Checkpoint:
-    """Create a Checkpoint from a dictionary (e.g., parsed from Claude's output)."""
+def create_checkpoint_from_dict(
+    data: dict,
+    trigger: str = "manual",
+    template: str = "default",
+) -> Checkpoint:
+    """Create a Checkpoint from a dictionary (e.g., parsed from Claude's output).
+
+    Args:
+        data: Checkpoint data dictionary
+        trigger: What triggered this checkpoint
+        template: Template name for rendering (default: "default")
+
+    Returns:
+        Checkpoint object
+    """
     ts = datetime.now(UTC).isoformat()
 
     # Generate ID
-    description = data.get("thesis", "checkpoint")[:50]
+    description = data.get("thesis", data.get("decision", "checkpoint"))[:50]
     checkpoint_id = generate_checkpoint_id(description)
+
+    # Extract custom fields (anything not in standard schema)
+    standard_fields = {
+        "core_question", "thesis", "confidence", "open_questions", "sources",
+        "tensions", "unique_contributions", "key_evidence", "reasoning_trace",
+        "action", "decision", "options_considered", "tradeoffs", "recommendation",
+        "risks", "summary", "issues_found", "suggestions", "files_reviewed",
+    }
+    custom_fields = {k: v for k, v in data.items() if k not in standard_fields}
 
     return Checkpoint(
         id=checkpoint_id,
@@ -862,4 +890,6 @@ def create_checkpoint_from_dict(data: dict, trigger: str = "manual") -> Checkpoi
         reasoning_trace=data.get("reasoning_trace", ""),
         action_goal=data.get("action", {}).get("goal", ""),
         action_type=data.get("action", {}).get("type", ""),
+        template=template,
+        custom_fields=custom_fields,
     )

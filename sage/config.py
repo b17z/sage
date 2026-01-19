@@ -153,8 +153,8 @@ class SageConfig:
     depth_min_messages: int = 8
     depth_min_tokens: int = 2000
 
-    # Embedding model (current default, upgrade path available)
-    embedding_model: str = "all-MiniLM-L6-v2"
+    # Embedding model - BGE-large for better retrieval quality
+    embedding_model: str = "BAAI/bge-large-en-v1.5"
 
     @classmethod
     def load(cls, sage_dir: Path) -> "SageConfig":

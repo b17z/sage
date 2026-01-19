@@ -29,9 +29,13 @@ from sage.checkpoint import (
     save_checkpoint,
 )
 from sage.knowledge import (
+    KNOWLEDGE_TYPES,
     add_knowledge,
     format_recalled_context,
+    get_pending_todos,
     list_knowledge,
+    list_todos,
+    mark_todo_done,
     recall_knowledge,
     remove_knowledge,
 )
@@ -62,6 +66,7 @@ def sage_save_checkpoint(
     action_type: str = "",
     key_evidence: list[str] | None = None,
     reasoning_trace: str = "",
+    template: str = "default",
 ) -> str:
     """Save a semantic checkpoint of the current research state.
 
@@ -82,6 +87,7 @@ def sage_save_checkpoint(
         action_type: Type of action (decision, implementation, learning, exploration)
         key_evidence: Concrete facts/data points supporting the thesis (for context hydration)
         reasoning_trace: Narrative explaining the thinking process that led to conclusions
+        template: Checkpoint template to use (default, research, decision, code-review)
 
     Returns:
         Confirmation message with checkpoint ID
@@ -103,10 +109,11 @@ def sage_save_checkpoint(
         "reasoning_trace": reasoning_trace,
     }
 
-    checkpoint = create_checkpoint_from_dict(data, trigger=trigger)
+    checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
     path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-    return f"✓ Checkpoint saved: {checkpoint.id}\nPath: {path}"
+    template_info = f" (template: {template})" if template != "default" else ""
+    return f"✓ Checkpoint saved: {checkpoint.id}{template_info}\nPath: {path}"
 
 
 @mcp.tool()
@@ -181,8 +188,8 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
             "Install with: pip install claude-sage[embeddings]"
         )
 
-    # Get query embedding
-    result = embeddings.get_embedding(query)
+    # Get query embedding (with prefix for BGE models)
+    result = embeddings.get_query_embedding(query)
     if result.is_err():
         return f"Failed to embed query: {result.unwrap_err().message}"
 
@@ -240,6 +247,7 @@ def sage_save_knowledge(
     keywords: list[str],
     skill: str | None = None,
     source: str = "",
+    item_type: str = "knowledge",
 ) -> str:
     """Save an insight to the knowledge base for future recall.
 
@@ -252,6 +260,7 @@ def sage_save_knowledge(
         keywords: Trigger keywords for matching
         skill: Optional skill scope (None = global)
         source: Where this knowledge came from
+        item_type: Type of knowledge (knowledge, preference, todo, reference)
 
     Returns:
         Confirmation message
@@ -262,10 +271,12 @@ def sage_save_knowledge(
         keywords=keywords,
         skill=skill,
         source=source,
+        item_type=item_type,
     )
 
     scope = f"skill:{skill}" if skill else "global"
-    return f"✓ Knowledge saved: {item.id} ({scope}, ~{item.metadata.tokens} tokens)"
+    type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
+    return f"✓ Knowledge saved: {item.id}{type_label} ({scope}, ~{item.metadata.tokens} tokens)"
 
 
 @mcp.tool()
@@ -315,7 +326,9 @@ def sage_list_knowledge(skill: str | None = None) -> str:
         keywords = ", ".join(item.triggers.keywords[:5])
         if len(item.triggers.keywords) > 5:
             keywords += f" (+{len(item.triggers.keywords) - 5} more)"
-        lines.append(f"- **{item.id}** ({scope})")
+        type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
+        status_label = f" ({item.metadata.status})" if item.item_type == "todo" else ""
+        lines.append(f"- **{item.id}**{type_label}{status_label} ({scope})")
         lines.append(f"  Keywords: {keywords}")
         lines.append(f"  Tokens: ~{item.metadata.tokens}")
         lines.append("")
@@ -336,6 +349,75 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
     if remove_knowledge(knowledge_id):
         return f"✓ Removed knowledge item: {knowledge_id}"
     return f"Knowledge item not found: {knowledge_id}"
+
+
+# =============================================================================
+# Todo Tools
+# =============================================================================
+
+
+@mcp.tool()
+def sage_list_todos(status: str = "") -> str:
+    """List todo items.
+
+    Args:
+        status: Filter by status (pending, done) or empty for all
+
+    Returns:
+        Formatted list of todos
+    """
+    status_filter = status if status else None
+    todos = list_todos(status=status_filter)
+
+    if not todos:
+        return "No todos found."
+
+    lines = [f"Found {len(todos)} todo(s):\n"]
+    for todo in todos:
+        status_icon = "☐" if todo.metadata.status == "pending" else "☑"
+        keywords = ", ".join(todo.triggers.keywords[:3])
+        lines.append(f"{status_icon} **{todo.id}** ({todo.metadata.status})")
+        if keywords:
+            lines.append(f"   Keywords: {keywords}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def sage_mark_todo_done(todo_id: str) -> str:
+    """Mark a todo as done.
+
+    Args:
+        todo_id: ID of the todo to mark as done
+
+    Returns:
+        Confirmation or error message
+    """
+    if mark_todo_done(todo_id):
+        return f"✓ Marked todo as done: {todo_id}"
+    return f"Todo not found: {todo_id}"
+
+
+@mcp.tool()
+def sage_get_pending_todos() -> str:
+    """Get pending todos for session-start injection.
+
+    Returns:
+        Formatted list of pending todos or message if none
+    """
+    todos = get_pending_todos()
+
+    if not todos:
+        return "No pending todos."
+
+    lines = ["📋 **Pending Todos:**\n"]
+    for todo in todos:
+        lines.append(f"- **{todo.id}**: {todo.content[:100] if todo.content else '(no content)'}")
+    lines.append("")
+    lines.append("_Use `sage_mark_todo_done(id)` when completed._")
+
+    return "\n".join(lines)
 
 
 # =============================================================================

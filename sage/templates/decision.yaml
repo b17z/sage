@@ -1,0 +1,20 @@
+# Decision checkpoint template - for recording decisions and rationale
+name: decision
+description: Checkpoint for documenting decisions with options and tradeoffs
+
+fields:
+  - name: decision
+    required: true
+    description: The decision being made
+
+  - name: options_considered
+    description: List of alternatives evaluated
+
+  - name: tradeoffs
+    description: Analysis of tradeoffs between options
+
+  - name: recommendation
+    description: The recommended choice and why
+
+  - name: risks
+    description: Potential risks and mitigation strategies

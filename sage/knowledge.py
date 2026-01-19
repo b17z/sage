@@ -24,6 +24,26 @@ KNOWLEDGE_DIR = SAGE_DIR / "knowledge"
 KNOWLEDGE_INDEX = KNOWLEDGE_DIR / "index.yaml"
 
 
+# ============================================================================
+# Knowledge Types
+# ============================================================================
+
+# Valid knowledge types
+KNOWLEDGE_TYPES = ("knowledge", "preference", "todo", "reference")
+
+# Type-specific recall thresholds (0-1 scale)
+# These are multiplied by 10 internally when compared to scores
+TYPE_THRESHOLDS: dict[str, float] = {
+    "knowledge": 0.70,   # Standard query matching
+    "preference": 0.30,  # Aggressive recall (user preferences)
+    "todo": 0.40,        # Session-start + keyword match
+    "reference": 0.80,   # Lower priority, on-demand
+}
+
+# Default threshold for unknown types
+DEFAULT_TYPE_THRESHOLD = 0.70
+
+
 @dataclass(frozen=True)
 class KnowledgeTriggers:
     """Trigger conditions for knowledge recall."""
@@ -47,6 +67,7 @@ class KnowledgeMetadata:
     added: str  # ISO date
     source: str = ""  # where this came from
     tokens: int = 0  # estimated token count
+    status: str = ""  # For todos: pending | done
 
 
 @dataclass(frozen=True)
@@ -58,6 +79,7 @@ class KnowledgeItem:
     triggers: KnowledgeTriggers
     scope: KnowledgeScope
     metadata: KnowledgeMetadata
+    item_type: str = "knowledge"  # knowledge | preference | todo | reference
     content: str = ""  # loaded on demand
 
 
@@ -171,8 +193,8 @@ def _get_embedding_similarity(query: str, knowledge_id: str) -> float | None:
     if not embeddings.is_available():
         return None
 
-    # Get query embedding
-    result = embeddings.get_embedding(query)
+    # Get query embedding (with prefix if model requires it)
+    result = embeddings.get_query_embedding(query)
     if result.is_err():
         return None
 
@@ -200,7 +222,8 @@ def _get_all_embedding_similarities(query: str) -> dict[str, float]:
     if not embeddings.is_available():
         return {}
 
-    result = embeddings.get_embedding(query)
+    # Get query embedding (with prefix if model requires it)
+    result = embeddings.get_query_embedding(query)
     if result.is_err():
         return {}
 
@@ -297,7 +320,9 @@ def load_index() -> list[KnowledgeItem]:
                     added=meta_data.get("added", ""),
                     source=meta_data.get("source", ""),
                     tokens=meta_data.get("tokens", 0),
+                    status=meta_data.get("status", ""),
                 ),
+                item_type=item_data.get("type", "knowledge"),
             )
         )
 
@@ -313,6 +338,7 @@ def save_index(items: list[KnowledgeItem]) -> None:
         "items": [
             {
                 "id": item.id,
+                "type": item.item_type,
                 "file": item.file,
                 "triggers": {
                     "keywords": list(item.triggers.keywords),
@@ -326,6 +352,7 @@ def save_index(items: list[KnowledgeItem]) -> None:
                     "added": item.metadata.added,
                     "source": item.metadata.source,
                     "tokens": item.metadata.tokens,
+                    "status": item.metadata.status,
                 },
             }
             for item in items
@@ -383,7 +410,9 @@ def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
             added=item.metadata.added,
             source=item.metadata.source,
             tokens=len(content) // 4,  # update token estimate
+            status=item.metadata.status,
         ),
+        item_type=item.item_type,
         content=content,
     )
 
@@ -482,6 +511,19 @@ def score_item_combined(
     return combined * 10.0
 
 
+def get_type_threshold(item_type: str) -> float:
+    """Get the recall threshold for a knowledge type (0-10 scale).
+
+    Args:
+        item_type: The knowledge type
+
+    Returns:
+        Threshold on 0-10 scale
+    """
+    threshold_01 = TYPE_THRESHOLDS.get(item_type, DEFAULT_TYPE_THRESHOLD)
+    return threshold_01 * 10.0
+
+
 def recall_knowledge(
     query: str,
     skill_name: str,
@@ -489,6 +531,7 @@ def recall_knowledge(
     max_items: int = 3,
     max_tokens: int = 2000,
     use_embeddings: bool = True,
+    item_types: tuple[str, ...] | None = None,
 ) -> RecallResult:
     """
     Recall relevant knowledge items for a query.
@@ -496,25 +539,33 @@ def recall_knowledge(
     When embeddings are available and use_embeddings=True, uses combined
     semantic + keyword scoring. Falls back to keyword-only scoring otherwise.
 
+    Uses type-aware thresholds when no explicit threshold is provided:
+    - knowledge: 0.70 (standard)
+    - preference: 0.30 (aggressive)
+    - todo: 0.40 (moderate)
+    - reference: 0.80 (conservative)
+
     Args:
         query: The user's query
         skill_name: Current skill being used
         threshold: Minimum score to include item (0-10 scale). If None, uses
-                   recall_threshold from SageConfig (converted to 0-10 scale).
+                   type-specific thresholds.
         max_items: Maximum number of items to recall
         max_tokens: Maximum total tokens to recall
         use_embeddings: Whether to use embedding similarity (if available)
+        item_types: Optional tuple of types to filter (None = all types)
 
     Returns:
         RecallResult with matching items and total tokens
     """
-    # Get threshold from config if not specified
-    if threshold is None:
-        config = get_sage_config()
-        # Config uses 0-1 scale, function uses 0-10 scale
-        threshold = config.recall_threshold * 10.0
-
     items = load_index()
+
+    if not items:
+        return RecallResult(items=[], total_tokens=0)
+
+    # Filter by type if specified
+    if item_types is not None:
+        items = [item for item in items if item.item_type in item_types]
 
     if not items:
         return RecallResult(items=[], total_tokens=0)
@@ -533,8 +584,19 @@ def recall_knowledge(
         score = score_item_combined(item, query, skill_name, similarity)
         scored.append((item, score))
 
-    # Filter and sort by score
-    relevant = [(item, score) for item, score in scored if score >= threshold]
+    # Filter by score using type-aware thresholds (or explicit threshold)
+    relevant: list[tuple[KnowledgeItem, float]] = []
+    for item, score in scored:
+        if threshold is not None:
+            # Explicit threshold provided
+            item_threshold = threshold
+        else:
+            # Use type-specific threshold
+            item_threshold = get_type_threshold(item.item_type)
+
+        if score >= item_threshold:
+            relevant.append((item, score))
+
     relevant.sort(key=lambda x: x[1], reverse=True)
 
     # Select items within limits
@@ -615,6 +677,7 @@ def add_knowledge(
     skill: str | None = None,
     source: str = "",
     patterns: list[str] | None = None,
+    item_type: str = "knowledge",
 ) -> KnowledgeItem:
     """
     Add a new knowledge item.
@@ -626,10 +689,15 @@ def add_knowledge(
         skill: Optional skill scope (None = global)
         source: Where this knowledge came from
         patterns: Optional regex patterns for matching
+        item_type: Type of knowledge item (knowledge, preference, todo, reference)
 
     Returns:
         The created KnowledgeItem
     """
+    # Validate item type
+    if item_type not in KNOWLEDGE_TYPES:
+        logger.warning(f"Unknown knowledge type '{item_type}', using 'knowledge'")
+        item_type = "knowledge"
     ensure_knowledge_dir()
 
     # Sanitize IDs to prevent path traversal
@@ -648,13 +716,17 @@ def add_knowledge(
     added_date = datetime.now().strftime("%Y-%m-%d")
     frontmatter = {
         "id": safe_id,
-        "type": "knowledge",
+        "type": item_type,
         "keywords": keywords,
         "source": source or None,
         "added": added_date,
     }
     if safe_skill:
         frontmatter["skill"] = safe_skill
+    # Add status for todo items
+    status = "pending" if item_type == "todo" else ""
+    if status:
+        frontmatter["status"] = status
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
 
@@ -687,7 +759,9 @@ def add_knowledge(
             added=added_date,
             source=source,
             tokens=len(content) // 4,
+            status=status,
         ),
+        item_type=item_type,
         content=content,
     )
 
@@ -770,3 +844,86 @@ def format_recalled_context(result: RecallResult) -> str:
     parts.append("\n---\n")
 
     return "".join(parts)
+
+
+# ============================================================================
+# Todo Functions
+# ============================================================================
+
+
+def list_todos(status: str | None = None) -> list[KnowledgeItem]:
+    """
+    List todo items, optionally filtered by status.
+
+    Args:
+        status: Filter by status (pending, done) or None for all
+
+    Returns:
+        List of todo KnowledgeItems
+    """
+    items = load_index()
+    todos = [item for item in items if item.item_type == "todo"]
+
+    if status is not None:
+        todos = [item for item in todos if item.metadata.status == status]
+
+    return todos
+
+
+def mark_todo_done(todo_id: str) -> bool:
+    """
+    Mark a todo item as done.
+
+    Args:
+        todo_id: The todo item ID
+
+    Returns:
+        True if todo was found and marked done
+    """
+    items = load_index()
+
+    # Find the todo
+    todo_idx = None
+    for i, item in enumerate(items):
+        if item.id == todo_id and item.item_type == "todo":
+            todo_idx = i
+            break
+
+    if todo_idx is None:
+        return False
+
+    # Create updated item with done status
+    old_item = items[todo_idx]
+    new_item = KnowledgeItem(
+        id=old_item.id,
+        file=old_item.file,
+        triggers=old_item.triggers,
+        scope=old_item.scope,
+        metadata=KnowledgeMetadata(
+            added=old_item.metadata.added,
+            source=old_item.metadata.source,
+            tokens=old_item.metadata.tokens,
+            status="done",
+        ),
+        item_type=old_item.item_type,
+        content=old_item.content,
+    )
+
+    items[todo_idx] = new_item
+    save_index(items)
+
+    # Also update the frontmatter in the file
+    file_path = KNOWLEDGE_DIR / old_item.file
+    if _is_safe_path(KNOWLEDGE_DIR, file_path) and file_path.exists():
+        content = file_path.read_text()
+        # Update status in frontmatter
+        content = re.sub(r"^status:\s*\w+", "status: done", content, flags=re.MULTILINE)
+        file_path.write_text(content)
+        file_path.chmod(0o600)
+
+    return True
+
+
+def get_pending_todos() -> list[KnowledgeItem]:
+    """Get all pending todo items for session-start injection."""
+    return list_todos(status="pending")

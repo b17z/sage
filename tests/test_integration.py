@@ -380,19 +380,21 @@ class TestSemanticSimilarityAccuracy:
     def test_unrelated_concepts_low_similarity(self, temp_sage_dir: Path):
         """Unrelated concepts have low similarity scores."""
         from sage.embeddings import get_embedding, cosine_similarity
-        
+
         pairs = [
             ("machine learning algorithms", "pizza toppings and recipes"),
             ("database optimization", "tropical vacation destinations"),
             ("user authentication", "gardening tips for beginners"),
         ]
-        
+
         for text1, text2 in pairs:
             e1 = get_embedding(text1).unwrap()
             e2 = get_embedding(text2).unwrap()
             similarity = cosine_similarity(e1, e2)
-            
-            assert similarity < 0.3, f"Expected low similarity for '{text1}' vs '{text2}', got {similarity}"
+
+            # BGE-large has higher base similarity than MiniLM
+            # Use 0.5 threshold - still much lower than related concepts
+            assert similarity < 0.5, f"Expected low similarity for '{text1}' vs '{text2}', got {similarity}"
 
 
 class TestConfigCLIIntegration:
