@@ -42,7 +42,10 @@ def mock_knowledge_paths(tmp_path: Path, mock_knowledge_dir: Path):
     """Patch knowledge paths to use temporary directory."""
     with patch("sage.knowledge.KNOWLEDGE_DIR", mock_knowledge_dir), \
          patch("sage.knowledge.KNOWLEDGE_INDEX", mock_knowledge_dir / "index.yaml"), \
-         patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"):
+         patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"), \
+         patch("sage.knowledge._add_embedding", return_value=False), \
+         patch("sage.knowledge._remove_embedding", return_value=True), \
+         patch("sage.knowledge._get_all_embedding_similarities", return_value={}):
         yield mock_knowledge_dir
 
 
@@ -532,3 +535,231 @@ class TestKnowledgeSecurity:
         # Should be owner read/write only
         assert mode & stat.S_IRWXG == 0  # Group: none
         assert mode & stat.S_IRWXO == 0  # Other: none
+
+
+class TestKnowledgeTypes:
+    """Tests for knowledge types feature."""
+
+    def test_default_type_is_knowledge(self, mock_knowledge_paths: Path):
+        """Default item_type is 'knowledge'."""
+        item = add_knowledge(
+            content="Test content",
+            knowledge_id="default-type-test",
+            keywords=["test"],
+        )
+
+        assert item.item_type == "knowledge"
+
+    def test_can_create_todo_type(self, mock_knowledge_paths: Path):
+        """Can create knowledge with todo type."""
+        item = add_knowledge(
+            content="Todo content",
+            knowledge_id="todo-test",
+            keywords=["todo"],
+            item_type="todo",
+        )
+
+        assert item.item_type == "todo"
+        assert item.metadata.status == "pending"
+
+    def test_can_create_preference_type(self, mock_knowledge_paths: Path):
+        """Can create knowledge with preference type."""
+        item = add_knowledge(
+            content="Preference content",
+            knowledge_id="pref-test",
+            keywords=["pref"],
+            item_type="preference",
+        )
+
+        assert item.item_type == "preference"
+
+    def test_can_create_reference_type(self, mock_knowledge_paths: Path):
+        """Can create knowledge with reference type."""
+        item = add_knowledge(
+            content="Reference content",
+            knowledge_id="ref-test",
+            keywords=["ref"],
+            item_type="reference",
+        )
+
+        assert item.item_type == "reference"
+
+    def test_invalid_type_falls_back_to_knowledge(self, mock_knowledge_paths: Path):
+        """Invalid item_type falls back to 'knowledge'."""
+        item = add_knowledge(
+            content="Test content",
+            knowledge_id="invalid-type-test",
+            keywords=["test"],
+            item_type="invalid_type",
+        )
+
+        assert item.item_type == "knowledge"
+
+    def test_type_persists_in_index(self, mock_knowledge_paths: Path):
+        """Item type is persisted in index."""
+        add_knowledge(
+            content="Todo content",
+            knowledge_id="persist-test",
+            keywords=["todo"],
+            item_type="todo",
+        )
+
+        items = load_index()
+        item = next(i for i in items if i.id == "persist-test")
+        assert item.item_type == "todo"
+
+    def test_type_in_frontmatter(self, mock_knowledge_paths: Path):
+        """Item type is written to file frontmatter."""
+        add_knowledge(
+            content="Preference content",
+            knowledge_id="frontmatter-type-test",
+            keywords=["pref"],
+            item_type="preference",
+        )
+
+        file_path = mock_knowledge_paths / "global" / "frontmatter-type-test.md"
+        raw_content = file_path.read_text()
+
+        assert "type: preference" in raw_content
+
+
+class TestTodoFunctions:
+    """Tests for todo-specific functions."""
+
+    def test_list_todos_returns_only_todos(self, mock_knowledge_paths: Path):
+        """list_todos returns only todo-type items."""
+        from sage.knowledge import list_todos
+
+        add_knowledge(content="Knowledge", knowledge_id="k1", keywords=["k"], item_type="knowledge")
+        add_knowledge(content="Todo 1", knowledge_id="t1", keywords=["t"], item_type="todo")
+        add_knowledge(content="Todo 2", knowledge_id="t2", keywords=["t"], item_type="todo")
+        add_knowledge(content="Pref", knowledge_id="p1", keywords=["p"], item_type="preference")
+
+        todos = list_todos()
+
+        assert len(todos) == 2
+        assert all(t.item_type == "todo" for t in todos)
+
+    def test_list_todos_filter_by_status(self, mock_knowledge_paths: Path):
+        """list_todos can filter by status."""
+        from sage.knowledge import list_todos, mark_todo_done
+
+        add_knowledge(content="Todo 1", knowledge_id="t1", keywords=["t"], item_type="todo")
+        add_knowledge(content="Todo 2", knowledge_id="t2", keywords=["t"], item_type="todo")
+        mark_todo_done("t1")
+
+        pending = list_todos(status="pending")
+        done = list_todos(status="done")
+
+        assert len(pending) == 1
+        assert pending[0].id == "t2"
+        assert len(done) == 1
+        assert done[0].id == "t1"
+
+    def test_mark_todo_done_updates_status(self, mock_knowledge_paths: Path):
+        """mark_todo_done updates the status to done."""
+        from sage.knowledge import list_todos, mark_todo_done
+
+        add_knowledge(content="Todo", knowledge_id="mark-test", keywords=["t"], item_type="todo")
+
+        result = mark_todo_done("mark-test")
+
+        assert result is True
+        todos = list_todos(status="done")
+        assert len(todos) == 1
+        assert todos[0].id == "mark-test"
+
+    def test_mark_todo_done_returns_false_for_nonexistent(self, mock_knowledge_paths: Path):
+        """mark_todo_done returns False for nonexistent todo."""
+        from sage.knowledge import mark_todo_done
+
+        result = mark_todo_done("nonexistent")
+
+        assert result is False
+
+    def test_mark_todo_done_returns_false_for_non_todo(self, mock_knowledge_paths: Path):
+        """mark_todo_done returns False for non-todo item."""
+        from sage.knowledge import mark_todo_done
+
+        add_knowledge(content="Knowledge", knowledge_id="not-a-todo", keywords=["k"])
+
+        result = mark_todo_done("not-a-todo")
+
+        assert result is False
+
+    def test_get_pending_todos(self, mock_knowledge_paths: Path):
+        """get_pending_todos returns only pending todos."""
+        from sage.knowledge import get_pending_todos, mark_todo_done
+
+        add_knowledge(content="Todo 1", knowledge_id="t1", keywords=["t"], item_type="todo")
+        add_knowledge(content="Todo 2", knowledge_id="t2", keywords=["t"], item_type="todo")
+        mark_todo_done("t1")
+
+        pending = get_pending_todos()
+
+        assert len(pending) == 1
+        assert pending[0].id == "t2"
+
+
+class TestTypeAwareRecall:
+    """Tests for type-aware recall thresholds."""
+
+    def test_get_type_threshold_returns_correct_values(self):
+        """get_type_threshold returns correct threshold for each type."""
+        from sage.knowledge import get_type_threshold
+
+        # Knowledge: 0.70 * 10 = 7.0
+        assert get_type_threshold("knowledge") == 7.0
+        # Preference: 0.30 * 10 = 3.0
+        assert get_type_threshold("preference") == 3.0
+        # Todo: 0.40 * 10 = 4.0
+        assert get_type_threshold("todo") == 4.0
+        # Reference: 0.80 * 10 = 8.0
+        assert get_type_threshold("reference") == 8.0
+
+    def test_get_type_threshold_returns_default_for_unknown(self):
+        """get_type_threshold returns default for unknown type."""
+        from sage.knowledge import get_type_threshold, DEFAULT_TYPE_THRESHOLD
+
+        result = get_type_threshold("unknown_type")
+
+        assert result == DEFAULT_TYPE_THRESHOLD * 10.0
+
+    def test_recall_with_item_types_filter(self, mock_knowledge_paths: Path):
+        """recall_knowledge can filter by item_types."""
+        add_knowledge(content="K1", knowledge_id="k1", keywords=["common"], item_type="knowledge")
+        add_knowledge(content="T1", knowledge_id="t1", keywords=["common"], item_type="todo")
+        add_knowledge(content="P1", knowledge_id="p1", keywords=["common"], item_type="preference")
+
+        # Recall only todos
+        result = recall_knowledge(
+            "common query",
+            "test",
+            threshold=0.1,  # Low threshold to match
+            item_types=("todo",),
+        )
+
+        assert result.count == 1
+        assert result.items[0].id == "t1"
+
+
+class TestKnowledgeTypeConstants:
+    """Tests for knowledge type constants."""
+
+    def test_knowledge_types_tuple(self):
+        """KNOWLEDGE_TYPES contains expected types."""
+        from sage.knowledge import KNOWLEDGE_TYPES
+
+        assert "knowledge" in KNOWLEDGE_TYPES
+        assert "preference" in KNOWLEDGE_TYPES
+        assert "todo" in KNOWLEDGE_TYPES
+        assert "reference" in KNOWLEDGE_TYPES
+        assert len(KNOWLEDGE_TYPES) == 4
+
+    def test_type_thresholds_dict(self):
+        """TYPE_THRESHOLDS contains thresholds for all types."""
+        from sage.knowledge import TYPE_THRESHOLDS, KNOWLEDGE_TYPES
+
+        for t in KNOWLEDGE_TYPES:
+            assert t in TYPE_THRESHOLDS
+            assert 0.0 <= TYPE_THRESHOLDS[t] <= 1.0

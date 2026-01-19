@@ -15,7 +15,10 @@ from sage.init import run_init
 from sage.knowledge import (
     add_knowledge,
     format_recalled_context,
+    get_pending_todos,
     list_knowledge,
+    list_todos,
+    mark_todo_done,
     recall_knowledge,
     remove_knowledge,
 )
@@ -696,9 +699,14 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
 
 @knowledge.command("list")
 @click.option("--skill", "-s", help="Filter by skill")
-def knowledge_list(skill):
+@click.option("--type", "-t", "item_type", help="Filter by type (knowledge, preference, todo, reference)")
+def knowledge_list(skill, item_type):
     """List knowledge items."""
     items = list_knowledge(skill)
+
+    # Filter by type if specified
+    if item_type:
+        items = [i for i in items if i.item_type == item_type]
 
     if not items:
         console.print("[yellow]No knowledge items found.[/yellow]")
@@ -707,6 +715,7 @@ def knowledge_list(skill):
 
     table = Table()
     table.add_column("ID")
+    table.add_column("TYPE")
     table.add_column("SCOPE")
     table.add_column("KEYWORDS")
     table.add_column("TOKENS", justify="right")
@@ -717,9 +726,13 @@ def knowledge_list(skill):
         keywords = ", ".join(item.triggers.keywords[:3])
         if len(item.triggers.keywords) > 3:
             keywords += "..."
+        type_display = item.item_type
+        if item.item_type == "todo" and item.metadata.status:
+            type_display = f"todo ({item.metadata.status})"
 
         table.add_row(
             item.id,
+            type_display,
             scope,
             keywords,
             str(item.metadata.tokens),
@@ -762,6 +775,85 @@ def knowledge_match(query, skill):
         console.print(f"    Keywords: {', '.join(item.triggers.keywords)}")
         if item.metadata.source:
             console.print(f"    Source: {item.metadata.source}")
+
+
+# ============================================================================
+# Todo Commands
+# ============================================================================
+
+
+@main.group()
+def todo():
+    """Manage persistent todos."""
+    pass
+
+
+@todo.command("list")
+@click.option("--all", "show_all", is_flag=True, help="Show all todos (including done)")
+def todo_list(show_all):
+    """List pending todos."""
+    if show_all:
+        todos = list_todos()
+    else:
+        todos = list_todos(status="pending")
+
+    if not todos:
+        status_msg = "" if show_all else "pending "
+        console.print(f"[yellow]No {status_msg}todos found.[/yellow]")
+        console.print("Add one via Claude Code: sage_save_knowledge(..., item_type='todo')")
+        return
+
+    table = Table()
+    table.add_column("STATUS")
+    table.add_column("ID")
+    table.add_column("KEYWORDS")
+    table.add_column("ADDED")
+
+    for item in todos:
+        status_icon = "☐" if item.metadata.status == "pending" else "☑"
+        keywords = ", ".join(item.triggers.keywords[:3])
+        if len(item.triggers.keywords) > 3:
+            keywords += "..."
+
+        table.add_row(
+            status_icon,
+            item.id,
+            keywords,
+            item.metadata.added,
+        )
+
+    console.print(table)
+
+
+@todo.command("done")
+@click.argument("todo_id")
+def todo_done(todo_id):
+    """Mark a todo as done."""
+    if mark_todo_done(todo_id):
+        console.print(f"[green]✓[/green] Marked as done: {todo_id}")
+    else:
+        console.print(f"[red]Todo '{todo_id}' not found[/red]")
+
+
+@todo.command("pending")
+def todo_pending():
+    """Show pending todos (for session start)."""
+    todos = get_pending_todos()
+
+    if not todos:
+        console.print("[dim]No pending todos.[/dim]")
+        return
+
+    console.print("[bold]📋 Pending Todos:[/bold]")
+    console.print()
+
+    for item in todos:
+        console.print(f"  ☐ [bold]{item.id}[/bold]")
+        if item.triggers.keywords:
+            console.print(f"    Keywords: {', '.join(item.triggers.keywords[:5])}")
+
+    console.print()
+    console.print("[dim]Mark done with: sage todo done <id>[/dim]")
 
 
 @main.group()
@@ -1210,6 +1302,80 @@ def mcp_status():
             console.print("  [dim]Run 'sage mcp install' to add it[/dim]")
     except json.JSONDecodeError:
         console.print(f"  [red]✗[/red] Could not parse {claude_json}")
+
+
+# ============================================================================
+# Templates Commands
+# ============================================================================
+
+
+@main.group()
+def templates():
+    """Manage checkpoint templates."""
+    pass
+
+
+@templates.command("list")
+def templates_list():
+    """List available checkpoint templates."""
+    from sage.templates import list_templates, load_template
+
+    template_names = list_templates()
+
+    if not template_names:
+        console.print("[yellow]No templates found.[/yellow]")
+        return
+
+    table = Table()
+    table.add_column("NAME")
+    table.add_column("FIELDS")
+    table.add_column("DESCRIPTION")
+
+    for name in template_names:
+        template = load_template(name)
+        if template:
+            required_count = sum(1 for f in template.fields if f.required)
+            fields_info = f"{len(template.fields)} ({required_count} required)"
+            desc = template.description[:40] + "..." if len(template.description) > 40 else template.description
+            table.add_row(name, fields_info, desc or "-")
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Use 'sage templates show <name>' for details[/dim]")
+
+
+@templates.command("show")
+@click.argument("name")
+def templates_show(name):
+    """Show details of a checkpoint template."""
+    from sage.templates import load_template
+
+    template = load_template(name)
+
+    if not template:
+        console.print(f"[red]Template '{name}' not found[/red]")
+        console.print("[dim]Use 'sage templates list' to see available templates[/dim]")
+        return
+
+    console.print()
+    console.print(f"[bold]Template: {template.name}[/bold]")
+    if template.description:
+        console.print(f"[dim]{template.description}[/dim]")
+    console.print()
+
+    console.print("[bold]Fields:[/bold]")
+    for field in template.fields:
+        required = "[cyan]*[/cyan]" if field.required else " "
+        console.print(f"  {required} {field.name}")
+        if field.description:
+            console.print(f"      [dim]{field.description}[/dim]")
+
+    console.print()
+    console.print("[dim]* = required field[/dim]")
+
+    if template.jinja_template:
+        console.print()
+        console.print("[bold]Custom Jinja2 template:[/bold] Yes")
 
 
 if __name__ == "__main__":

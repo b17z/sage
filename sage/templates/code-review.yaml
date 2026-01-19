@@ -1,0 +1,17 @@
+# Code review checkpoint template - for documenting code review findings
+name: code-review
+description: Checkpoint for code review findings and suggestions
+
+fields:
+  - name: summary
+    required: true
+    description: Overall summary of the code review
+
+  - name: issues_found
+    description: List of issues or concerns identified
+
+  - name: suggestions
+    description: Improvement suggestions and recommendations
+
+  - name: files_reviewed
+    description: List of files that were reviewed

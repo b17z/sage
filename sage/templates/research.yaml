@@ -1,0 +1,21 @@
+# Research checkpoint template - focused on thesis and evidence
+name: research
+description: Streamlined research checkpoint for ongoing investigations
+
+fields:
+  - name: thesis
+    required: true
+    description: Current research position or hypothesis
+
+  - name: confidence
+    required: true
+    description: Confidence level (0.0-1.0)
+
+  - name: key_evidence
+    description: Supporting evidence and data points
+
+  - name: sources
+    description: References and sources consulted
+
+  - name: open_questions
+    description: Questions for further investigation
