@@ -2,8 +2,8 @@
 
 Research orchestration CLI that manages "skills" - specialized AI research personas powered by Claude. Implements semantic checkpointing for preserving context across conversations.
 
-**Current version:** v1.1 (context hydration, depth thresholds, checkpoint search)
-**Test count:** 231 tests (maintain or increase)
+**Current version:** v1.2 (BGE-large embeddings, checkpoint templates, knowledge types)
+**Test count:** 397 tests (maintain or increase)
 
 ## Quick Reference
 

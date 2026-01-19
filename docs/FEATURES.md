@@ -127,9 +127,101 @@ B emerged as the better choice after considering factors Y and Z.
 - **type**: Content
 ```
 
+### Checkpoint Templates
+
+Customize checkpoint format with templates.
+
+**Built-in Templates:**
+
+| Template | Purpose |
+|----------|---------|
+| `default` | Standard checkpoint with all fields |
+| `research` | Research-focused with sources emphasis |
+| `decision` | Decision-focused with options/tradeoffs |
+| `code-review` | Code review with files/changes |
+
+**Using Templates:**
+
+```python
+# Via MCP
+sage_save_checkpoint(
+    core_question="...",
+    thesis="...",
+    confidence=0.8,
+    template="decision"  # Use decision template
+)
+```
+
+**CLI Commands:**
+
+```bash
+sage templates list           # List available templates
+sage templates show default   # Show template contents
+```
+
+**Custom Templates:**
+
+Create `~/.sage/templates/my-template.yaml`:
+
+```yaml
+name: my-template
+description: Custom template for X
+required_fields:
+  - core_question
+  - thesis
+optional_fields:
+  - custom_field
+format: |
+  # {{ core_question }}
+
+  ## Thesis
+  {{ thesis }}
+
+  {% if custom_field %}
+  ## Custom Section
+  {{ custom_field }}
+  {% endif %}
+```
+
+Templates use Jinja2 sandboxed environment for security.
+
 ---
 
 ## Knowledge System
+
+### Knowledge Types
+
+Knowledge items have a `type` field that affects recall behavior:
+
+| Type | Purpose | Recall Threshold |
+|------|---------|------------------|
+| `knowledge` | General facts (default) | 0.70 |
+| `preference` | User preferences ("I prefer...") | 0.30 (aggressive) |
+| `todo` | Persistent reminders | 0.40 |
+| `reference` | On-demand reference material | 0.80 (conservative) |
+
+**Saving with Type:**
+
+```bash
+# CLI
+sage knowledge add prefs.md --id my-prefs --keywords style --type preference
+
+# MCP
+sage_save_knowledge(
+    knowledge_id="my-prefs",
+    content="I prefer functional style",
+    keywords=["style"],
+    item_type="preference"
+)
+```
+
+**Todo Management:**
+
+```bash
+sage todo list              # List all todos
+sage todo pending           # List pending todos
+sage todo done <id>         # Mark todo as done
+```
 
 ### Storing Knowledge
 
@@ -231,44 +323,62 @@ convergence_question_drop: 0.20
 depth_min_messages: 8        # Min messages for depth checkpoint
 depth_min_tokens: 2000       # Min tokens for depth checkpoint
 
-# Embedding model
-embedding_model: all-MiniLM-L6-v2
+# Embedding model (BGE-large for better retrieval)
+embedding_model: BAAI/bge-large-en-v1.5
 ```
 
 ---
 
 ## Embeddings
 
-### Installation
-
-```bash
-pip install claude-sage[embeddings]  # ~2GB for model + torch
-```
-
 ### Default Model
 
-- **Model:** `all-MiniLM-L6-v2`
-- **Size:** ~80MB
+- **Model:** `BAAI/bge-large-en-v1.5`
+- **Dimensions:** 1024 (vs 384 for MiniLM)
+- **Size:** ~1.3GB (downloaded on first use)
+- **MTEB Score:** 63.0 (+7 points over MiniLM)
 - **Runs locally on CPU**
 
-### Capabilities When Installed
+### First Load Warning
+
+On first use, Sage displays a download warning:
+```
+⚠️  Downloading embedding model (1340MB)... this only happens once.
+```
+
+### Query Prefix Support
+
+BGE models perform better with query prefixes. Sage automatically:
+- Adds prefix for search queries (`get_query_embedding`)
+- Skips prefix for document storage (`get_embedding`)
+
+### Model Mismatch Detection
+
+When you change `embedding_model` in config:
+- Sage detects dimension mismatch on load
+- Returns empty store to trigger rebuild
+- Log warning: "Embedding model changed... Embeddings will be rebuilt."
+
+### Configuring a Different Model
+
+```yaml
+# ~/.sage/tuning.yaml
+embedding_model: BAAI/bge-base-en-v1.5  # 768 dims, 440MB
+# or
+embedding_model: all-MiniLM-L6-v2        # 384 dims, 80MB (lighter)
+```
+
+After changing, rebuild embeddings:
+```bash
+sage admin rebuild-embeddings
+```
+
+### Capabilities
 
 - Semantic knowledge recall (vs keyword-only)
 - Checkpoint thesis deduplication
 - Hybrid scoring (semantic + keyword)
-
-### Graceful Fallback
-
-Sage works without embeddings:
-- Knowledge recall uses keyword matching only
-- Checkpoint deduplication is skipped
-- No errors, just reduced functionality
-
-### Rebuilding Embeddings
-
-```bash
-sage admin rebuild-embeddings
-```
+- Checkpoint search by similarity
 
 ---
 
@@ -286,10 +396,25 @@ sage checkpoint rm <id>
 
 ```bash
 sage knowledge list [--skill NAME]
-sage knowledge add <file> --id <id> --keywords <kw1,kw2> [--skill NAME]
+sage knowledge add <file> --id <id> --keywords <kw1,kw2> [--skill NAME] [--type TYPE]
 sage knowledge match "query"  # Test what would be recalled
 sage knowledge rm <id>
 # sage knowledge debug "query"  # Coming in v2.1 - debug retrieval scoring
+```
+
+### Todo Commands
+
+```bash
+sage todo list                # List all todos
+sage todo pending             # List pending todos
+sage todo done <id>           # Mark todo as done
+```
+
+### Template Commands
+
+```bash
+sage templates list           # List available templates
+sage templates show <name>    # Show template contents
 ```
 
 ### Config Commands
@@ -327,7 +452,7 @@ Tools available to Claude via MCP protocol:
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `sage_save_checkpoint` | core_question, thesis, confidence, open_questions, sources, tensions, unique_contributions, action_goal, action_type, key_evidence, reasoning_trace | Confirmation |
+| `sage_save_checkpoint` | core_question, thesis, confidence, open_questions, sources, tensions, unique_contributions, action_goal, action_type, key_evidence, reasoning_trace, **template** | Confirmation |
 | `sage_load_checkpoint` | checkpoint_id | Formatted context |
 | `sage_list_checkpoints` | limit, skill | List of checkpoints |
 | `sage_search_checkpoints` | query, limit | Ranked matches with similarity scores |
@@ -357,7 +482,7 @@ Use `sage_load_checkpoint(id)` to inject a checkpoint into context.
 
 | Tool | Parameters | Returns |
 |------|------------|---------|
-| `sage_save_knowledge` | knowledge_id, content, keywords, skill, source | Confirmation |
+| `sage_save_knowledge` | knowledge_id, content, keywords, skill, source, **item_type** | Confirmation |
 | `sage_recall_knowledge` | query, skill | Formatted knowledge |
 | `sage_list_knowledge` | skill | List of items |
 | `sage_remove_knowledge` | knowledge_id | Confirmation |

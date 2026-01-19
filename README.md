@@ -96,18 +96,14 @@ sage knowledge match "What about GDPR?"
 sage knowledge list
 ```
 
-### Semantic Recall (Embeddings)
+### Semantic Embeddings
 
-Install for smarter matching:
+Sage uses local embeddings for semantic matching:
 
-```bash
-pip install claude-sage[embeddings]  # ~2GB for model + torch
-```
-
-- **Model:** `all-MiniLM-L6-v2` (~80MB, runs locally on CPU)
+- **Model:** `BAAI/bge-large-en-v1.5` (~1.3GB, downloaded on first use)
 - **Hybrid scoring:** 70% semantic + 30% keyword matching (configurable)
 - **Checkpoint deduplication:** Skips saving when thesis is 90%+ similar
-- **Graceful fallback:** Works without embeddings using keyword matching
+- **Query prefix support:** Optimized retrieval for BGE models
 
 ### Project-Local Checkpoints
 
@@ -121,6 +117,33 @@ mkdir .sage  # Checkpoints go here instead of ~/.sage
 sage checkpoint list --project /path/to/project
 ```
 
+### Checkpoint Templates
+
+Customize checkpoint format:
+
+```bash
+sage templates list                    # List available templates
+sage_save_checkpoint(..., template="decision")  # Use decision template
+```
+
+Built-in templates: `default`, `research`, `decision`, `code-review`
+
+### Knowledge Types
+
+Different recall behavior by type:
+
+| Type | Threshold | Use Case |
+|------|-----------|----------|
+| `knowledge` | 0.70 | General facts |
+| `preference` | 0.30 | User preferences (aggressive recall) |
+| `todo` | 0.40 | Persistent reminders |
+| `reference` | 0.80 | On-demand reference |
+
+```bash
+sage todo list      # List todos
+sage todo done <id> # Mark complete
+```
+
 ### Configurable Thresholds
 
 Tune retrieval and detection via `~/.sage/tuning.yaml` or `.sage/tuning.yaml`:
@@ -132,8 +155,8 @@ dedup_threshold: 0.90       # Checkpoint deduplication threshold
 embedding_weight: 0.70      # Weight for semantic similarity
 keyword_weight: 0.30        # Weight for keyword matching
 
-# Structural detection (future)
-topic_drift_threshold: 0.50
+# Embedding model
+embedding_model: BAAI/bge-large-en-v1.5
 ```
 
 Project config overrides user config. See `sage config` commands.
@@ -252,7 +275,7 @@ Hooks have:
 # Install dev dependencies
 pip install -e ".[dev]"
 
-# Run tests (206 tests)
+# Run tests (397 tests)
 pytest tests/ -v
 
 # Lint and format

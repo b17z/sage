@@ -33,7 +33,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 231 tests covering all modules
+- 397 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -52,19 +52,21 @@ Version timeline and planned features.
 | ARCHITECTURE.md | Done | System design + flowcharts |
 | FEATURES.md | Done | Complete feature reference |
 | ROADMAP.md | Done | This document |
-| Test coverage | Done | 231 tests |
+| Test coverage | Done | 397 tests |
 | CLI `sage config` commands | Done | list/set/reset subcommands |
 | Storage structure refactor | Done | Secrets vs shareable split |
 | Security hardening | Done | File permissions, ReDoS protection |
 | Context hydration fields | Done | key_evidence, reasoning_trace |
 | Depth thresholds | Done | Prevent shallow checkpoints |
 | Checkpoint search | Done | Semantic search across checkpoints |
+| Embedding model upgrade | Done | BGE-large-en-v1.5 (1024 dims, +7 MTEB) |
+| Knowledge types | Done | knowledge, preference, todo, reference |
+| Checkpoint templates | Done | default, research, decision, code-review |
 
 ### Remaining v2.0 Work
 
 | Feature | Priority | Notes |
 |---------|----------|-------|
-| Embedding model upgrade | Low | mxbai-embed-large option |
 | `sage knowledge debug` | Medium | Transparency for retrieval tuning |
 
 ---
@@ -95,47 +97,23 @@ Version timeline and planned features.
 
 ---
 
-## v2.3 (Next Priority)
+## v2.3 (Planned)
 
-### Focus: Type-Aware Knowledge
+### Focus: Async/Background Operations
 
-Unify memory primitives under knowledge with a `type` field.
-
-**Schema Change:**
-```yaml
----
-id: example-item
-type: knowledge | preference | todo | reference
-status: pending | done  # For todos only
-keywords: [...]
----
-Content here...
-```
-
-**Types and Behavior:**
-
-| Type | Save Trigger | Recall Behavior |
-|------|--------------|-----------------|
-| `knowledge` | Manual (user curates) | Query match (threshold: 0.70) |
-| `preference` | Semi-auto ("I always...", "I prefer...") | Aggressive (threshold: 0.30) or session-start |
-| `todo` | Auto ("TODO", "remind me", "later") | Session-start + keyword match |
-| `reference` | Manual | Lower priority, on-demand |
-
-**Features:**
+Make Sage non-blocking for better UX during long operations.
 
 | Feature | Description |
 |---------|-------------|
-| `type` field on knowledge | Enable different recall/save behaviors |
-| Preference detection hook | Detect "I always...", "I prefer...", confirm save |
-| Todo detection hook | Detect "TODO", "remind me", auto-save |
-| `sage todo list/done` CLI | Manage persistent todos |
-| Session-start recall | Surface pending todos + active preferences |
-| Full session loading | Optional escape hatch to load raw transcript |
+| Async checkpoint saves | Fire-and-forget with notification on completion |
+| Background model loading | Don't block conversation for 1.3GB download |
+| Parallel embedding generation | Batch operations for knowledge rebuild |
+| MCP notifications | Signal completion/failure asynchronously |
 
-**Why not separate primitives?**
-- Knowledge already has storage, indexing, recall infrastructure
-- Type field changes behavior without new systems
-- Checkpoints stay separate (rich schema: sources, tensions, etc.)
+**Why async?**
+- BGE-large first load blocks for 30+ seconds
+- Checkpoint saves with embedding generation add latency
+- Users shouldn't wait for non-critical operations
 
 ---
 
@@ -167,6 +145,7 @@ Content here...
 | v0.2 | Jan 2026 | Semantic embeddings, checkpoint dedup, security fix |
 | v1.0 | Jan 2026 | Config system, CLI subcommands, security hardening, 206 tests |
 | v1.1 | Jan 2026 | Context hydration, depth thresholds, checkpoint search, 231 tests |
+| v1.2 | Jan 2026 | BGE-large embeddings, checkpoint templates, knowledge types, 397 tests |
 
 ---
 
