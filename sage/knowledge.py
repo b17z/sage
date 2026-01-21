@@ -34,10 +34,10 @@ KNOWLEDGE_TYPES = ("knowledge", "preference", "todo", "reference")
 # Type-specific recall thresholds (0-1 scale)
 # These are multiplied by 10 internally when compared to scores
 TYPE_THRESHOLDS: dict[str, float] = {
-    "knowledge": 0.70,   # Standard query matching
+    "knowledge": 0.70,  # Standard query matching
     "preference": 0.30,  # Aggressive recall (user preferences)
-    "todo": 0.40,        # Session-start + keyword match
-    "reference": 0.80,   # Lower priority, on-demand
+    "todo": 0.40,  # Session-start + keyword match
+    "reference": 0.80,  # Lower priority, on-demand
 }
 
 # Default threshold for unknown types
@@ -382,7 +382,7 @@ def _strip_frontmatter(content: str) -> str:
     end_idx = content.find("---", 3)
     if end_idx == -1:
         return content
-    return content[end_idx + 3:].strip()
+    return content[end_idx + 3 :].strip()
 
 
 def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
@@ -505,7 +505,9 @@ def score_item_combined(
     keyword_normalized = min(keyword_score / 9.0, 1.0)
 
     # Combined weighted score
-    combined = config.embedding_weight * embedding_similarity + config.keyword_weight * keyword_normalized
+    combined = (
+        config.embedding_weight * embedding_similarity + config.keyword_weight * keyword_normalized
+    )
 
     # Scale back to 0-10 for threshold compatibility
     return combined * 10.0
@@ -730,7 +732,9 @@ def add_knowledge(
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
 
-    fm_yaml = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    fm_yaml = yaml.safe_dump(
+        frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
     md_content = f"---\n{fm_yaml}---\n\n{content}"
 
     # Write content file

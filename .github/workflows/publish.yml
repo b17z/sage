@@ -5,7 +5,46 @@ on:
     types: [published]
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate version matches release tag
+        run: |
+          # Extract version from pyproject.toml
+          PYPROJECT_VERSION=$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)
+
+          # Extract version from plugin.json
+          PLUGIN_VERSION=$(grep -Po '(?<="version": ")[^"]+' plugins/sage/.claude-plugin/plugin.json)
+
+          # Get release tag (remove 'v' prefix if present)
+          RELEASE_TAG="${GITHUB_REF_NAME#v}"
+
+          echo "pyproject.toml version: $PYPROJECT_VERSION"
+          echo "plugin.json version: $PLUGIN_VERSION"
+          echo "Release tag: $RELEASE_TAG"
+
+          ERRORS=0
+
+          if [ "$PYPROJECT_VERSION" != "$RELEASE_TAG" ]; then
+            echo "::error::Version mismatch! pyproject.toml has '$PYPROJECT_VERSION' but release tag is '$RELEASE_TAG'"
+            ERRORS=1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$RELEASE_TAG" ]; then
+            echo "::error::Version mismatch! plugin.json has '$PLUGIN_VERSION' but release tag is '$RELEASE_TAG'"
+            ERRORS=1
+          fi
+
+          if [ "$ERRORS" -ne 0 ]; then
+            echo "Please update version numbers to match the release tag."
+            exit 1
+          fi
+
+          echo "✅ All versions validated: $RELEASE_TAG"
+
   build:
+    needs: validate-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

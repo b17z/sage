@@ -6,23 +6,20 @@ from unittest.mock import patch
 import pytest
 
 from sage.knowledge import (
-    KNOWLEDGE_DIR,
+    MAX_PATTERN_LENGTH,
     KnowledgeItem,
     KnowledgeMetadata,
     KnowledgeScope,
     KnowledgeTriggers,
-    MAX_PATTERN_LENGTH,
     RecallResult,
     _strip_frontmatter,
     _validate_regex_pattern,
     add_knowledge,
     format_recalled_context,
-    list_knowledge,
     load_index,
     load_knowledge_content,
     recall_knowledge,
     remove_knowledge,
-    save_index,
     score_item,
 )
 
@@ -40,12 +37,14 @@ def mock_knowledge_dir(tmp_path: Path):
 @pytest.fixture
 def mock_knowledge_paths(tmp_path: Path, mock_knowledge_dir: Path):
     """Patch knowledge paths to use temporary directory."""
-    with patch("sage.knowledge.KNOWLEDGE_DIR", mock_knowledge_dir), \
-         patch("sage.knowledge.KNOWLEDGE_INDEX", mock_knowledge_dir / "index.yaml"), \
-         patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"), \
-         patch("sage.knowledge._add_embedding", return_value=False), \
-         patch("sage.knowledge._remove_embedding", return_value=True), \
-         patch("sage.knowledge._get_all_embedding_similarities", return_value={}):
+    with (
+        patch("sage.knowledge.KNOWLEDGE_DIR", mock_knowledge_dir),
+        patch("sage.knowledge.KNOWLEDGE_INDEX", mock_knowledge_dir / "index.yaml"),
+        patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"),
+        patch("sage.knowledge._add_embedding", return_value=False),
+        patch("sage.knowledge._remove_embedding", return_value=True),
+        patch("sage.knowledge._get_all_embedding_similarities", return_value={}),
+    ):
         yield mock_knowledge_dir
 
 
@@ -61,7 +60,7 @@ class TestScoreItem:
             scope=KnowledgeScope(),
             metadata=KnowledgeMetadata(added="2026-01-10"),
         )
-        
+
         score = score_item(item, "What are the GDPR requirements?", "privacy")
         assert score >= 3
 
@@ -74,7 +73,7 @@ class TestScoreItem:
             scope=KnowledgeScope(),
             metadata=KnowledgeMetadata(added="2026-01-10"),
         )
-        
+
         # "api" appears as substring in "apikey"
         score = score_item(item, "How do I set the apikey?", "test")
         assert score >= 1
@@ -88,7 +87,7 @@ class TestScoreItem:
             scope=KnowledgeScope(skills=("privacy",)),
             metadata=KnowledgeMetadata(added="2026-01-10"),
         )
-        
+
         score = score_item(item, "Tell me about GDPR", "web-dev")
         assert score == 0
 
@@ -101,7 +100,7 @@ class TestScoreItem:
             scope=KnowledgeScope(always=True),
             metadata=KnowledgeMetadata(added="2026-01-10"),
         )
-        
+
         score = score_item(item, "Random unrelated query", "any-skill")
         assert score >= 10
 
@@ -117,15 +116,15 @@ class TestAddRemoveKnowledge:
             keywords=["gdpr", "privacy", "eu"],
             source="Research session 2026-01-10",
         )
-        
+
         assert item.id == "gdpr-summary"
         assert item.triggers.keywords == ("gdpr", "privacy", "eu")
-        
+
         # Check file was created
         content_file = mock_knowledge_paths / "global" / "gdpr-summary.md"
         assert content_file.exists()
         assert "GDPR Summary" in content_file.read_text()
-        
+
         # Check index was updated
         items = load_index()
         assert len(items) == 1
@@ -139,9 +138,9 @@ class TestAddRemoveKnowledge:
             keywords=["consent"],
             skill="privacy",
         )
-        
+
         assert item.scope.skills == ("privacy",)
-        
+
         # Check file is in skill directory
         content_file = mock_knowledge_paths / "skills" / "privacy" / "consent-patterns.md"
         assert content_file.exists()
@@ -154,16 +153,16 @@ class TestAddRemoveKnowledge:
             knowledge_id="to-remove",
             keywords=["test"],
         )
-        
+
         # Verify it exists
         assert len(load_index()) == 1
-        
+
         # Remove it
         result = remove_knowledge("to-remove")
-        
+
         assert result is True
         assert len(load_index()) == 0
-        
+
         # Check file was deleted
         content_file = mock_knowledge_paths / "global" / "to-remove.md"
         assert not content_file.exists()
@@ -181,11 +180,11 @@ class TestAddRemoveKnowledge:
             knowledge_id="../../../.bashrc",
             keywords=["test"],
         )
-        
+
         # ID should be sanitized (no path separators)
         assert "/" not in item.id
         assert ".." not in item.id
-        
+
         # File should be in knowledge directory, not escaped
         assert not (tmp_path / ".bashrc.md").exists()
         assert (mock_knowledge_paths / "global" / f"{item.id}.md").exists()
@@ -207,7 +206,7 @@ class TestRecallKnowledge:
             knowledge_id="api",
             keywords=["api", "rest"],
         )
-        
+
         result = recall_knowledge("What are the GDPR requirements?", "privacy", threshold=2.0)
 
         assert result.count == 1
@@ -222,7 +221,7 @@ class TestRecallKnowledge:
                 knowledge_id=f"item-{i}",
                 keywords=["common"],
             )
-        
+
         result = recall_knowledge("common topic", "test", max_items=2, threshold=2.0)
 
         assert result.count == 2
@@ -234,9 +233,9 @@ class TestRecallKnowledge:
             knowledge_id="weak",
             keywords=["obscure"],  # won't match well
         )
-        
+
         result = recall_knowledge("totally different query", "test", threshold=2)
-        
+
         assert result.count == 0
 
 
@@ -259,9 +258,9 @@ class TestFormatRecalledContext:
             content="# Test Content\n\nThis is the knowledge.",
         )
         result = RecallResult(items=[item], total_tokens=100)
-        
+
         formatted = format_recalled_context(result)
-        
+
         assert "📚 Recalled Knowledge (1 items" in formatted
         assert "## test-item" in formatted
         assert "test source" in formatted
@@ -719,7 +718,7 @@ class TestTypeAwareRecall:
 
     def test_get_type_threshold_returns_default_for_unknown(self):
         """get_type_threshold returns default for unknown type."""
-        from sage.knowledge import get_type_threshold, DEFAULT_TYPE_THRESHOLD
+        from sage.knowledge import DEFAULT_TYPE_THRESHOLD, get_type_threshold
 
         result = get_type_threshold("unknown_type")
 
@@ -758,7 +757,7 @@ class TestKnowledgeTypeConstants:
 
     def test_type_thresholds_dict(self):
         """TYPE_THRESHOLDS contains thresholds for all types."""
-        from sage.knowledge import TYPE_THRESHOLDS, KNOWLEDGE_TYPES
+        from sage.knowledge import KNOWLEDGE_TYPES, TYPE_THRESHOLDS
 
         for t in KNOWLEDGE_TYPES:
             assert t in TYPE_THRESHOLDS

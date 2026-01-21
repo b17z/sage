@@ -37,8 +37,10 @@ def mock_checkpoints_dir(tmp_path: Path):
 @pytest.fixture
 def mock_checkpoint_paths(tmp_path: Path, mock_checkpoints_dir: Path):
     """Patch checkpoint paths to use temporary directory."""
-    with patch("sage.checkpoint.CHECKPOINTS_DIR", mock_checkpoints_dir), \
-         patch("sage.checkpoint.SAGE_DIR", tmp_path / ".sage"):
+    with (
+        patch("sage.checkpoint.CHECKPOINTS_DIR", mock_checkpoints_dir),
+        patch("sage.checkpoint.SAGE_DIR", tmp_path / ".sage"),
+    ):
         yield mock_checkpoints_dir
 
 
@@ -88,7 +90,7 @@ class TestGenerateCheckpointId:
     def test_includes_timestamp_and_slug(self):
         """ID includes timestamp and slugified description."""
         checkpoint_id = generate_checkpoint_id("GDPR consent analysis")
-        
+
         # Should have timestamp prefix
         assert checkpoint_id.startswith("20")
         # Should have slugified description
@@ -99,7 +101,7 @@ class TestGenerateCheckpointId:
         """Long descriptions are truncated."""
         long_desc = "This is a very long description that should be truncated to fit"
         checkpoint_id = generate_checkpoint_id(long_desc)
-        
+
         # Slug portion should be ≤40 chars
         slug = checkpoint_id.split("_", 1)[1] if "_" in checkpoint_id else checkpoint_id
         assert len(slug) <= 40
@@ -480,7 +482,9 @@ class TestCheckpointBackwardCompatibility:
         assert loaded.thesis == "Legacy thesis"
         assert loaded.confidence == 0.7
 
-    def test_list_checkpoints_includes_both_formats(self, mock_checkpoint_paths: Path, sample_checkpoint):
+    def test_list_checkpoints_includes_both_formats(
+        self, mock_checkpoint_paths: Path, sample_checkpoint
+    ):
         """list_checkpoints() finds both .md and .yaml files."""
         import yaml
 
@@ -522,7 +526,6 @@ class TestCheckpointSecurity:
 
     def test_schema_validation_rejects_missing_checkpoint_key(self):
         """Schema validation rejects data without 'checkpoint' key."""
-        from sage.checkpoint import _validate_checkpoint_schema
 
         invalid_data = {"not_checkpoint": {"id": "test"}}
         result = _validate_checkpoint_schema(invalid_data)
@@ -532,7 +535,6 @@ class TestCheckpointSecurity:
 
     def test_schema_validation_rejects_missing_required_fields(self):
         """Schema validation rejects data with missing required fields."""
-        from sage.checkpoint import _validate_checkpoint_schema
 
         # Missing 'thesis' field
         invalid_data = {
@@ -552,7 +554,6 @@ class TestCheckpointSecurity:
 
     def test_schema_validation_rejects_invalid_types(self):
         """Schema validation rejects invalid field types."""
-        from sage.checkpoint import _validate_checkpoint_schema
 
         # confidence should be a number, not a string
         invalid_data = {
@@ -572,7 +573,6 @@ class TestCheckpointSecurity:
 
     def test_schema_validation_accepts_valid_data(self):
         """Schema validation accepts well-formed data."""
-        from sage.checkpoint import _validate_checkpoint_schema
 
         valid_data = {
             "checkpoint": {

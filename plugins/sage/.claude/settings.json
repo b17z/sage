@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(while [ ! -f:*)"
+    ]
+  },
   "hooks": {
     "PreCompact": [
       {

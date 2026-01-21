@@ -33,7 +33,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 397 tests covering all modules
+- 535 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -63,6 +63,16 @@ Version timeline and planned features.
 | Knowledge types | Done | knowledge, preference, todo, reference |
 | Checkpoint templates | Done | default, research, decision, code-review |
 
+### v2.0 Async (Shipped)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Async checkpoint/knowledge saves | Done | Non-blocking with Task polling |
+| Background model warmup | Done | Don't block for 30+ sec download |
+| Graceful shutdown | Done | Pending tasks persisted for restart |
+| Task polling pattern | Done | Native Claude Code task notifications |
+| Security: removed bash watcher | Done | v2.0.1 - bash glob patterns were exploitable |
+
 ### Remaining v2.0 Work
 
 | Feature | Priority | Notes |
@@ -73,14 +83,16 @@ Version timeline and planned features.
 
 ## v2.1 (Planned)
 
-### Focus: Advanced Retrieval
+### Focus: Advanced Retrieval + Knowledge Management
 
 | Feature | Description |
 |---------|-------------|
 | Freshness decay | Recent knowledge weighted higher |
 | Cross-project search | Priority cascade (project → global with boost) |
 | Knowledge versioning | History array for updates |
+| Knowledge edit/deprecate | Inline update without delete, "deprecated" status for outdated facts |
 | Structural triggers | Topic drift detection, convergence signals |
+| Uncertainty trigger | Detect hedging language ("I'm not sure", "might be") as checkpoint moment |
 
 ---
 
@@ -99,21 +111,79 @@ Version timeline and planned features.
 
 ## v2.3 (Planned)
 
-### Focus: Async/Background Operations
-
-Make Sage non-blocking for better UX during long operations.
+### Focus: Advanced Hooks & Triggers
 
 | Feature | Description |
 |---------|-------------|
-| Async checkpoint saves | Fire-and-forget with notification on completion |
-| Background model loading | Don't block conversation for 1.3GB download |
-| Parallel embedding generation | Batch operations for knowledge rebuild |
-| MCP notifications | Signal completion/failure asynchronously |
+| Structural triggers | Topic drift detection, convergence signals |
+| Uncertainty trigger | Detect hedging language as checkpoint moment |
+| Hook analytics | Track trigger frequency, false positive rate |
 
-**Why async?**
-- BGE-large first load blocks for 30+ seconds
-- Checkpoint saves with embedding generation add latency
-- Users shouldn't wait for non-critical operations
+*Note: Async operations originally planned for v2.3 were shipped in v2.0.*
+
+---
+
+## v2.4 (Planned)
+
+### Focus: Token Economics & Observability
+
+| Feature | Description |
+|---------|-------------|
+| Token savings tracking | `sage usage --savings` shows compression ratio |
+| Session cost comparison | "This checkpoint saved X tokens vs full replay" |
+| Savings dashboard | Cumulative token/cost savings over time |
+
+---
+
+## v2.5 (Planned)
+
+### Focus: Code-Aware Intelligence
+
+| Feature | Description |
+|---------|-------------|
+| Code-aware triggers | Detect refactors, architecture decisions, test changes |
+| Git-aware checkpoints | Auto-checkpoint on significant commits |
+| Code review MCP | Query engineering principles, run senior engineer personas |
+| Diff-aware context | Include relevant code changes in checkpoint |
+
+---
+
+## v3.0 (Vision)
+
+### Focus: Proactive Code Intelligence
+
+*"Like Copilot but for engineering principles — watches while you code, not after."*
+
+| Feature | Description |
+|---------|-------------|
+| Real-time code monitoring | MCP hooks into file saves, analyzes against principles |
+| Inline warnings | Surface security/performance/design issues as you write |
+| Pattern learning | "You've forgotten input validation 3x" → auto-save as knowledge |
+| Research capture | "Why gRPC vs REST?" research → stored as decision knowledge |
+| Personalized principles | Learn YOUR patterns, not just generic rules |
+
+**Architecture concept:**
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  File Watch  │────▶│   Analyzer   │────▶│  Principles  │
+│  (on save)   │     │  (AST/regex) │     │  (embedded)  │
+└──────────────┘     └──────────────┘     └──────────────┘
+                            │                    │
+                            ▼                    ▼
+                     ┌──────────────┐     ┌──────────────┐
+                     │   Warnings   │     │   Learning   │
+                     │  (inline)    │     │  (patterns)  │
+                     └──────────────┘     └──────────────┘
+                                                │
+                                                ▼
+                                         ┌──────────────┐
+                                         │  Knowledge   │
+                                         │  (auto-save) │
+                                         └──────────────┘
+```
+
+**Key insight:** Reactive → Proactive. Don't wait for questions, anticipate them.
 
 ---
 
@@ -146,6 +216,8 @@ Make Sage non-blocking for better UX during long operations.
 | v1.0 | Jan 2026 | Config system, CLI subcommands, security hardening, 206 tests |
 | v1.1 | Jan 2026 | Context hydration, depth thresholds, checkpoint search, 231 tests |
 | v1.2 | Jan 2026 | BGE-large embeddings, checkpoint templates, knowledge types, 397 tests |
+| v2.0 | Jan 2026 | Async operations, Task polling notifications, 535 tests |
+| v2.0.1 | Jan 2026 | Security fix: replaced bash watcher with Read-tool polling |
 
 ---
 

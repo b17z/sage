@@ -72,11 +72,13 @@ def send_message(
     # Build tools
     tools = []
     if enable_search:
-        tools.append({
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": 10,
-        })
+        tools.append(
+            {
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 10,
+            }
+        )
 
     # Make request with retry
     max_retries = 3
@@ -123,19 +125,21 @@ def send_message(
             cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
             cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
 
-            return ok(ApiResponse(
-                content="".join(content_parts),
-                tokens_in=usage.input_tokens,
-                tokens_out=usage.output_tokens,
-                cache_read=cache_read,
-                cache_write=cache_write,
-                searches=search_count,
-                stop_reason=stop_reason or "end_turn",
-            ))
+            return ok(
+                ApiResponse(
+                    content="".join(content_parts),
+                    tokens_in=usage.input_tokens,
+                    tokens_out=usage.output_tokens,
+                    cache_read=cache_read,
+                    cache_write=cache_write,
+                    searches=search_count,
+                    stop_reason=stop_reason or "end_turn",
+                )
+            )
 
         except anthropic.RateLimitError as e:
             last_error = e
-            wait_time = 2 ** attempt
+            wait_time = 2**attempt
             time.sleep(wait_time)
             continue
 
@@ -155,7 +159,9 @@ def send_message(
     return err(api_error(f"Max retries exceeded: {last_error}"))
 
 
-def count_tokens(client: anthropic.Anthropic, text: str, model: str = "claude-sonnet-4-20250514") -> int:
+def count_tokens(
+    client: anthropic.Anthropic, text: str, model: str = "claude-sonnet-4-20250514"
+) -> int:
     """Count tokens in text. Returns rough estimate if API fails."""
     try:
         result = client.messages.count_tokens(

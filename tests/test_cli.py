@@ -1,7 +1,6 @@
 """Tests for CLI commands."""
 
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 
 from sage.cli import main
@@ -185,12 +184,18 @@ class TestKnowledgeCommands:
         content_file = isolated_sage / "test-content.md"
         content_file.write_text("This is test knowledge content.")
 
-        result = runner.invoke(main, [
-            "knowledge", "add",
-            str(content_file),
-            "--id", "test-knowledge",
-            "--keywords", "test,knowledge,demo"
-        ])
+        result = runner.invoke(
+            main,
+            [
+                "knowledge",
+                "add",
+                str(content_file),
+                "--id",
+                "test-knowledge",
+                "--keywords",
+                "test,knowledge,demo",
+            ],
+        )
 
         assert result.exit_code == 0
         assert "test-knowledge" in result.output or "saved" in result.output.lower()
@@ -263,3 +268,61 @@ class TestErrorHandling:
         result = runner.invoke(main, ["ask"])  # Missing skill and query
 
         assert result.exit_code != 0
+
+
+class TestAdminCommands:
+    """Tests for admin commands."""
+
+    def test_admin_help(self, runner):
+        """Admin help shows subcommands."""
+        result = runner.invoke(main, ["admin", "--help"])
+
+        assert result.exit_code == 0
+        assert "rebuild-embeddings" in result.output
+        assert "clear-cache" in result.output
+
+    def test_admin_rebuild_embeddings_help(self, runner):
+        """Rebuild embeddings help shows options."""
+        result = runner.invoke(main, ["admin", "rebuild-embeddings", "--help"])
+
+        assert result.exit_code == 0
+        assert "--force" in result.output
+
+    def test_admin_clear_cache_no_cache(self, runner, tmp_path, monkeypatch):
+        """Clear cache when no cache exists shows appropriate message."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["admin", "clear-cache"])
+
+        assert result.exit_code == 0
+        assert "no cache" in result.output.lower()
+
+    def test_admin_clear_cache_removes_embeddings(self, runner, tmp_path, monkeypatch):
+        """Clear cache removes embeddings directory."""
+        sage_dir = tmp_path / ".sage"
+        embeddings_dir = sage_dir / "embeddings"
+        embeddings_dir.mkdir(parents=True)
+        (embeddings_dir / "test.npy").touch()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["admin", "clear-cache"])
+
+        assert result.exit_code == 0
+        assert "cleared" in result.output.lower()
+        assert not embeddings_dir.exists()
+
+    def test_admin_rebuild_no_mismatch(self, runner, tmp_path, monkeypatch):
+        """Rebuild with no model mismatch shows already up-to-date."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr(
+            "sage.embeddings.check_model_mismatch", lambda: (False, "model", "model")
+        )
+
+        result = runner.invoke(main, ["admin", "rebuild-embeddings"])
+
+        assert result.exit_code == 0
+        assert "already" in result.output.lower()

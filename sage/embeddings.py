@@ -83,6 +83,20 @@ _model_name: str | None = None
 _first_load_warning_shown: bool = False
 
 
+def clear_model_cache() -> None:
+    """Clear the cached embedding model.
+
+    Call this after changing the embedding_model config to force reload.
+    The next call to get_model() will load the new model.
+    """
+    global _model, _model_name
+
+    if _model is not None:
+        logger.info(f"Clearing cached embedding model: {_model_name}")
+        _model = None
+        _model_name = None
+
+
 def is_available() -> bool:
     """Check if sentence-transformers is available."""
     try:
@@ -103,11 +117,14 @@ def get_configured_model() -> str:
 
 def get_model_info(model_name: str) -> dict:
     """Get info for a model, with defaults for unknown models."""
-    return MODEL_INFO.get(model_name, {
-        "dim": 384,  # Conservative default
-        "query_prefix": "",
-        "size_mb": 0,
-    })
+    return MODEL_INFO.get(
+        model_name,
+        {
+            "dim": 384,  # Conservative default
+            "query_prefix": "",
+            "size_mb": 0,
+        },
+    )
 
 
 def _show_download_warning(model_name: str) -> None:

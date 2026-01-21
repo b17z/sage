@@ -8,7 +8,6 @@ import pytest
 from sage.templates import (
     CheckpointTemplate,
     TemplateField,
-    ValidationResult,
     _create_sandbox_env,
     _parse_template_yaml,
     _render_default_markdown,

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from jinja2 import Environment, BaseLoader, TemplateError
+from jinja2 import TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 
 from sage.config import SAGE_DIR, detect_project_root
@@ -278,9 +278,22 @@ def validate_checkpoint_data(
     # Check for unknown fields (warning only)
     known_fields = {f.name for f in template.fields}
     # Also allow standard metadata fields
-    known_fields.update({"id", "ts", "trigger", "skill", "project", "parent_checkpoint",
-                         "message_count", "token_estimate", "action_goal", "action_type",
-                         "template", "custom_fields"})
+    known_fields.update(
+        {
+            "id",
+            "ts",
+            "trigger",
+            "skill",
+            "project",
+            "parent_checkpoint",
+            "message_count",
+            "token_estimate",
+            "action_goal",
+            "action_type",
+            "template",
+            "custom_fields",
+        }
+    )
 
     for key in data:
         if key not in known_fields:
@@ -372,8 +385,15 @@ def _render_default_markdown(data: dict[str, Any], template: CheckpointTemplate)
     }
 
     # Add optional metadata
-    for key in ["skill", "project", "parent_checkpoint", "message_count",
-                "token_estimate", "action_goal", "action_type"]:
+    for key in [
+        "skill",
+        "project",
+        "parent_checkpoint",
+        "message_count",
+        "token_estimate",
+        "action_goal",
+        "action_type",
+    ]:
         if data.get(key):
             frontmatter[key] = data[key]
 

@@ -1,14 +1,13 @@
 """Tests for sage.history module."""
 
-from pathlib import Path
-from unittest.mock import patch
 import json
 import stat
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from sage.history import (
-    HistoryEntry,
     append_entry,
     calculate_usage,
     create_entry,

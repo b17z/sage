@@ -92,7 +92,9 @@ def run_init(
     if final_api_key:
         console.print("  [green]✓[/green] API key configured")
     else:
-        console.print("  [yellow]![/yellow] No API key configured. Set ANTHROPIC_API_KEY or run sage config set api-key")
+        console.print(
+            "  [yellow]![/yellow] No API key configured. Set ANTHROPIC_API_KEY or run sage config set api-key"
+        )
 
     # Save config
     config = Config(api_key=final_api_key)
@@ -116,10 +118,7 @@ def run_init(
 
     should_create_skill = skill_name is not None
     if not non_interactive and not should_create_skill:
-        should_create_skill = Confirm.ask(
-            "  Create your first research skill?",
-            default=True
-        )
+        should_create_skill = Confirm.ask("  Create your first research skill?", default=True)
 
     if should_create_skill:
         if not skill_name and not non_interactive:
@@ -133,7 +132,9 @@ def run_init(
             if skill_description:
                 result = create_skill(skill_name, skill_description)
                 if result.ok:
-                    console.print(f"  [green]✓[/green] Created ~/.claude/skills/{skill_name}/SKILL.md")
+                    console.print(
+                        f"  [green]✓[/green] Created ~/.claude/skills/{skill_name}/SKILL.md"
+                    )
                     console.print(f"  [green]✓[/green] Created ~/.sage/skills/{skill_name}/")
                 else:
                     console.print(f"  [red]✗[/red] {result.error.message}")
@@ -149,10 +150,10 @@ def run_init(
     console.print("  claude plugin install /path/to/sage --scope user")
     console.print()
     if skill_name:
-        console.print('  # Or use CLI directly')
+        console.print("  # Or use CLI directly")
         console.print(f'  sage ask {skill_name} "your first query"')
     else:
-        console.print('  # Create a research skill')
+        console.print("  # Create a research skill")
         console.print('  sage new <skill> --description "domain expertise"')
     console.print()
 

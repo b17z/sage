@@ -1,4 +1,5 @@
 {
+  "permissions": {},
   "hooks": {
     "PreCompact": [
       {

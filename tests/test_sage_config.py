@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from sage.config import SageConfig, get_sage_config, SAGE_DIR
+from sage.config import SageConfig, get_sage_config
 
 
 class TestSageConfigDefaults:
@@ -61,9 +61,7 @@ class TestSageConfigLoad:
     def test_load_from_yaml_file(self, tmp_path: Path):
         """Load reads values from YAML file."""
         config_path = tmp_path / "tuning.yaml"
-        config_path.write_text(
-            yaml.dump({"recall_threshold": 0.65, "dedup_threshold": 0.85})
-        )
+        config_path.write_text(yaml.dump({"recall_threshold": 0.65, "dedup_threshold": 0.85}))
 
         cfg = SageConfig.load(tmp_path)
 
@@ -76,11 +74,13 @@ class TestSageConfigLoad:
         """Load ignores unknown config keys (security)."""
         config_path = tmp_path / "tuning.yaml"
         config_path.write_text(
-            yaml.dump({
-                "recall_threshold": 0.65,
-                "malicious_key": "evil_value",
-                "__init__": "should_be_ignored",
-            })
+            yaml.dump(
+                {
+                    "recall_threshold": 0.65,
+                    "malicious_key": "evil_value",
+                    "__init__": "should_be_ignored",
+                }
+            )
         )
 
         cfg = SageConfig.load(tmp_path)
@@ -112,11 +112,13 @@ class TestSageConfigLoad:
         """Load correctly handles type coercion from YAML."""
         config_path = tmp_path / "tuning.yaml"
         config_path.write_text(
-            yaml.dump({
-                "recall_threshold": 0.5,  # Float
-                "depth_min_messages": 10,  # Int
-                "embedding_model": "custom-model",  # String
-            })
+            yaml.dump(
+                {
+                    "recall_threshold": 0.5,  # Float
+                    "depth_min_messages": 10,  # Int
+                    "embedding_model": "custom-model",  # String
+                }
+            )
         )
 
         cfg = SageConfig.load(tmp_path)
@@ -234,9 +236,7 @@ class TestGetSageConfig:
         project = tmp_path / "my-project"
         sage_dir = project / ".sage"
         sage_dir.mkdir(parents=True)
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.55})
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.55}))
         return project
 
     @pytest.fixture
@@ -244,9 +244,7 @@ class TestGetSageConfig:
         """Create a user-level .sage with config."""
         user_dir = tmp_path / "user-sage"
         user_dir.mkdir()
-        (user_dir / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.60})
-        )
+        (user_dir / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.60}))
         return user_dir
 
     def test_explicit_project_path_used(self, project_with_config: Path):
@@ -255,9 +253,7 @@ class TestGetSageConfig:
 
         assert cfg.recall_threshold == 0.55
 
-    def test_project_overrides_user(
-        self, project_with_config: Path, user_sage_dir: Path
-    ):
+    def test_project_overrides_user(self, project_with_config: Path, user_sage_dir: Path):
         """Project-level config takes priority over user-level."""
         with patch("sage.config.SAGE_DIR", user_sage_dir):
             cfg = get_sage_config(project_path=project_with_config)
@@ -293,9 +289,7 @@ class TestGetSageConfig:
         project = tmp_path / "auto-project"
         sage_dir = project / ".sage"
         sage_dir.mkdir(parents=True)
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.45})
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.45}))
 
         with patch("sage.config.detect_project_root", return_value=project):
             cfg = get_sage_config()
@@ -341,15 +335,11 @@ class TestSageConfigEdgeCases:
         project = tmp_path / "project"
         project_sage = project / ".sage"
         project_sage.mkdir(parents=True)
-        (project_sage / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.50})
-        )
+        (project_sage / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.50}))
 
         user_sage = tmp_path / "user"
         user_sage.mkdir()
-        (user_sage / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.60})
-        )
+        (user_sage / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.60}))
 
         # Project config
         project_cfg = get_sage_config(project_path=project)
@@ -372,8 +362,6 @@ class TestConfigIntegrationKnowledge:
         from sage.knowledge import (
             add_knowledge,
             recall_knowledge,
-            KNOWLEDGE_DIR,
-            KNOWLEDGE_INDEX,
         )
 
         knowledge_dir = tmp_path / ".sage" / "knowledge"
@@ -410,8 +398,6 @@ class TestConfigIntegrationKnowledge:
         from sage.knowledge import (
             add_knowledge,
             recall_knowledge,
-            KNOWLEDGE_DIR,
-            KNOWLEDGE_INDEX,
         )
 
         knowledge_dir = tmp_path / ".sage" / "knowledge"
@@ -420,9 +406,7 @@ class TestConfigIntegrationKnowledge:
         knowledge_index = knowledge_dir / "index.yaml"
 
         sage_dir = tmp_path / ".sage"
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.99})  # Very high
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.99}))  # Very high
 
         with (
             patch("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir),
@@ -491,16 +475,14 @@ class TestConfigIntegrationCheckpoint:
 
     def test_dedup_uses_config_threshold(self, tmp_path: Path):
         """is_duplicate_checkpoint() uses threshold from SageConfig."""
-        from sage.checkpoint import is_duplicate_checkpoint, save_checkpoint, Checkpoint
+        from sage.checkpoint import Checkpoint, is_duplicate_checkpoint, save_checkpoint
 
         checkpoints_dir = tmp_path / ".sage" / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         sage_dir = tmp_path / ".sage"
 
         # Low threshold - even slightly similar should be duplicate
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"dedup_threshold": 0.1})  # Very low
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"dedup_threshold": 0.1}))  # Very low
 
         with (
             patch("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir),
@@ -514,8 +496,9 @@ class TestConfigIntegrationCheckpoint:
             patch("sage.embeddings.cosine_similarity", return_value=0.5),
         ):
             # Setup mock embedding store with one checkpoint
-            from sage.embeddings import EmbeddingStore
             import numpy as np
+
+            from sage.embeddings import EmbeddingStore
 
             store = EmbeddingStore.empty().add("existing-cp", np.array([1.0, 0.0, 0.0]))
             mock_store.return_value = store
@@ -558,9 +541,7 @@ class TestConfigIntegrationCheckpoint:
         sage_dir.mkdir(parents=True)
 
         # Low config threshold
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"dedup_threshold": 0.1})
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"dedup_threshold": 0.1}))
 
         with (
             patch("sage.config.SAGE_DIR", sage_dir),
@@ -572,6 +553,7 @@ class TestConfigIntegrationCheckpoint:
             patch("sage.checkpoint.list_checkpoints", return_value=[]),
         ):
             import numpy as np
+
             from sage.embeddings import EmbeddingStore
 
             mock_store.return_value = EmbeddingStore.empty()
@@ -598,6 +580,7 @@ class TestConfigCLI:
     def test_config_list_shows_runtime_and_tuning(self, tmp_path: Path):
         """sage config list shows both runtime and tuning settings."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         runner = CliRunner()
@@ -618,6 +601,7 @@ class TestConfigCLI:
     def test_config_set_tuning_value(self, tmp_path: Path):
         """sage config set recall_threshold 0.65 updates tuning.yaml."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -645,6 +629,7 @@ class TestConfigCLI:
     def test_config_set_runtime_value(self, tmp_path: Path):
         """sage config set model <value> updates config.yaml."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -666,14 +651,13 @@ class TestConfigCLI:
     def test_config_set_project_level(self, tmp_path: Path):
         """sage config set --project creates project-level tuning.yaml."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         runner = CliRunner()
 
         with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(
-                main, ["config", "set", "recall_threshold", "0.55", "--project"]
-            )
+            result = runner.invoke(main, ["config", "set", "recall_threshold", "0.55", "--project"])
 
             assert result.exit_code == 0
             assert "project-level" in result.output
@@ -687,6 +671,7 @@ class TestConfigCLI:
     def test_config_reset(self, tmp_path: Path):
         """sage config reset restores tuning defaults."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -717,6 +702,7 @@ class TestConfigCLI:
     def test_config_set_unknown_key_fails(self, tmp_path: Path):
         """sage config set with unknown key shows error."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -736,15 +722,14 @@ class TestConfigCLI:
     def test_config_shows_non_default_highlighted(self, tmp_path: Path):
         """Non-default tuning values are highlighted in output."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
         sage_dir.mkdir(parents=True)
 
         # Set a non-default value
-        (sage_dir / "tuning.yaml").write_text(
-            yaml.dump({"recall_threshold": 0.42})
-        )
+        (sage_dir / "tuning.yaml").write_text(yaml.dump({"recall_threshold": 0.42}))
 
         runner = CliRunner()
 
@@ -768,6 +753,7 @@ class TestConfigCLIEdgeCases:
     def test_config_set_float_type_coercion(self, tmp_path: Path):
         """Float values are properly coerced from string input."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -792,6 +778,7 @@ class TestConfigCLIEdgeCases:
     def test_config_set_int_type_coercion(self, tmp_path: Path):
         """Integer values are properly coerced from string input."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -815,6 +802,7 @@ class TestConfigCLIEdgeCases:
     def test_config_set_invalid_float_fails(self, tmp_path: Path):
         """Invalid float input shows error."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"
@@ -835,6 +823,7 @@ class TestConfigCLIEdgeCases:
     def test_config_handles_hyphenated_keys(self, tmp_path: Path):
         """Keys with hyphens are converted to underscores."""
         from click.testing import CliRunner
+
         from sage.cli import main
 
         sage_dir = tmp_path / ".sage"

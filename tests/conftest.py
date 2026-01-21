@@ -1,8 +1,9 @@
 """Pytest fixtures for Sage tests."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 @pytest.fixture
@@ -45,10 +46,12 @@ You are a test skill.
 @pytest.fixture
 def mock_paths(tmp_path: Path, mock_skills_dir: Path, mock_sage_dir: Path):
     """Patch config paths to use temporary directories."""
-    with patch("sage.skill.SKILLS_DIR", mock_skills_dir), \
-         patch("sage.skill.SHARED_MEMORY_PATH", mock_sage_dir / "shared_memory.md"), \
-         patch("sage.skill.get_skill_path", lambda name: mock_skills_dir / name), \
-         patch("sage.skill.get_sage_skill_path", lambda name: mock_sage_dir / "skills" / name):
+    with (
+        patch("sage.skill.SKILLS_DIR", mock_skills_dir),
+        patch("sage.skill.SHARED_MEMORY_PATH", mock_sage_dir / "shared_memory.md"),
+        patch("sage.skill.get_skill_path", lambda name: mock_skills_dir / name),
+        patch("sage.skill.get_sage_skill_path", lambda name: mock_sage_dir / "skills" / name),
+    ):
         yield {
             "skills_dir": mock_skills_dir,
             "sage_dir": mock_sage_dir,
