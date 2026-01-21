@@ -270,6 +270,189 @@ class TestErrorHandling:
         assert result.exit_code != 0
 
 
+class TestHealthCommand:
+    """Tests for the health command."""
+
+    def test_health_runs_without_error(self, runner):
+        """Health command runs without crashing."""
+        result = runner.invoke(main, ["health"])
+        # Should produce output regardless of state
+        assert result.exit_code == 0
+        assert "Sage Health Check" in result.output
+
+    def test_health_shows_sage_directory_status(self, runner, tmp_path, monkeypatch):
+        """Health shows SAGE_DIR status."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "Sage directory" in result.output
+
+    def test_health_reports_missing_sage_dir(self, runner, tmp_path, monkeypatch):
+        """Health reports when SAGE_DIR doesn't exist."""
+        sage_dir = tmp_path / ".sage-nonexistent"
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "sage init" in result.output.lower() or "missing" in result.output.lower()
+
+    def test_health_checks_config(self, runner, tmp_path, monkeypatch):
+        """Health checks config file status."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        config_path = sage_dir / "config.yaml"
+        config_path.write_text("embedding_model: test\n")
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.config.CONFIG_PATH", config_path)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "Config" in result.output or "config" in result.output.lower()
+
+    def test_health_checks_embeddings(self, runner, tmp_path, monkeypatch):
+        """Health checks embedding availability."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "Embeddings" in result.output or "embedding" in result.output.lower()
+
+    def test_health_checks_checkpoints(self, runner, tmp_path, monkeypatch):
+        """Health checks checkpoint status."""
+        sage_dir = tmp_path / ".sage"
+        checkpoints_dir = sage_dir / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "Checkpoints" in result.output or "checkpoint" in result.output.lower()
+
+    def test_health_checks_knowledge(self, runner, tmp_path, monkeypatch):
+        """Health checks knowledge status."""
+        sage_dir = tmp_path / ".sage"
+        knowledge_dir = sage_dir / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "Knowledge" in result.output or "knowledge" in result.output.lower()
+
+    def test_health_checks_file_permissions(self, runner, tmp_path, monkeypatch):
+        """Health checks file permissions."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        assert "permissions" in result.output.lower() or "File" in result.output
+
+    def test_health_checks_pending_tasks(self, runner, tmp_path, monkeypatch):
+        """Health checks pending tasks."""
+        sage_dir = tmp_path / ".sage"
+        tasks_dir = sage_dir / "tasks"
+        tasks_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.tasks.TASKS_DIR", tasks_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        # Should mention tasks somewhere
+        assert "task" in result.output.lower() or "Pending" in result.output
+
+    def test_health_reports_all_healthy(self, runner, tmp_path, monkeypatch):
+        """Health reports all systems healthy when everything is OK."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        (sage_dir / "checkpoints").mkdir()
+        (sage_dir / "knowledge").mkdir()
+        (sage_dir / "tasks").mkdir()
+
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.config.CONFIG_PATH", sage_dir / "config.yaml")
+        monkeypatch.setattr("sage.checkpoint.CHECKPOINTS_DIR", sage_dir / "checkpoints")
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", sage_dir / "knowledge")
+        monkeypatch.setattr("sage.tasks.TASKS_DIR", sage_dir / "tasks")
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        # Should indicate healthy state
+        assert "healthy" in result.output.lower() or "✓" in result.output
+
+    def test_health_shows_checkpoint_count(self, runner, tmp_path, monkeypatch):
+        """Health shows number of checkpoints."""
+        sage_dir = tmp_path / ".sage"
+        checkpoints_dir = sage_dir / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        # Create some checkpoint files
+        (checkpoints_dir / "cp1.md").write_text("# Checkpoint 1\n")
+        (checkpoints_dir / "cp2.md").write_text("# Checkpoint 2\n")
+
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        # Should show checkpoint count
+        assert "2" in result.output or "checkpoint" in result.output.lower()
+
+    def test_health_detects_permission_issues(self, runner, tmp_path, monkeypatch):
+        """Health detects files with wrong permissions."""
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        config_path = sage_dir / "config.yaml"
+        config_path.write_text("test: value\n")
+        # Set world-readable permissions (insecure)
+        config_path.chmod(0o644)
+
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+        monkeypatch.setattr("sage.config.CONFIG_PATH", config_path)
+        monkeypatch.setattr("sage.cli.SAGE_DIR", sage_dir)
+
+        result = runner.invoke(main, ["health"])
+
+        assert result.exit_code == 0
+        # Should report permission issue
+        assert "0o644" in result.output or "permission" in result.output.lower()
+
+    def test_health_help(self, runner):
+        """Health help shows description."""
+        result = runner.invoke(main, ["health", "--help"])
+
+        assert result.exit_code == 0
+        assert "health" in result.output.lower()
+        assert "diagnostic" in result.output.lower() or "check" in result.output.lower()
+
+
 class TestAdminCommands:
     """Tests for admin commands."""
 

@@ -291,7 +291,7 @@ Hooks have:
 # Install dev dependencies
 pip install -e ".[dev,mcp]"
 
-# Run tests (535 tests)
+# Run tests (578 tests)
 pytest tests/ -v
 
 # Lint and format

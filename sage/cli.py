@@ -59,6 +59,101 @@ def init(api_key, skill, description, non_interactive):
 
 
 @main.command()
+def health():
+    """Check Sage system health and diagnostics."""
+    from pathlib import Path
+
+    from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
+    from sage.config import CONFIG_PATH, SAGE_DIR, get_sage_config
+    from sage.embeddings import check_model_mismatch, get_configured_model, is_available
+    from sage.knowledge import KNOWLEDGE_DIR, list_knowledge
+    from sage.tasks import TASKS_DIR, load_pending_tasks
+
+    console.print("[bold]Sage Health Check[/bold]")
+    console.print("─" * 40)
+
+    issues = []
+
+    # Check .sage directory
+    if SAGE_DIR.exists():
+        console.print(f"[green]✓[/green] Sage directory: {SAGE_DIR}")
+    else:
+        console.print(f"[red]✗[/red] Sage directory missing: {SAGE_DIR}")
+        issues.append("Run 'sage init' to create directory")
+
+    # Check config
+    config = get_sage_config()
+    if CONFIG_PATH.exists():
+        console.print(f"[green]✓[/green] Config loaded: {CONFIG_PATH}")
+    else:
+        console.print(f"[yellow]![/yellow] No config file (using defaults)")
+
+    # Check embeddings
+    if is_available():
+        model_name = get_configured_model()
+        mismatch, old_model, new_model = check_model_mismatch()
+        if mismatch:
+            console.print(f"[yellow]![/yellow] Embeddings: model changed ({old_model} → {new_model})")
+            issues.append("Run 'sage admin rebuild-embeddings' to update")
+        else:
+            console.print(f"[green]✓[/green] Embeddings: {model_name}")
+    else:
+        console.print("[yellow]![/yellow] Embeddings: not available (install sentence-transformers)")
+
+    # Check checkpoints
+    if CHECKPOINTS_DIR.exists():
+        checkpoints = list_checkpoints()
+        total_size = sum(f.stat().st_size for f in CHECKPOINTS_DIR.glob("*.md"))
+        size_str = f"{total_size / 1024:.1f}KB" if total_size < 1024 * 1024 else f"{total_size / 1024 / 1024:.1f}MB"
+        console.print(f"[green]✓[/green] Checkpoints: {len(checkpoints)} saved ({size_str})")
+    else:
+        console.print("[dim]○[/dim] Checkpoints: none yet")
+
+    # Check knowledge
+    if KNOWLEDGE_DIR.exists():
+        knowledge = list_knowledge()
+        console.print(f"[green]✓[/green] Knowledge: {len(knowledge)} items")
+    else:
+        console.print("[dim]○[/dim] Knowledge: none yet")
+
+    # Check file permissions
+    sensitive_files = [CONFIG_PATH, SAGE_DIR / "tuning.yaml"]
+    perm_issues = []
+    for f in sensitive_files:
+        if f.exists():
+            mode = f.stat().st_mode & 0o777
+            if mode != 0o600:
+                perm_issues.append(f"{f.name}: {oct(mode)} (should be 0o600)")
+    if perm_issues:
+        console.print(f"[yellow]![/yellow] File permissions: {len(perm_issues)} issue(s)")
+        for issue in perm_issues:
+            console.print(f"    {issue}")
+            issues.append(f"Fix permissions: chmod 600 {issue.split(':')[0]}")
+    else:
+        console.print("[green]✓[/green] File permissions: OK")
+
+    # Check pending tasks
+    if TASKS_DIR.exists():
+        pending = load_pending_tasks()
+        if pending:
+            console.print(f"[yellow]![/yellow] Pending tasks: {len(pending)} from previous session")
+            issues.append("Pending tasks will be processed on next MCP server start")
+        else:
+            console.print("[green]✓[/green] Pending tasks: none")
+    else:
+        console.print("[dim]○[/dim] Tasks directory: not created yet")
+
+    # Summary
+    console.print()
+    if issues:
+        console.print(f"[yellow]Found {len(issues)} issue(s):[/yellow]")
+        for issue in issues:
+            console.print(f"  • {issue}")
+    else:
+        console.print("[green]All systems healthy![/green]")
+
+
+@main.command()
 @click.argument("name")
 @click.option("--description", "-d", help="Skill domain expertise description")
 @click.option("--docs", multiple=True, type=click.Path(exists=True), help="Doc files to include")
@@ -1030,6 +1125,7 @@ def hooks_install(force):
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
+        "post-response-sage-notify.sh",
         "pre-compact.sh",
     ]
 
@@ -1074,6 +1170,10 @@ def hooks_install(force):
                     {
                         "type": "command",
                         "command": str(hooks_dest / "post-response-semantic-detector.sh"),
+                    },
+                    {
+                        "type": "command",
+                        "command": str(hooks_dest / "post-response-sage-notify.sh"),
                     },
                 ],
             }
@@ -1127,6 +1227,7 @@ def hooks_uninstall(force):
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
+        "post-response-sage-notify.sh",
         "pre-compact.sh",
     ]
 
@@ -1173,6 +1274,7 @@ def hooks_status():
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
+        "post-response-sage-notify.sh",
         "pre-compact.sh",
     ]
 
@@ -1414,131 +1516,14 @@ def templates_show(name):
         console.print("[bold]Custom Jinja2 template:[/bold] Yes")
 
 
-# ============================================================================
-# Hooks Commands
-# ============================================================================
 
-
-@main.group()
-def hooks():
-    """Manage Claude Code hooks for Sage notifications."""
-    pass
-
-
-@hooks.command("install")
-@click.option("--force", "-f", is_flag=True, help="Overwrite existing hooks")
-def hooks_install(force):
-    """Install Sage notification hooks to Claude Code.
-
-    This installs the post-response hook that displays Sage notifications
-    (checkpoint saves, knowledge saves, etc.) after each Claude response.
-
-    The hook script is installed to ~/.claude/hooks/post-response-sage-notify.sh
-
-    Requires: jq (JSON processor) for best experience.
-    """
-    import shutil
-    from pathlib import Path
-
-    hooks_dir = Path.home() / ".claude" / "hooks"
-    hooks_dir.mkdir(parents=True, exist_ok=True)
-
-    hook_name = "post-response-sage-notify.sh"
-    dest_path = hooks_dir / hook_name
-
-    # Check if hook already exists
-    if dest_path.exists() and not force:
-        console.print(f"[yellow]Hook already installed: {dest_path}[/yellow]")
-        console.print("[dim]Use --force to overwrite[/dim]")
-        return
-
-    # Get source hook from package
-    try:
-        # Try to get from installed package
-        source_path = Path(__file__).parent / "hooks" / hook_name
-        if source_path.exists():
-            shutil.copy(source_path, dest_path)
-        else:
-            console.print(f"[red]Hook script not found: {source_path}[/red]")
-            return
-    except Exception as e:
-        console.print(f"[red]Failed to install hook: {e}[/red]")
-        return
-
-    # Make executable
-    dest_path.chmod(0o755)
-
-    console.print(f"[green]✓[/green] Installed hook: {dest_path}")
-    console.print()
-    console.print("[bold]Hook installed![/bold]")
-    console.print()
-    console.print("The hook will display Sage notifications after each Claude response.")
-    console.print("Example: ⏺ Sage: Checkpoint saved: 2026-01-21_auth-patterns")
-    console.print()
-
-    # Check for jq
-    import shutil as sh
-
-    if not sh.which("jq"):
-        console.print("[yellow]Note: Install 'jq' for best notification formatting[/yellow]")
-        console.print("[dim]  macOS: brew install jq[/dim]")
-        console.print("[dim]  Linux: apt install jq[/dim]")
-
-
-@hooks.command("uninstall")
-def hooks_uninstall():
-    """Remove Sage notification hooks from Claude Code."""
-    from pathlib import Path
-
-    hooks_dir = Path.home() / ".claude" / "hooks"
-    hook_path = hooks_dir / "post-response-sage-notify.sh"
-
-    if not hook_path.exists():
-        console.print("[yellow]Hook not installed[/yellow]")
-        return
-
-    hook_path.unlink()
-    console.print(f"[green]✓[/green] Removed hook: {hook_path}")
-
-
-@hooks.command("status")
-def hooks_status():
-    """Check status of Sage hooks."""
-    import shutil as sh
-    from pathlib import Path
-
-    hooks_dir = Path.home() / ".claude" / "hooks"
-    hook_path = hooks_dir / "post-response-sage-notify.sh"
-
-    console.print("[bold]Sage Hooks Status[/bold]")
-    console.print()
-
-    # Check hook installation
-    if hook_path.exists():
-        console.print(f"[green]✓[/green] Notification hook installed: {hook_path}")
-    else:
-        console.print("[yellow]✗[/yellow] Notification hook not installed")
-        console.print("[dim]  Run: sage hooks install[/dim]")
-
-    # Check jq
-    if sh.which("jq"):
-        console.print("[green]✓[/green] jq installed (JSON processor)")
-    else:
-        console.print("[yellow]✗[/yellow] jq not installed (optional, for better formatting)")
-        console.print("[dim]  macOS: brew install jq[/dim]")
-        console.print("[dim]  Linux: apt install jq[/dim]")
-
-    # Check pending notifications
-    from sage.config import SAGE_DIR
-
-    notify_file = SAGE_DIR / "notifications.jsonl"
-    if notify_file.exists():
-        with open(notify_file) as f:
-            count = sum(1 for _ in f)
-        console.print(f"[yellow]![/yellow] {count} pending notification(s)")
-        console.print(f"[dim]  File: {notify_file}[/dim]")
-    else:
-        console.print("[green]✓[/green] No pending notifications")
+# NOTE: Hooks commands are defined above (after checkpoint commands).
+# The hooks group includes: install, uninstall, status
+# Hook files managed:
+#   - post-response-context-check.sh (context threshold detection)
+#   - post-response-semantic-detector.sh (synthesis/branch point detection)
+#   - pre-compact.sh (pre-compaction checkpointing)
+#   - post-response-sage-notify.sh (notification display)
 
 
 # ============================================================================

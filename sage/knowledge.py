@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from sage.config import SAGE_DIR, get_sage_config
+from sage.types import KnowledgeId
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class KnowledgeMetadata:
 class KnowledgeItem:
     """A single knowledge item."""
 
-    id: str
+    id: KnowledgeId
     file: str  # relative path from KNOWLEDGE_DIR
     triggers: KnowledgeTriggers
     scope: KnowledgeScope
@@ -176,36 +177,6 @@ def _remove_embedding(knowledge_id: str) -> bool:
     store = _get_embedding_store()
     store = store.remove(knowledge_id)
     return _save_embedding_store(store)
-
-
-def _get_embedding_similarity(query: str, knowledge_id: str) -> float | None:
-    """Get embedding similarity between query and a knowledge item.
-
-    Args:
-        query: The query text
-        knowledge_id: The knowledge item ID
-
-    Returns:
-        Similarity score (0-1) or None if not available
-    """
-    from sage import embeddings
-
-    if not embeddings.is_available():
-        return None
-
-    # Get query embedding (with prefix if model requires it)
-    result = embeddings.get_query_embedding(query)
-    if result.is_err():
-        return None
-
-    query_embedding = result.unwrap()
-    store = _get_embedding_store()
-    item_embedding = store.get(knowledge_id)
-
-    if item_embedding is None:
-        return None
-
-    return embeddings.cosine_similarity(query_embedding, item_embedding)
 
 
 def _get_all_embedding_similarities(query: str) -> dict[str, float]:
@@ -359,10 +330,26 @@ def save_index(items: list[KnowledgeItem]) -> None:
         ],
     }
 
-    with open(KNOWLEDGE_INDEX, "w") as f:
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-    # Restrict permissions - knowledge index may contain sensitive metadata
-    KNOWLEDGE_INDEX.chmod(0o600)
+    # Atomic write: temp file + rename to prevent corruption on crash
+    import os
+    import tempfile
+
+    fd, temp_path = tempfile.mkstemp(
+        dir=KNOWLEDGE_DIR,
+        prefix=".index_",
+        suffix=".yaml.tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+        os.chmod(temp_path, 0o600)
+        os.rename(temp_path, KNOWLEDGE_INDEX)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+        raise
 
 
 def _is_safe_path(base: Path, target: Path) -> bool:

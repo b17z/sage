@@ -14,7 +14,7 @@
 2. **Integration tests** — Test feature workflows end-to-end
 3. **Edge case tests** — Empty inputs, malformed data, boundary conditions
 
-**Current test count:** 91 tests
+**Current test count:** 578 tests
 **Target:** Maintain or increase coverage with every PR
 
 **Test patterns:**
