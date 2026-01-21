@@ -33,7 +33,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 578 tests covering all modules
+- 675 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -75,9 +75,7 @@ Version timeline and planned features.
 
 ### Remaining v2.0 Work
 
-| Feature | Priority | Notes |
-|---------|----------|-------|
-| `sage knowledge debug` | Medium | Transparency for retrieval tuning |
+All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2).
 
 ---
 
@@ -94,17 +92,30 @@ Version timeline and planned features.
 
 ---
 
-## v2.2 (Planned)
+## v2.2 (In Progress)
 
 ### Focus: Advanced Retrieval + Knowledge Management
 
-| Feature | Description |
-|---------|-------------|
-| Freshness decay | Recent knowledge weighted higher |
-| Cross-project search | Priority cascade (project → global with boost) |
-| Knowledge versioning | History array for updates |
-| Knowledge edit/deprecate | Inline update without delete, "deprecated" status |
-| `sage knowledge debug` | Transparency for retrieval tuning |
+| Feature | Status | Description |
+|---------|--------|-------------|
+| `sage debug` command | **Done** | Unified retrieval debugging (knowledge + checkpoints) |
+| Knowledge edit | **Done** | `sage knowledge edit` - update content/keywords/status |
+| Knowledge deprecate | **Done** | `sage knowledge deprecate` - mark outdated with reason |
+| Knowledge archive | **Done** | `sage knowledge archive` - hide from recall |
+| Freshness decay | Planned | Recent knowledge weighted higher |
+| Cross-project search | Planned | Priority cascade (project → global with boost) |
+| Knowledge versioning | Planned | History array for updates |
+
+### Knowledge Maintenance Automation (Planned)
+
+| Feature | Priority | Description |
+|---------|----------|-------------|
+| Staleness report | High | `sage knowledge stale` - items not recalled in 30+ days |
+| Duplicate detection | High | Warn when adding knowledge similar to existing item |
+| MCP deprecation tool | Medium | `sage_suggest_deprecation(id, reason)` - Claude flags outdated info |
+| Recall feedback | Medium | Claude signals "this was wrong" → auto-flag for review |
+| Date/version detection | Low | Parse content for dates/versions, flag when old |
+| Contradiction detection | Low | New checkpoint contradicts knowledge → suggest update |
 
 ---
 
@@ -141,9 +152,20 @@ Version timeline and planned features.
 
 | Feature | Description |
 |---------|-------------|
-| Token savings tracking | `sage usage --savings` shows compression ratio |
-| Session cost comparison | "This checkpoint saved X tokens vs full replay" |
+| Token savings tracking | `sage usage savings` CLI showing compression ratio |
+| Session cost comparison | "Checkpoint + knowledge = X tokens vs ~100K full replay" |
 | Savings dashboard | Cumulative token/cost savings over time |
+| MCP savings tool | `sage_session_savings()` - real-time savings for current session |
+| Restore event logging | Track when checkpoints are loaded for analytics |
+
+**Savings calculation:**
+```
+Full transcript replay:     ~100,000 tokens
+Checkpoint restore:         ~2,000 tokens
+Knowledge recalled:         ~1,000 tokens
+─────────────────────────────────────────
+Savings:                    97,000 tokens (~$0.29 at $3/1M)
+```
 
 ---
 
@@ -232,6 +254,7 @@ Version timeline and planned features.
 | v2.0.1 | Jan 2026 | Security fix: replaced bash watcher with Read-tool polling |
 | v2.1.0 | Jan 2026 | Simplified architecture: sync Sage + Task subagent pattern |
 | v2.1.1 | Jan 2026 | Auto-version CI workflow, version sync across all files, 578 tests |
+| v2.2.0 | Jan 2026 | Knowledge updates: debug, edit, deprecate, archive commands, 675 tests |
 
 ---
 

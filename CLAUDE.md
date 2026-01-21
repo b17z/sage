@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.1.1 (async operations, Task subagent pattern, structured logging)
-**Test count:** 616 tests (maintain or increase)
+**Current version:** v2.2.0 (MCP-first, knowledge management, debug tools)
+**Test count:** 675 tests (maintain or increase)
 
 ## Quick Reference
 
@@ -22,6 +22,32 @@ sage knowledge rm <id>       # Remove knowledge item
 sage config list             # Show current config
 sage config set <key> <val>  # Set a value
 ```
+
+## MCP Tools (for Claude Code)
+
+| Tool | Purpose |
+|------|---------|
+| **System** | |
+| `sage_version()` | Get version + config info |
+| `sage_health()` | System diagnostics |
+| `sage_get_config()` | Show all config values |
+| `sage_set_config(key, value)` | Set tuning parameter |
+| `sage_reload_config()` | Apply config changes |
+| `sage_debug_query(query)` | Debug retrieval scoring |
+| **Checkpoints** | |
+| `sage_save_checkpoint(...)` | Save research checkpoint |
+| `sage_list_checkpoints()` | List saved checkpoints |
+| `sage_load_checkpoint(id)` | Load checkpoint for context |
+| `sage_search_checkpoints(query)` | Semantic search |
+| `sage_autosave_check(...)` | Auto-checkpoint at breakpoints |
+| **Knowledge** | |
+| `sage_save_knowledge(...)` | Save new knowledge item |
+| `sage_recall_knowledge(query)` | Retrieve matching knowledge |
+| `sage_list_knowledge()` | List all knowledge |
+| `sage_update_knowledge(id, ...)` | Edit existing item |
+| `sage_deprecate_knowledge(id, reason)` | Mark as outdated |
+| `sage_archive_knowledge(id)` | Hide from recall |
+| `sage_remove_knowledge(id)` | Delete item |
 
 ## Architecture
 

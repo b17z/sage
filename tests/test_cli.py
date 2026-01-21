@@ -223,6 +223,73 @@ class TestKnowledgeCommands:
 
         assert result.exit_code == 0
 
+    def test_knowledge_edit_help(self, runner):
+        """Knowledge edit help shows options."""
+        result = runner.invoke(main, ["knowledge", "edit", "--help"])
+
+        assert result.exit_code == 0
+        assert "--content" in result.output
+        assert "--keywords" in result.output
+        assert "--status" in result.output
+
+    def test_knowledge_edit_requires_field(self, runner, isolated_sage, monkeypatch):
+        """Knowledge edit requires at least one field to update."""
+        knowledge_dir = isolated_sage / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = runner.invoke(main, ["knowledge", "edit", "some-id"])
+
+        assert result.exit_code != 0
+        assert "at least one field" in result.output.lower()
+
+    def test_knowledge_edit_nonexistent(self, runner, isolated_sage, monkeypatch):
+        """Knowledge edit for nonexistent item shows error."""
+        knowledge_dir = isolated_sage / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = runner.invoke(main, ["knowledge", "edit", "nonexistent", "--keywords", "new"])
+
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower()
+
+    def test_knowledge_deprecate_help(self, runner):
+        """Knowledge deprecate help shows options."""
+        result = runner.invoke(main, ["knowledge", "deprecate", "--help"])
+
+        assert result.exit_code == 0
+        assert "--reason" in result.output
+        assert "--replacement" in result.output
+
+    def test_knowledge_deprecate_requires_reason(self, runner):
+        """Knowledge deprecate requires reason."""
+        result = runner.invoke(main, ["knowledge", "deprecate", "some-id"])
+
+        assert result.exit_code != 0
+        assert "reason" in result.output.lower()
+
+    def test_knowledge_archive_help(self, runner):
+        """Knowledge archive help shows options."""
+        result = runner.invoke(main, ["knowledge", "archive", "--help"])
+
+        assert result.exit_code == 0
+        assert "--force" in result.output
+
+    def test_knowledge_archive_nonexistent(self, runner, isolated_sage, monkeypatch):
+        """Knowledge archive for nonexistent item shows error."""
+        knowledge_dir = isolated_sage / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = runner.invoke(main, ["knowledge", "archive", "nonexistent", "--force"])
+
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower()
+
 
 class TestHelpCommands:
     """Tests for help output."""
@@ -451,6 +518,66 @@ class TestHealthCommand:
         assert result.exit_code == 0
         assert "health" in result.output.lower()
         assert "diagnostic" in result.output.lower() or "check" in result.output.lower()
+
+
+class TestDebugCommand:
+    """Tests for the debug command."""
+
+    def test_debug_runs_without_error(self, runner):
+        """Debug command runs without crashing."""
+        result = runner.invoke(main, ["debug", "test query"])
+        assert result.exit_code == 0
+        assert "Debug Query" in result.output
+
+    def test_debug_shows_query(self, runner):
+        """Debug shows the query being tested."""
+        result = runner.invoke(main, ["debug", "JWT authentication"])
+        assert result.exit_code == 0
+        assert "JWT authentication" in result.output
+
+    def test_debug_shows_knowledge_section(self, runner):
+        """Debug shows knowledge matches section."""
+        result = runner.invoke(main, ["debug", "test"])
+        assert result.exit_code == 0
+        assert "Knowledge Matches" in result.output
+
+    def test_debug_shows_checkpoint_section(self, runner):
+        """Debug shows checkpoint matches section."""
+        result = runner.invoke(main, ["debug", "test"])
+        assert result.exit_code == 0
+        assert "Checkpoint Matches" in result.output
+
+    def test_debug_knowledge_only_flag(self, runner):
+        """Debug --knowledge-only shows only knowledge."""
+        result = runner.invoke(main, ["debug", "test", "--knowledge-only"])
+        assert result.exit_code == 0
+        assert "Knowledge Matches" in result.output
+        assert "Checkpoint Matches" not in result.output
+
+    def test_debug_checkpoints_only_flag(self, runner):
+        """Debug --checkpoints-only shows only checkpoints."""
+        result = runner.invoke(main, ["debug", "test", "--checkpoints-only"])
+        assert result.exit_code == 0
+        assert "Knowledge Matches" not in result.output
+        assert "Checkpoint Matches" in result.output
+
+    def test_debug_with_skill_context(self, runner):
+        """Debug accepts skill context."""
+        result = runner.invoke(main, ["debug", "test", "--skill", "crypto-payments"])
+        assert result.exit_code == 0
+        assert "crypto-payments" in result.output
+
+    def test_debug_shows_weights(self, runner):
+        """Debug shows embedding/keyword weights."""
+        result = runner.invoke(main, ["debug", "test"])
+        assert result.exit_code == 0
+        assert "embedding=" in result.output or "Weights" in result.output
+
+    def test_debug_help(self, runner):
+        """Debug help shows description."""
+        result = runner.invoke(main, ["debug", "--help"])
+        assert result.exit_code == 0
+        assert "retrieval" in result.output.lower() or "scoring" in result.output.lower()
 
 
 class TestAdminCommands:

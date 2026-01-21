@@ -420,6 +420,322 @@ atexit.register(_sync_shutdown)
 
 
 # =============================================================================
+# System Tools
+# =============================================================================
+
+
+@mcp.tool()
+def sage_version() -> str:
+    """Get Sage version and configuration info.
+
+    Returns version number, embedding model, and key thresholds.
+    Useful for debugging and ensuring you're on the expected version.
+    """
+    from sage import __version__
+    from sage.config import get_sage_config
+    from sage.embeddings import is_available as embeddings_available
+
+    cfg = get_sage_config()
+
+    lines = [
+        f"Sage v{__version__}",
+        "",
+        "Configuration:",
+        f"  Embedding model: {cfg.embedding_model}",
+        f"  Embeddings available: {embeddings_available()}",
+        f"  Recall threshold: {cfg.recall_threshold}",
+        f"  Embedding weight: {cfg.embedding_weight}",
+        f"  Keyword weight: {cfg.keyword_weight}",
+    ]
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def sage_health() -> str:
+    """Check Sage system health and diagnostics.
+
+    Returns status of all Sage subsystems including:
+    - Configuration files
+    - Embedding model availability
+    - Checkpoint and knowledge counts
+    - File permissions
+    - Pending tasks
+
+    Use this to diagnose issues or verify Sage is properly configured.
+    """
+    from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
+    from sage.config import CONFIG_PATH, SAGE_DIR, get_sage_config
+    from sage.embeddings import check_model_mismatch, get_configured_model, is_available
+    from sage.knowledge import KNOWLEDGE_DIR, list_knowledge
+    from sage.tasks import TASKS_DIR, load_pending_tasks
+
+    lines = ["Sage Health Check", "─" * 40]
+    issues = []
+
+    # Check .sage directory
+    if SAGE_DIR.exists():
+        lines.append(f"✓ Sage directory: {SAGE_DIR}")
+    else:
+        lines.append(f"✗ Sage directory missing: {SAGE_DIR}")
+        issues.append("Run 'sage init' to create directory")
+
+    # Check config
+    config = get_sage_config()
+    if CONFIG_PATH.exists():
+        lines.append(f"✓ Config loaded: {CONFIG_PATH}")
+    else:
+        lines.append("! No config file (using defaults)")
+
+    # Check embeddings
+    if is_available():
+        model_name = get_configured_model()
+        mismatch, old_model, new_model = check_model_mismatch()
+        if mismatch:
+            lines.append(f"! Embeddings: model changed ({old_model} → {new_model})")
+            issues.append("Run 'sage admin rebuild-embeddings' to update")
+        else:
+            lines.append(f"✓ Embeddings: {model_name}")
+    else:
+        lines.append("! Embeddings not available")
+        issues.append("Install with: pip install claude-sage[embeddings]")
+
+    # Check checkpoints
+    if CHECKPOINTS_DIR.exists():
+        checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=1000)
+        cp_count = len(checkpoints)
+        lines.append(f"✓ Checkpoints: {cp_count} saved")
+    else:
+        lines.append("○ Checkpoints directory: not created yet")
+
+    # Check knowledge
+    if KNOWLEDGE_DIR.exists():
+        knowledge = list_knowledge()
+        k_count = len(knowledge)
+        lines.append(f"✓ Knowledge: {k_count} items")
+    else:
+        lines.append("○ Knowledge directory: not created yet")
+
+    # Check pending tasks
+    if TASKS_DIR.exists():
+        pending = load_pending_tasks()
+        if pending:
+            lines.append(f"! Pending tasks: {len(pending)}")
+            issues.append("Pending tasks will be processed on next MCP server start")
+        else:
+            lines.append("✓ Pending tasks: none")
+    else:
+        lines.append("○ Tasks directory: not created yet")
+
+    # Summary
+    lines.append("")
+    if issues:
+        lines.append(f"Found {len(issues)} issue(s):")
+        for issue in issues:
+            lines.append(f"  • {issue}")
+    else:
+        lines.append("All systems healthy!")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def sage_get_config() -> str:
+    """Get current Sage configuration values.
+
+    Shows both runtime config and tuning parameters with their
+    current values vs defaults.
+
+    Returns:
+        Formatted configuration display
+    """
+    from sage.config import SAGE_DIR, Config, SageConfig, get_sage_config
+
+    lines = ["Sage Configuration", "─" * 40]
+
+    # Runtime config
+    cfg = Config.load()
+    lines.append("")
+    lines.append("Runtime (config.yaml):")
+    lines.append(f"  model: {cfg.model}")
+    lines.append(f"  max_history: {cfg.max_history}")
+    lines.append(f"  cache_ttl: {cfg.cache_ttl}")
+    lines.append(f"  api_key: {'***' if cfg.api_key else '(not set)'}")
+
+    # Tuning config
+    tuning = get_sage_config(_PROJECT_ROOT)
+    defaults = SageConfig()
+
+    lines.append("")
+    lines.append("Tuning (tuning.yaml):")
+
+    def show_value(key: str, current, default):
+        marker = "" if current == default else " (modified)"
+        lines.append(f"  {key}: {current}{marker}")
+
+    show_value("embedding_model", tuning.embedding_model, defaults.embedding_model)
+    show_value("recall_threshold", tuning.recall_threshold, defaults.recall_threshold)
+    show_value("dedup_threshold", tuning.dedup_threshold, defaults.dedup_threshold)
+    show_value("embedding_weight", tuning.embedding_weight, defaults.embedding_weight)
+    show_value("keyword_weight", tuning.keyword_weight, defaults.keyword_weight)
+    show_value("depth_min_messages", tuning.depth_min_messages, defaults.depth_min_messages)
+    show_value("depth_min_tokens", tuning.depth_min_tokens, defaults.depth_min_tokens)
+
+    # Show config file locations
+    lines.append("")
+    lines.append("Config locations:")
+    lines.append(f"  User: {SAGE_DIR}")
+    if _PROJECT_ROOT:
+        lines.append(f"  Project: {_PROJECT_ROOT / '.sage'}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -> str:
+    """Debug what knowledge and checkpoints would match a query.
+
+    Shows detailed scoring breakdown to understand why items were/weren't recalled.
+    Use this to:
+    - See why knowledge wasn't recalled (score vs threshold)
+    - Verify checkpoint relevance before loading
+    - Identify near-misses that might warrant threshold tuning
+
+    Args:
+        query: The query to test against knowledge and checkpoints
+        skill: Optional skill context for knowledge scoping
+        include_checkpoints: Whether to include checkpoint matches (default True)
+
+    Returns:
+        Detailed scoring breakdown with matches and near-misses
+    """
+    from sage import embeddings
+    from sage.checkpoint import _get_checkpoint_embedding_store, list_checkpoints
+    from sage.config import get_sage_config
+    from sage.knowledge import (
+        _get_all_embedding_similarities,
+        load_index,
+        score_item_combined,
+        get_type_threshold,
+    )
+
+    cfg = get_sage_config()
+    lines = [
+        f"Debug Query: \"{query}\"",
+        f"Skill: {skill or '(none)'}",
+        f"Weights: embedding={cfg.embedding_weight:.0%}, keyword={cfg.keyword_weight:.0%}",
+        "",
+    ]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Knowledge Scoring
+    # ─────────────────────────────────────────────────────────────────────────
+    lines.append("═══ Knowledge Matches ═══")
+
+    items = load_index()
+    if not items:
+        lines.append("No knowledge items found.")
+    else:
+        # Get embedding similarities
+        embedding_sims = {}
+        if embeddings.is_available():
+            embedding_sims = _get_all_embedding_similarities(query)
+
+        # Score all items
+        scored = []
+        for item in items:
+            sim = embedding_sims.get(item.id)
+            score = score_item_combined(item, query, skill, sim)
+            threshold = get_type_threshold(item.item_type)
+            scored.append((item, score, sim, threshold))
+
+        # Sort by score descending
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # Separate above/below threshold
+        above = [(i, s, sim, t) for i, s, sim, t in scored if s >= t]
+        near_miss = [(i, s, sim, t) for i, s, sim, t in scored if t - 2.0 <= s < t]
+
+        if above:
+            lines.append(f"Would recall ({len(above)} items):")
+            for item, score, sim, threshold in above[:5]:  # Limit to 5
+                sim_str = f"emb={sim:.2f}" if sim is not None else "emb=N/A"
+                lines.append(f"  ✓ {item.id}")
+                lines.append(f"    score={score:.2f} ({sim_str}) threshold={threshold:.1f} type={item.item_type}")
+                lines.append(f"    keywords: {', '.join(item.triggers.keywords[:5])}")
+        else:
+            lines.append("No items above threshold.")
+
+        if near_miss:
+            lines.append("")
+            lines.append(f"Near misses ({len(near_miss)} items within 2.0 of threshold):")
+            for item, score, sim, threshold in near_miss[:3]:  # Limit to 3
+                sim_str = f"emb={sim:.2f}" if sim is not None else "emb=N/A"
+                gap = threshold - score
+                lines.append(f"  ✗ {item.id}")
+                lines.append(f"    score={score:.2f} ({sim_str}) threshold={threshold:.1f} gap={gap:.2f}")
+
+            # Threshold suggestion
+            highest_miss_score = max(s for _, s, _, _ in near_miss)
+            suggested = (highest_miss_score / 10.0) - 0.01
+            lines.append("")
+            lines.append(f"Tip: Lower recall_threshold to {suggested:.2f} to include near-misses")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Checkpoint Scoring
+    # ─────────────────────────────────────────────────────────────────────────
+    if include_checkpoints:
+        lines.append("")
+        lines.append("═══ Checkpoint Matches ═══")
+
+        if not embeddings.is_available():
+            lines.append("Embeddings not available for checkpoint search.")
+        else:
+            checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
+            if not checkpoints:
+                lines.append("No checkpoints found.")
+            else:
+                result = embeddings.get_query_embedding(query)
+                if result.is_err():
+                    lines.append(f"Failed to embed query: {result.unwrap_err().message}")
+                else:
+                    query_emb = result.unwrap()
+                    store = _get_checkpoint_embedding_store()
+
+                    # Score checkpoints
+                    scored = []
+                    for cp in checkpoints:
+                        cp_emb = store.get(cp.id)
+                        if cp_emb is not None:
+                            sim = float(embeddings.cosine_similarity(query_emb, cp_emb))
+                            scored.append((cp, sim))
+
+                    if not scored:
+                        lines.append("No checkpoints with embeddings found.")
+                    else:
+                        scored.sort(key=lambda x: x[1], reverse=True)
+
+                        matches = [(cp, sim) for cp, sim in scored if sim >= 0.5]
+                        near_miss = [(cp, sim) for cp, sim in scored if 0.3 <= sim < 0.5]
+
+                        if matches:
+                            lines.append(f"Relevant ({len(matches)}):")
+                            for cp, sim in matches[:5]:
+                                lines.append(f"  ✓ {cp.id[:50]} (sim={sim:.2f})")
+                                lines.append(f"    {cp.thesis[:70]}...")
+                        else:
+                            lines.append("No highly relevant checkpoints (similarity < 0.5)")
+
+                        if near_miss:
+                            lines.append("")
+                            lines.append(f"Potentially related ({len(near_miss)}):")
+                            for cp, sim in near_miss[:3]:
+                                lines.append(f"  ~ {cp.id[:50]} (sim={sim:.2f})")
+
+    return "\n".join(lines)
+
+
+# =============================================================================
 # Checkpoint Tools
 # =============================================================================
 
@@ -801,6 +1117,137 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
     return f"Knowledge item not found: {knowledge_id}"
 
 
+@mcp.tool()
+def sage_update_knowledge(
+    knowledge_id: str,
+    content: str | None = None,
+    keywords: list[str] | None = None,
+    status: str | None = None,
+    source: str | None = None,
+) -> str:
+    """Update an existing knowledge item.
+
+    Only provided fields are updated; others remain unchanged.
+    Re-embeds automatically if content changes.
+
+    Args:
+        knowledge_id: ID of item to update
+        content: New content (if changing)
+        keywords: New keywords list (if changing)
+        status: New status - 'active', 'deprecated', or 'archived' (if changing)
+        source: New source attribution (if changing)
+
+    Returns:
+        Confirmation message or error
+
+    Security:
+        - knowledge_id is sanitized to prevent path traversal
+        - Content is validated before storage
+    """
+    from sage.knowledge import update_knowledge
+
+    # Validate at least one field provided
+    if content is None and keywords is None and status is None and source is None:
+        return "Error: Provide at least one field to update (content, keywords, status, or source)"
+
+    # Validate status if provided
+    if status is not None and status not in ("active", "deprecated", "archived"):
+        return f"Error: Invalid status '{status}'. Valid values: active, deprecated, archived"
+
+    result = update_knowledge(
+        knowledge_id=knowledge_id,
+        content=content,
+        keywords=keywords,
+        status=status,
+        source=source,
+    )
+
+    if result is None:
+        return f"Knowledge item not found: {knowledge_id}"
+
+    updates = []
+    if content is not None:
+        updates.append(f"content ({len(content)} chars)")
+    if keywords is not None:
+        updates.append(f"keywords ({len(keywords)} items)")
+    if status is not None:
+        updates.append(f"status={status}")
+    if source is not None:
+        updates.append(f"source")
+
+    return f"✓ Updated {knowledge_id}: {', '.join(updates)}"
+
+
+@mcp.tool()
+def sage_deprecate_knowledge(
+    knowledge_id: str,
+    reason: str,
+    replacement_id: str | None = None,
+) -> str:
+    """Mark a knowledge item as deprecated.
+
+    Deprecated items still appear in search but show a warning.
+    Use for outdated information you want to flag but not delete.
+
+    Args:
+        knowledge_id: ID of item to deprecate
+        reason: Why this is deprecated (required)
+        replacement_id: Optional ID of replacement item
+
+    Returns:
+        Confirmation message or error
+
+    Security:
+        - IDs are sanitized to prevent injection
+    """
+    from sage.knowledge import deprecate_knowledge
+
+    if not reason or not reason.strip():
+        return "Error: reason is required"
+
+    result = deprecate_knowledge(
+        knowledge_id=knowledge_id,
+        reason=reason.strip(),
+        replacement_id=replacement_id,
+    )
+
+    if result is None:
+        return f"Knowledge item not found: {knowledge_id}"
+
+    msg = f"⚠️ Deprecated: {knowledge_id}\nReason: {reason}"
+    if replacement_id:
+        msg += f"\nReplacement: {replacement_id}"
+    return msg
+
+
+@mcp.tool()
+def sage_archive_knowledge(knowledge_id: str) -> str:
+    """Archive a knowledge item (hide from recall).
+
+    Archived items are preserved but excluded from retrieval.
+    Use for obsolete items you want to keep for reference.
+
+    To restore: sage_update_knowledge(id, status='active')
+
+    Args:
+        knowledge_id: ID of item to archive
+
+    Returns:
+        Confirmation message or error
+
+    Security:
+        - ID is sanitized to prevent path traversal
+    """
+    from sage.knowledge import archive_knowledge
+
+    result = archive_knowledge(knowledge_id)
+
+    if result is None:
+        return f"Knowledge item not found: {knowledge_id}"
+
+    return f"📦 Archived: {knowledge_id}\nRestore with: sage_update_knowledge('{knowledge_id}', status='active')"
+
+
 # =============================================================================
 # Todo Tools
 # =============================================================================
@@ -873,6 +1320,79 @@ def sage_get_pending_todos() -> str:
 # =============================================================================
 # Admin Tools
 # =============================================================================
+
+
+@mcp.tool()
+def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
+    """Set a Sage tuning configuration value.
+
+    Allows tuning thresholds based on debug output. Use with sage_debug_query
+    to see near-misses, then adjust thresholds to include/exclude items.
+
+    After setting, call sage_reload_config() to apply changes.
+
+    Args:
+        key: Config key (recall_threshold, embedding_weight, keyword_weight, etc.)
+        value: New value (will be type-coerced based on field type)
+        project_level: If True, saves to project .sage/tuning.yaml instead of user-level
+
+    Returns:
+        Confirmation message
+
+    Example workflow:
+        1. sage_debug_query("my topic") → see near-misses at score 2.8
+        2. sage_set_config("recall_threshold", "0.25") → lower threshold
+        3. sage_reload_config() → apply changes
+        4. sage_debug_query("my topic") → verify items now included
+    """
+    from pathlib import Path
+
+    from sage.config import SAGE_DIR, SageConfig, get_sage_config
+
+    # Determine location
+    if project_level:
+        sage_dir = _PROJECT_ROOT / ".sage" if _PROJECT_ROOT else Path.cwd() / ".sage"
+    else:
+        sage_dir = SAGE_DIR
+
+    # Get valid tuning keys
+    tuning_keys = {f.name for f in SageConfig.__dataclass_fields__.values()}
+
+    # Normalize key (allow hyphens)
+    key = key.replace("-", "_")
+
+    if key not in tuning_keys:
+        valid_keys = ", ".join(sorted(tuning_keys))
+        return f"Unknown config key: {key}\n\nValid tuning keys: {valid_keys}"
+
+    # Load current config
+    tuning = get_sage_config(_PROJECT_ROOT) if not project_level else SageConfig.load(sage_dir)
+
+    # Type coercion based on field type
+    field_type = SageConfig.__dataclass_fields__[key].type
+    try:
+        if field_type == float:
+            typed_value = float(value)
+        elif field_type == int:
+            typed_value = int(value)
+        else:
+            typed_value = value
+    except ValueError:
+        return f"Invalid value '{value}' for {key} (expected {field_type.__name__})"
+
+    # Create new config with updated value
+    current_dict = tuning.to_dict()
+    current_dict[key] = typed_value
+    new_tuning = SageConfig(**current_dict)
+
+    # Ensure directory exists
+    sage_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save
+    new_tuning.save(sage_dir)
+
+    location = "project" if project_level else "user"
+    return f"✓ Set {key} = {typed_value} ({location}-level)\n\nCall sage_reload_config() to apply."
 
 
 @mcp.tool()

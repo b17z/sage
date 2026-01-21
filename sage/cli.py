@@ -154,6 +154,151 @@ def health():
 
 
 @main.command()
+@click.argument("query")
+@click.option("--skill", "-s", default="", help="Skill context for knowledge matching")
+@click.option("--knowledge-only", "-k", is_flag=True, help="Only show knowledge matches")
+@click.option("--checkpoints-only", "-c", is_flag=True, help="Only show checkpoint matches")
+def debug(query, skill, knowledge_only, checkpoints_only):
+    """Debug retrieval scoring for a query.
+
+    Shows what knowledge and checkpoints would match, with detailed
+    score breakdowns and near-miss analysis for threshold tuning.
+    """
+    from sage import embeddings
+    from sage.checkpoint import _get_checkpoint_embedding_store, list_checkpoints
+    from sage.config import get_sage_config
+    from sage.knowledge import (
+        _get_all_embedding_similarities,
+        load_index,
+        score_item_combined,
+        get_type_threshold,
+    )
+
+    config = get_sage_config()
+    show_knowledge = not checkpoints_only
+    show_checkpoints = not knowledge_only
+
+    console.print(f"[bold]Debug Query:[/bold] \"{query}\"")
+    console.print(f"[dim]Skill context: {skill or '(none)'}[/dim]")
+    console.print()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Knowledge Scoring
+    # ─────────────────────────────────────────────────────────────────────────
+    if show_knowledge:
+        console.print("[bold cyan]═══ Knowledge Matches ═══[/bold cyan]")
+        console.print(f"[dim]Weights: embedding={config.embedding_weight:.0%}, keyword={config.keyword_weight:.0%}[/dim]")
+        console.print()
+
+        items = load_index()
+        if not items:
+            console.print("[yellow]No knowledge items found.[/yellow]")
+        else:
+            # Get embedding similarities
+            embedding_sims = {}
+            if embeddings.is_available():
+                embedding_sims = _get_all_embedding_similarities(query)
+
+            # Score all items
+            scored = []
+            for item in items:
+                sim = embedding_sims.get(item.id)
+                score = score_item_combined(item, query, skill, sim)
+                threshold = get_type_threshold(item.item_type)
+                scored.append((item, score, sim, threshold))
+
+            # Sort by score descending
+            scored.sort(key=lambda x: x[1], reverse=True)
+
+            # Separate above/below threshold
+            above = [(i, s, sim, t) for i, s, sim, t in scored if s >= t]
+            near_miss = [(i, s, sim, t) for i, s, sim, t in scored if t - 2.0 <= s < t]
+
+            if above:
+                console.print(f"[green]Would recall ({len(above)} items):[/green]")
+                for item, score, sim, threshold in above:
+                    sim_str = f"emb={sim:.2f}" if sim is not None else "emb=N/A"
+                    console.print(f"  [green]✓[/green] {item.id}")
+                    console.print(f"      score={score:.2f} ({sim_str}) threshold={threshold:.1f} type={item.item_type}")
+                    console.print(f"      keywords: {', '.join(item.triggers.keywords[:5])}")
+                console.print()
+            else:
+                console.print("[yellow]No items above threshold.[/yellow]")
+                console.print()
+
+            if near_miss:
+                console.print(f"[yellow]Near misses ({len(near_miss)} items within 2.0 of threshold):[/yellow]")
+                for item, score, sim, threshold in near_miss:
+                    sim_str = f"emb={sim:.2f}" if sim is not None else "emb=N/A"
+                    gap = threshold - score
+                    console.print(f"  [yellow]✗[/yellow] {item.id}")
+                    console.print(f"      score={score:.2f} ({sim_str}) threshold={threshold:.1f} gap={gap:.2f}")
+                    console.print(f"      keywords: {', '.join(item.triggers.keywords[:5])}")
+
+                # Threshold suggestion
+                highest_miss_score = max(s for _, s, _, _ in near_miss)
+                suggested = (highest_miss_score / 10.0) - 0.01  # Convert to 0-1 scale
+                console.print()
+                console.print(f"[dim]Tip: `sage config set recall_threshold {suggested:.2f}` would include more items[/dim]")
+                console.print()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Checkpoint Scoring
+    # ─────────────────────────────────────────────────────────────────────────
+    if show_checkpoints:
+        console.print("[bold cyan]═══ Checkpoint Matches ═══[/bold cyan]")
+
+        if not embeddings.is_available():
+            console.print("[yellow]Embeddings not available for checkpoint search.[/yellow]")
+        else:
+            checkpoints = list_checkpoints(limit=50)
+            if not checkpoints:
+                console.print("[yellow]No checkpoints found.[/yellow]")
+            else:
+                # Get query embedding
+                result = embeddings.get_query_embedding(query)
+                if result.is_err():
+                    console.print(f"[red]Failed to embed query: {result.unwrap_err().message}[/red]")
+                else:
+                    query_emb = result.unwrap()
+                    store = _get_checkpoint_embedding_store()
+
+                    # Score checkpoints
+                    scored = []
+                    for cp in checkpoints:
+                        cp_emb = store.get(cp.id)
+                        if cp_emb is not None:
+                            sim = float(embeddings.cosine_similarity(query_emb, cp_emb))
+                            scored.append((cp, sim))
+
+                    if not scored:
+                        console.print("[yellow]No checkpoints with embeddings found.[/yellow]")
+                    else:
+                        scored.sort(key=lambda x: x[1], reverse=True)
+
+                        # Show top matches (similarity > 0.5) and near-misses (0.3-0.5)
+                        matches = [(cp, sim) for cp, sim in scored if sim >= 0.5]
+                        near_miss = [(cp, sim) for cp, sim in scored if 0.3 <= sim < 0.5]
+
+                        if matches:
+                            console.print(f"[green]Relevant checkpoints ({len(matches)}):[/green]")
+                            for cp, sim in matches[:5]:
+                                console.print(f"  [green]✓[/green] {cp.id} (similarity={sim:.2f})")
+                                console.print(f"      {cp.thesis[:80]}...")
+                            console.print()
+                        else:
+                            console.print("[yellow]No highly relevant checkpoints (similarity < 0.5).[/yellow]")
+                            console.print()
+
+                        if near_miss:
+                            console.print(f"[yellow]Potentially related ({len(near_miss)}):[/yellow]")
+                            for cp, sim in near_miss[:3]:
+                                console.print(f"  [yellow]~[/yellow] {cp.id} (similarity={sim:.2f})")
+                                console.print(f"      {cp.thesis[:80]}...")
+                            console.print()
+
+
+@main.command()
 @click.argument("name")
 @click.option("--description", "-d", help="Skill domain expertise description")
 @click.option("--docs", multiple=True, type=click.Path(exists=True), help="Doc files to include")
@@ -889,6 +1034,133 @@ def knowledge_match(query, skill):
         console.print(f"    Keywords: {', '.join(item.triggers.keywords)}")
         if item.metadata.source:
             console.print(f"    Source: {item.metadata.source}")
+
+
+@knowledge.command("edit")
+@click.argument("knowledge_id")
+@click.option("--content", "-c", help="New content (or use --file)")
+@click.option("--file", "-f", "content_file", type=click.Path(exists=True), help="Read new content from file")
+@click.option("--keywords", "-k", help="New keywords (comma-separated)")
+@click.option("--source", "-s", help="New source attribution")
+@click.option("--status", type=click.Choice(["active", "deprecated", "archived"]), help="Set item status")
+def knowledge_edit(knowledge_id, content, content_file, keywords, source, status):
+    """Edit an existing knowledge item.
+
+    Update content, keywords, source, or status of an existing item.
+    Only provided fields are changed; others remain as-is.
+
+    Examples:
+        sage knowledge edit my-item --keywords "new,keywords,here"
+        sage knowledge edit my-item --file updated-content.md
+        sage knowledge edit my-item --status active  # restore archived item
+    """
+    from sage.knowledge import update_knowledge
+
+    # Handle content from file
+    if content_file:
+        from pathlib import Path
+        content = Path(content_file).read_text()
+
+    # Parse keywords
+    kw_list = None
+    if keywords:
+        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+
+    # Check at least one update
+    if content is None and kw_list is None and source is None and status is None:
+        console.print("[red]Provide at least one field to update (--content, --keywords, --source, or --status)[/red]")
+        sys.exit(1)
+
+    result = update_knowledge(
+        knowledge_id=knowledge_id,
+        content=content,
+        keywords=kw_list,
+        source=source,
+        status=status,
+    )
+
+    if result is None:
+        console.print(f"[red]Knowledge item not found: {knowledge_id}[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]✓[/green] Updated: {knowledge_id}")
+    if content:
+        console.print(f"    Content: {len(content)} chars")
+    if kw_list:
+        console.print(f"    Keywords: {', '.join(kw_list)}")
+    if source:
+        console.print(f"    Source: {source}")
+    if status:
+        console.print(f"    Status: {status}")
+
+
+@knowledge.command("deprecate")
+@click.argument("knowledge_id")
+@click.option("--reason", "-r", required=True, help="Why this is deprecated")
+@click.option("--replacement", help="ID of replacement item")
+def knowledge_deprecate(knowledge_id, reason, replacement):
+    """Mark a knowledge item as deprecated.
+
+    Deprecated items still appear in search results but show a warning.
+    Use this for outdated information you want to flag but not delete.
+
+    Examples:
+        sage knowledge deprecate old-api-patterns --reason "API v2 released"
+        sage knowledge deprecate old-item --reason "Outdated" --replacement new-item
+    """
+    from sage.knowledge import deprecate_knowledge
+
+    result = deprecate_knowledge(
+        knowledge_id=knowledge_id,
+        reason=reason,
+        replacement_id=replacement,
+    )
+
+    if result is None:
+        console.print(f"[red]Knowledge item not found: {knowledge_id}[/red]")
+        sys.exit(1)
+
+    console.print(f"[yellow]⚠[/yellow] Deprecated: {knowledge_id}")
+    console.print(f"    Reason: {reason}")
+    if replacement:
+        console.print(f"    Replacement: {replacement}")
+
+
+@knowledge.command("archive")
+@click.argument("knowledge_id")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def knowledge_archive(knowledge_id, force):
+    """Archive a knowledge item (hide from recall).
+
+    Archived items are preserved but excluded from retrieval.
+    Use this for obsolete items you want to keep for reference.
+
+    To restore, use: sage knowledge edit <id> --status active
+    """
+    from sage.knowledge import archive_knowledge, list_knowledge
+
+    # Find item first
+    items = list_knowledge()
+    item = next((i for i in items if i.id == knowledge_id), None)
+
+    if item is None:
+        console.print(f"[red]Knowledge item not found: {knowledge_id}[/red]")
+        sys.exit(1)
+
+    if not force:
+        click.confirm(
+            f"Archive '{knowledge_id}'? It will be hidden from recall.",
+            abort=True,
+        )
+
+    result = archive_knowledge(knowledge_id)
+
+    if result is None:
+        console.print(f"[red]Failed to archive: {knowledge_id}[/red]")
+        sys.exit(1)
+
+    console.print(f"[dim]📦[/dim] Archived: {knowledge_id}")
+    console.print(f"    [dim]Restore with: sage knowledge edit {knowledge_id} --status active[/dim]")
 
 
 # ============================================================================

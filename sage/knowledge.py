@@ -552,6 +552,9 @@ def recall_knowledge(
     if not items:
         return RecallResult(items=[], total_tokens=0)
 
+    # Filter out archived items (they're preserved but hidden from recall)
+    items = [item for item in items if item.metadata.status != "archived"]
+
     # Filter by type if specified
     if item_types is not None:
         items = [item for item in items if item.item_type in item_types]
@@ -767,6 +770,155 @@ def add_knowledge(
     _add_embedding(safe_id, content)
 
     return item
+
+
+def update_knowledge(
+    knowledge_id: str,
+    content: str | None = None,
+    keywords: list[str] | None = None,
+    status: str | None = None,
+    source: str | None = None,
+) -> KnowledgeItem | None:
+    """
+    Update an existing knowledge item.
+
+    Only provided fields are updated; others remain unchanged.
+    Re-embeds automatically if content changes.
+
+    Args:
+        knowledge_id: ID of item to update
+        content: New content (if changing)
+        keywords: New keywords (if changing)
+        status: New status - 'active', 'deprecated', or 'archived' (if changing)
+        source: New source attribution (if changing)
+
+    Returns:
+        Updated KnowledgeItem, or None if not found
+    """
+    items = load_index()
+
+    # Find existing item
+    existing = None
+    existing_idx = -1
+    for idx, item in enumerate(items):
+        if item.id == knowledge_id:
+            existing = item
+            existing_idx = idx
+            break
+
+    if existing is None:
+        return None
+
+    # Load current content if needed
+    loaded = load_knowledge_content(existing)
+
+    # Determine new values
+    new_content = content if content is not None else loaded.content
+    new_keywords = tuple(keywords) if keywords is not None else existing.triggers.keywords
+    new_source = source if source is not None else existing.metadata.source
+    new_status = status if status is not None else existing.metadata.status
+
+    # Build updated item
+    updated = KnowledgeItem(
+        id=existing.id,
+        file=existing.file,
+        triggers=KnowledgeTriggers(
+            keywords=new_keywords,
+            patterns=existing.triggers.patterns,
+        ),
+        scope=existing.scope,
+        metadata=KnowledgeMetadata(
+            added=existing.metadata.added,
+            source=new_source,
+            tokens=len(new_content) // 4,  # rough token estimate
+            status=new_status,
+        ),
+        item_type=existing.item_type,
+        content=new_content,
+    )
+
+    # Update markdown file with new content/frontmatter
+    frontmatter = {
+        "id": updated.id,
+        "type": updated.item_type,
+        "keywords": list(updated.triggers.keywords),
+        "source": updated.metadata.source or None,
+        "added": updated.metadata.added,
+    }
+    if updated.scope.skills:
+        frontmatter["skill"] = updated.scope.skills[0] if len(updated.scope.skills) == 1 else list(updated.scope.skills)
+    if updated.metadata.status:
+        frontmatter["status"] = updated.metadata.status
+    # Remove None values
+    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+
+    fm_yaml = yaml.safe_dump(
+        frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
+    md_content = f"---\n{fm_yaml}---\n\n{new_content}"
+
+    # Write updated file
+    file_path = KNOWLEDGE_DIR / updated.file
+    if _is_safe_path(KNOWLEDGE_DIR, file_path):
+        file_path.write_text(md_content)
+        file_path.chmod(0o600)
+
+    # Update index
+    items[existing_idx] = updated
+    save_index(items)
+
+    # Re-embed if content changed
+    if content is not None and content != loaded.content:
+        _add_embedding(updated.id, new_content)
+
+    return updated
+
+
+def deprecate_knowledge(
+    knowledge_id: str,
+    reason: str,
+    replacement_id: str | None = None,
+) -> KnowledgeItem | None:
+    """
+    Mark a knowledge item as deprecated.
+
+    Deprecated items still appear in search but show a warning.
+    Use for outdated information that shouldn't be removed yet.
+
+    Args:
+        knowledge_id: ID of item to deprecate
+        reason: Why this is deprecated
+        replacement_id: Optional ID of replacement item
+
+    Returns:
+        Updated KnowledgeItem, or None if not found
+    """
+    # Build deprecation note
+    note = f"DEPRECATED: {reason}"
+    if replacement_id:
+        note += f" → See: {replacement_id}"
+
+    return update_knowledge(
+        knowledge_id=knowledge_id,
+        status="deprecated",
+        source=note,  # Store deprecation info in source field
+    )
+
+
+def archive_knowledge(knowledge_id: str) -> KnowledgeItem | None:
+    """
+    Archive a knowledge item (hidden from recall).
+
+    Archived items are preserved but not included in retrieval.
+    Use for obsolete items you want to keep for reference.
+
+    Args:
+        knowledge_id: ID of item to archive
+
+    Returns:
+        Updated KnowledgeItem, or None if not found
+    """
+    return update_knowledge(knowledge_id=knowledge_id, status="archived")
 
 
 def remove_knowledge(knowledge_id: str) -> bool:

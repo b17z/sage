@@ -682,6 +682,322 @@ class TestMCPServerModuleLevel:
         assert hasattr(mcp, "tool")
 
 
+class TestSageVersion:
+    """Tests for sage_version tool."""
+
+    def test_version_returns_string(self):
+        """sage_version returns a string."""
+        from sage.mcp_server import sage_version
+
+        result = sage_version()
+        assert isinstance(result, str)
+
+    def test_version_contains_version_number(self):
+        """sage_version includes version number."""
+        from sage.mcp_server import sage_version
+
+        result = sage_version()
+        assert "Sage v" in result
+
+    def test_version_contains_config_info(self):
+        """sage_version includes configuration details."""
+        from sage.mcp_server import sage_version
+
+        result = sage_version()
+        assert "Embedding model:" in result
+        assert "Recall threshold:" in result
+
+    def test_version_shows_embeddings_availability(self):
+        """sage_version shows whether embeddings are available."""
+        from sage.mcp_server import sage_version
+
+        result = sage_version()
+        assert "Embeddings available:" in result
+
+
+class TestSageDebugQuery:
+    """Tests for sage_debug_query tool."""
+
+    def test_debug_query_returns_string(self):
+        """sage_debug_query returns a string."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test query")
+        assert isinstance(result, str)
+
+    def test_debug_query_shows_query(self):
+        """sage_debug_query shows the query being tested."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("my test query")
+        assert "my test query" in result
+
+    def test_debug_query_shows_knowledge_section(self):
+        """sage_debug_query includes knowledge matches section."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test")
+        assert "Knowledge Matches" in result
+
+    def test_debug_query_shows_checkpoint_section(self):
+        """sage_debug_query includes checkpoint matches section."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test")
+        assert "Checkpoint Matches" in result
+
+    def test_debug_query_can_exclude_checkpoints(self):
+        """sage_debug_query can exclude checkpoints."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test", include_checkpoints=False)
+        assert "Knowledge Matches" in result
+        assert "Checkpoint Matches" not in result
+
+    def test_debug_query_shows_weights(self):
+        """sage_debug_query shows scoring weights."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test")
+        assert "embedding=" in result
+        assert "keyword=" in result
+
+    def test_debug_query_with_skill(self):
+        """sage_debug_query accepts skill parameter."""
+        from sage.mcp_server import sage_debug_query
+
+        result = sage_debug_query("test", skill="crypto-payments")
+        assert "crypto-payments" in result
+
+
+class TestSageHealth:
+    """Tests for sage_health tool."""
+
+    def test_health_returns_string(self):
+        """sage_health returns a string."""
+        from sage.mcp_server import sage_health
+
+        result = sage_health()
+        assert isinstance(result, str)
+
+    def test_health_shows_header(self):
+        """sage_health shows health check header."""
+        from sage.mcp_server import sage_health
+
+        result = sage_health()
+        assert "Health Check" in result
+
+    def test_health_checks_sage_directory(self):
+        """sage_health checks SAGE_DIR."""
+        from sage.mcp_server import sage_health
+
+        result = sage_health()
+        assert "Sage directory" in result or ".sage" in result
+
+    def test_health_checks_embeddings(self):
+        """sage_health checks embedding availability."""
+        from sage.mcp_server import sage_health
+
+        result = sage_health()
+        assert "Embeddings" in result or "embedding" in result.lower()
+
+    def test_health_shows_summary(self):
+        """sage_health shows summary."""
+        from sage.mcp_server import sage_health
+
+        result = sage_health()
+        assert "healthy" in result.lower() or "issue" in result.lower()
+
+
+class TestSageGetConfig:
+    """Tests for sage_get_config tool."""
+
+    def test_get_config_returns_string(self):
+        """sage_get_config returns a string."""
+        from sage.mcp_server import sage_get_config
+
+        result = sage_get_config()
+        assert isinstance(result, str)
+
+    def test_get_config_shows_header(self):
+        """sage_get_config shows config header."""
+        from sage.mcp_server import sage_get_config
+
+        result = sage_get_config()
+        assert "Configuration" in result
+
+    def test_get_config_shows_tuning_values(self):
+        """sage_get_config shows tuning parameters."""
+        from sage.mcp_server import sage_get_config
+
+        result = sage_get_config()
+        assert "recall_threshold" in result
+        assert "embedding_weight" in result
+
+    def test_get_config_shows_locations(self):
+        """sage_get_config shows config file locations."""
+        from sage.mcp_server import sage_get_config
+
+        result = sage_get_config()
+        assert "Config locations" in result or ".sage" in result
+
+
+class TestSageUpdateKnowledge:
+    """Tests for sage_update_knowledge tool."""
+
+    def test_update_requires_at_least_one_field(self):
+        """sage_update_knowledge requires at least one field."""
+        from sage.mcp_server import sage_update_knowledge
+
+        result = sage_update_knowledge("some-id")
+        assert "Error" in result
+        assert "at least one field" in result.lower()
+
+    def test_update_validates_status(self):
+        """sage_update_knowledge validates status values."""
+        from sage.mcp_server import sage_update_knowledge
+
+        result = sage_update_knowledge("some-id", status="invalid")
+        assert "Error" in result
+        assert "Invalid status" in result
+
+    def test_update_returns_not_found(self, tmp_path, monkeypatch):
+        """sage_update_knowledge returns error for missing item."""
+        from sage.mcp_server import sage_update_knowledge
+
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = sage_update_knowledge("nonexistent", content="new content")
+        assert "not found" in result.lower()
+
+    def test_update_accepts_valid_status(self):
+        """sage_update_knowledge accepts valid status values."""
+        from sage.mcp_server import sage_update_knowledge
+
+        # Should not error on validation (will fail on not found)
+        for status in ["active", "deprecated", "archived"]:
+            result = sage_update_knowledge("test-id", status=status)
+            assert "Invalid status" not in result
+
+
+class TestSageDeprecateKnowledge:
+    """Tests for sage_deprecate_knowledge tool."""
+
+    def test_deprecate_requires_reason(self):
+        """sage_deprecate_knowledge requires reason."""
+        from sage.mcp_server import sage_deprecate_knowledge
+
+        result = sage_deprecate_knowledge("some-id", reason="")
+        assert "Error" in result
+        assert "reason" in result.lower()
+
+    def test_deprecate_returns_not_found(self, tmp_path, monkeypatch):
+        """sage_deprecate_knowledge returns error for missing item."""
+        from sage.mcp_server import sage_deprecate_knowledge
+
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = sage_deprecate_knowledge("nonexistent", reason="test reason")
+        assert "not found" in result.lower()
+
+
+class TestSageArchiveKnowledge:
+    """Tests for sage_archive_knowledge tool."""
+
+    def test_archive_returns_not_found(self, tmp_path, monkeypatch):
+        """sage_archive_knowledge returns error for missing item."""
+        from sage.mcp_server import sage_archive_knowledge
+
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        result = sage_archive_knowledge("nonexistent")
+        assert "not found" in result.lower()
+
+    def test_archive_shows_restore_hint(self, tmp_path, monkeypatch):
+        """sage_archive_knowledge shows how to restore."""
+        from sage.knowledge import add_knowledge
+        from sage.mcp_server import sage_archive_knowledge
+
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        (knowledge_dir / "global").mkdir(parents=True)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
+        monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+
+        # Add an item first
+        add_knowledge(
+            content="Test content",
+            knowledge_id="test-archive-hint",
+            keywords=["test"],
+        )
+
+        result = sage_archive_knowledge("test-archive-hint")
+        assert "Archived" in result
+        assert "sage_update_knowledge" in result
+
+
+class TestSageSetConfig:
+    """Tests for sage_set_config tool."""
+
+    def test_set_config_returns_confirmation(self, tmp_path, monkeypatch):
+        """sage_set_config returns confirmation message."""
+        from sage.mcp_server import sage_set_config
+
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+
+        result = sage_set_config("recall_threshold", "0.65")
+        assert "✓" in result
+        assert "recall_threshold" in result
+        assert "0.65" in result
+
+    def test_set_config_rejects_invalid_key(self):
+        """sage_set_config rejects unknown keys."""
+        from sage.mcp_server import sage_set_config
+
+        result = sage_set_config("invalid_key_xyz", "0.5")
+        assert "Unknown config key" in result
+
+    def test_set_config_validates_float_type(self, tmp_path, monkeypatch):
+        """sage_set_config validates float values."""
+        from sage.mcp_server import sage_set_config
+
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+
+        result = sage_set_config("recall_threshold", "not_a_number")
+        assert "Invalid value" in result
+
+    def test_set_config_shows_valid_keys_on_error(self):
+        """sage_set_config shows valid keys when unknown key provided."""
+        from sage.mcp_server import sage_set_config
+
+        result = sage_set_config("bad_key", "0.5")
+        assert "recall_threshold" in result  # Should list valid keys
+
+    def test_set_config_reminds_to_reload(self, tmp_path, monkeypatch):
+        """sage_set_config reminds user to reload config."""
+        from sage.mcp_server import sage_set_config
+
+        sage_dir = tmp_path / ".sage"
+        sage_dir.mkdir()
+        monkeypatch.setattr("sage.config.SAGE_DIR", sage_dir)
+
+        result = sage_set_config("recall_threshold", "0.5")
+        assert "sage_reload_config" in result
+
+
 class TestReloadConfig:
     """Tests for sage_reload_config tool."""
 
