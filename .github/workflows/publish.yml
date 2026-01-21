@@ -5,63 +5,60 @@ on:
     types: [published]
 
 jobs:
-  validate-version:
+  bump-and-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Validate version matches release tag
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-bump versions to match release tag
         run: |
-          # Extract version from pyproject.toml
-          PYPROJECT_VERSION=$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Bumping all versions to: $VERSION"
 
-          # Extract version from plugin.json
-          PLUGIN_VERSION=$(grep -Po '(?<="version": ")[^"]+' plugins/sage/.claude-plugin/plugin.json)
+          # Update pyproject.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 
-          # Get release tag (remove 'v' prefix if present)
-          RELEASE_TAG="${GITHUB_REF_NAME#v}"
+          # Update plugin.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" plugins/sage/.claude-plugin/plugin.json
 
-          echo "pyproject.toml version: $PYPROJECT_VERSION"
-          echo "plugin.json version: $PLUGIN_VERSION"
-          echo "Release tag: $RELEASE_TAG"
+          # Update marketplace.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" .claude-plugin/marketplace.json
 
-          ERRORS=0
+          # Show what changed
+          echo "=== Updated versions ==="
+          grep "^version" pyproject.toml
+          grep "version" plugins/sage/.claude-plugin/plugin.json
+          grep "version" .claude-plugin/marketplace.json
 
-          if [ "$PYPROJECT_VERSION" != "$RELEASE_TAG" ]; then
-            echo "::error::Version mismatch! pyproject.toml has '$PYPROJECT_VERSION' but release tag is '$RELEASE_TAG'"
-            ERRORS=1
-          fi
+      - name: Commit version bump
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add -A
+          git diff --staged --quiet || git commit -m "(chore): auto-bump version to ${GITHUB_REF_NAME#v}"
+          git push
 
-          if [ "$PLUGIN_VERSION" != "$RELEASE_TAG" ]; then
-            echo "::error::Version mismatch! plugin.json has '$PLUGIN_VERSION' but release tag is '$RELEASE_TAG'"
-            ERRORS=1
-          fi
-
-          if [ "$ERRORS" -ne 0 ]; then
-            echo "Please update version numbers to match the release tag."
-            exit 1
-          fi
-
-          echo "✅ All versions validated: $RELEASE_TAG"
-
-  build:
-    needs: validate-version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install build tools
         run: pip install build
+
       - name: Build package
         run: python -m build
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
   publish:
-    needs: build
+    needs: bump-and-build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
