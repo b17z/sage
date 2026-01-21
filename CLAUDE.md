@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.0.1 (async operations, Task polling, structured logging)
-**Test count:** 578 tests (maintain or increase)
+**Current version:** v2.1.1 (async operations, Task subagent pattern, structured logging)
+**Test count:** 616 tests (maintain or increase)
 
 ## Quick Reference
 

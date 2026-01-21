@@ -35,6 +35,13 @@ def temp_sage_dir(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("sage.embeddings.SAGE_DIR", sage_dir)
     monkeypatch.setattr("sage.embeddings.EMBEDDINGS_DIR", sage_dir / "embeddings")
 
+    # Patch mcp_server's project root to disable project-local paths
+    # This ensures checkpoints use the temp CHECKPOINTS_DIR
+    monkeypatch.setattr("sage.mcp_server._PROJECT_ROOT", None)
+
+    # Patch detect_project_root to return None so get_sage_config uses SAGE_DIR
+    monkeypatch.setattr("sage.config.detect_project_root", lambda start_path=None: None)
+
     return sage_dir
 
 
@@ -556,7 +563,7 @@ class TestConfigCLIIntegration:
         from click.testing import CliRunner
 
         from sage.cli import main
-        from sage.config import SageConfig, get_sage_config
+        from sage.config import SageConfig
 
         # Patch CLI module's SAGE_DIR
         monkeypatch.setattr("sage.cli.SAGE_DIR", temp_sage_dir)
@@ -569,8 +576,8 @@ class TestConfigCLIIntegration:
         runner.invoke(main, ["config", "set", "dedup_threshold", "0.55"])
         runner.invoke(main, ["config", "set", "embedding_weight", "0.60"])
 
-        # Verify changed
-        config = get_sage_config()
+        # Verify changed (load from temp directory)
+        config = SageConfig.load(temp_sage_dir)
         assert config.recall_threshold == 0.42
         assert config.dedup_threshold == 0.55
         assert config.embedding_weight == 0.60
@@ -579,8 +586,8 @@ class TestConfigCLIIntegration:
         result = runner.invoke(main, ["config", "reset"])
         assert result.exit_code == 0
 
-        # Verify defaults restored
-        config = get_sage_config()
+        # Verify defaults restored (load from temp directory)
+        config = SageConfig.load(temp_sage_dir)
         assert config.recall_threshold == defaults.recall_threshold
         assert config.dedup_threshold == defaults.dedup_threshold
         assert config.embedding_weight == defaults.embedding_weight

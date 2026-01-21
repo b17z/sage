@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from sage.config import SAGE_DIR
+from sage.types import TaskId
 
 # Valid task types (whitelist for security)
 TASK_TYPES = frozenset({"checkpoint", "knowledge"})
@@ -60,7 +61,7 @@ NOTIFY_FILE = SAGE_DIR / "notifications.jsonl"
 PENDING_TASKS_FILE = SAGE_DIR / "pending_tasks.jsonl"
 
 
-def generate_task_id() -> str:
+def generate_task_id() -> TaskId:
     """Generate unique task ID.
 
     Format: task_<timestamp>_<uuid4_prefix>
@@ -68,7 +69,7 @@ def generate_task_id() -> str:
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:8]
-    return f"task_{ts}_{uid}"
+    return TaskId(f"task_{ts}_{uid}")
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ class Task:
         created: Creation timestamp
     """
 
-    id: str
+    id: TaskId
     type: Literal["checkpoint", "knowledge"]
     data: dict[str, Any]
     created: datetime = field(default_factory=datetime.now)

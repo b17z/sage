@@ -11,7 +11,6 @@ When embeddings are available, provides deduplication by comparing thesis
 embeddings to avoid saving semantically similar checkpoints.
 """
 
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -21,6 +20,7 @@ from pathlib import Path
 import yaml
 
 from sage.config import SAGE_DIR, get_sage_config
+from sage.types import CheckpointId
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class Contribution:
 class Checkpoint:
     """A semantic checkpoint of research state."""
 
-    id: str
+    id: CheckpointId
     ts: str
     trigger: str  # manual, synthesis, branch_point, constraint, transition
 
@@ -93,17 +93,12 @@ class Checkpoint:
     custom_fields: dict = field(default_factory=dict)  # Extra fields for non-default templates
 
 
-def generate_checkpoint_id(description: str) -> str:
+def generate_checkpoint_id(description: str) -> CheckpointId:
     """Generate a checkpoint ID from timestamp and description."""
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
     # Slugify description
     slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-")[:40]
-    return f"{ts}_{slug}"
-
-
-def generate_short_hash(content: str) -> str:
-    """Generate a short hash for a checkpoint (Manus-style)."""
-    return hashlib.sha256(content.encode()).hexdigest()[:8]
+    return CheckpointId(f"{ts}_{slug}")
 
 
 def get_checkpoints_dir(project_path: Path | None = None) -> Path:
@@ -573,17 +568,37 @@ def is_duplicate_checkpoint(
 
 
 def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) -> Path:
-    """Save a checkpoint to disk as Markdown with YAML frontmatter."""
+    """Save a checkpoint to disk as Markdown with YAML frontmatter.
+
+    Uses atomic write (temp file + rename) to prevent data corruption on crash.
+    """
+    import os
+    import tempfile
+
     checkpoints_dir = ensure_checkpoints_dir(project_path)
 
     # Convert to markdown format
     content = _checkpoint_to_markdown(checkpoint)
 
     file_path = checkpoints_dir / f"{checkpoint.id}.md"
-    with open(file_path, "w") as f:
-        f.write(content)
-    # Restrict permissions - checkpoints may contain research context
-    file_path.chmod(0o600)
+
+    # Atomic write: temp file + rename
+    fd, temp_path = tempfile.mkstemp(
+        dir=checkpoints_dir,
+        prefix=f".{checkpoint.id}_",
+        suffix=".md.tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+        os.chmod(temp_path, 0o600)
+        os.rename(temp_path, file_path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+        raise
 
     # Store thesis embedding for deduplication (non-blocking, failures logged)
     if checkpoint.thesis:

@@ -77,14 +77,14 @@ class TestTaskDataclass:
     def test_task_to_dict(self):
         """Task serializes to dict."""
         task = Task(
-            id="task-123",
+            id="task_123",
             type="knowledge",
             data={"content": "test"},
         )
 
         d = task.to_dict()
 
-        assert d["id"] == "task-123"
+        assert d["id"] == "task_123"
         assert d["type"] == "knowledge"
         assert d["data"] == {"content": "test"}
         assert "created" in d
@@ -92,7 +92,7 @@ class TestTaskDataclass:
     def test_task_from_dict(self):
         """Task deserializes from dict."""
         data = {
-            "id": "task-456",
+            "id": "task_456",
             "type": "checkpoint",
             "data": {"thesis": "test"},
             "created": "2026-01-21T10:30:00",
@@ -100,7 +100,7 @@ class TestTaskDataclass:
 
         task = Task.from_dict(data)
 
-        assert task.id == "task-456"
+        assert task.id == "task_456"
         assert task.type == "checkpoint"
         assert task.data == {"thesis": "test"}
         assert task.created.hour == 10
@@ -148,7 +148,7 @@ class TestTaskResult:
     def test_task_result_success(self):
         """TaskResult represents success."""
         result = TaskResult(
-            task_id="task-123",
+            task_id="task_123",
             status="success",
             message="Checkpoint saved",
         )
@@ -159,7 +159,7 @@ class TestTaskResult:
     def test_task_result_failed(self):
         """TaskResult represents failure with error."""
         result = TaskResult(
-            task_id="task-456",
+            task_id="task_456",
             status="failed",
             message="Save failed",
             error="Disk full",
@@ -322,8 +322,8 @@ class TestPendingTasksPersistence:
     def test_save_pending_tasks_creates_file(self, mock_pending_file):
         """save_pending_tasks creates JSONL file."""
         tasks = [
-            Task(id="task-1", type="checkpoint", data={}),
-            Task(id="task-2", type="knowledge", data={}),
+            Task(id="task_1", type="checkpoint", data={}),
+            Task(id="task_2", type="knowledge", data={}),
         ]
 
         save_pending_tasks(tasks)
@@ -332,13 +332,13 @@ class TestPendingTasksPersistence:
 
     def test_save_pending_tasks_jsonl_format(self, mock_pending_file):
         """Pending tasks stored as valid JSONL."""
-        task = Task(id="task-1", type="checkpoint", data={"test": True})
+        task = Task(id="task_1", type="checkpoint", data={"test": True})
         save_pending_tasks([task])
 
         with open(mock_pending_file) as f:
             record = json.loads(f.readline())
 
-        assert record["id"] == "task-1"
+        assert record["id"] == "task_1"
         assert record["type"] == "checkpoint"
 
     def test_save_pending_tasks_file_permissions(self, mock_pending_file):
@@ -351,15 +351,15 @@ class TestPendingTasksPersistence:
     def test_load_pending_tasks_roundtrip(self, mock_pending_file):
         """Tasks survive save/load roundtrip."""
         original = [
-            Task(id="task-1", type="checkpoint", data={"thesis": "test"}),
-            Task(id="task-2", type="knowledge", data={"content": "data"}),
+            Task(id="task_1", type="checkpoint", data={"thesis": "test"}),
+            Task(id="task_2", type="knowledge", data={"content": "data"}),
         ]
 
         save_pending_tasks(original)
         loaded = load_pending_tasks()
 
         assert len(loaded) == 2
-        assert loaded[0].id == "task-1"
+        assert loaded[0].id == "task_1"
         assert loaded[1].type == "knowledge"
 
     def test_load_pending_tasks_empty(self, mock_pending_file):
@@ -575,32 +575,32 @@ class TestBashWatcherTaskResults:
 
     def test_write_task_result_creates_files(self, mock_tasks_dir):
         """write_task_result creates .result and .done files."""
-        write_task_result("task-123", "success", "Test message")
+        write_task_result("task_123", "success", "Test message")
 
-        result_file = mock_tasks_dir / "task-123.result"
-        done_file = mock_tasks_dir / "task-123.done"
+        result_file = mock_tasks_dir / "task_123.result"
+        done_file = mock_tasks_dir / "task_123.done"
 
         assert result_file.exists()
         assert done_file.exists()
 
     def test_write_task_result_json_format(self, mock_tasks_dir):
         """Task result is valid JSON."""
-        write_task_result("task-456", "success", "Checkpoint saved")
+        write_task_result("task_456", "success", "Checkpoint saved")
 
-        result_file = mock_tasks_dir / "task-456.result"
+        result_file = mock_tasks_dir / "task_456.result"
         with open(result_file) as f:
             data = json.load(f)
 
-        assert data["task_id"] == "task-456"
+        assert data["task_id"] == "task_456"
         assert data["status"] == "success"
         assert data["message"] == "Checkpoint saved"
         assert "ts" in data
 
     def test_write_task_result_with_error(self, mock_tasks_dir):
         """Task result includes error field for failures."""
-        write_task_result("task-789", "failed", "Save failed", error="Disk full")
+        write_task_result("task_789", "failed", "Save failed", error="Disk full")
 
-        result_file = mock_tasks_dir / "task-789.result"
+        result_file = mock_tasks_dir / "task_789.result"
         with open(result_file) as f:
             data = json.load(f)
 
@@ -680,7 +680,7 @@ class TestGetTaskPaths:
 
     def test_get_task_paths_returns_dict(self, mock_tasks_dir):
         """Returns dict with expected keys."""
-        paths = get_task_paths("task-123")
+        paths = get_task_paths("task_123")
 
         assert isinstance(paths, dict)
         assert "task_id" in paths
@@ -689,21 +689,21 @@ class TestGetTaskPaths:
 
     def test_get_task_paths_contains_task_id(self, mock_tasks_dir):
         """Paths include task ID."""
-        paths = get_task_paths("task-123")
+        paths = get_task_paths("task_123")
 
-        assert paths["task_id"] == "task-123"
-        assert "task-123" in paths["done_file"]
-        assert "task-123" in paths["result_file"]
+        assert paths["task_id"] == "task_123"
+        assert "task_123" in paths["done_file"]
+        assert "task_123" in paths["result_file"]
 
     def test_get_task_paths_done_file_extension(self, mock_tasks_dir):
         """Done file has .done extension."""
-        paths = get_task_paths("task-456")
+        paths = get_task_paths("task_456")
 
         assert paths["done_file"].endswith(".done")
 
     def test_get_task_paths_result_file_extension(self, mock_tasks_dir):
         """Result file has .result extension."""
-        paths = get_task_paths("task-789")
+        paths = get_task_paths("task_789")
 
         assert paths["result_file"].endswith(".result")
 

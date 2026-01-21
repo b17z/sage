@@ -2,7 +2,7 @@
 
 Version timeline and planned features.
 
-## Current: v1.x (January 2026)
+## Current: v2.1.x (January 2026)
 
 ### What's Shipped
 
@@ -33,14 +33,14 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 535 tests covering all modules
+- 578 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
 
 ---
 
-## v2.0 (In Progress)
+## v2.0 (Shipped)
 
 ### Focus: Polish and Documentation
 
@@ -52,7 +52,7 @@ Version timeline and planned features.
 | ARCHITECTURE.md | Done | System design + flowcharts |
 | FEATURES.md | Done | Complete feature reference |
 | ROADMAP.md | Done | This document |
-| Test coverage | Done | 397 tests |
+| Test coverage | Done | 535 tests |
 | CLI `sage config` commands | Done | list/set/reset subcommands |
 | Storage structure refactor | Done | Secrets vs shareable split |
 | Security hardening | Done | File permissions, ReDoS protection |
@@ -81,7 +81,20 @@ Version timeline and planned features.
 
 ---
 
-## v2.1 (Planned)
+## v2.1 (Shipped)
+
+### Focus: Simplified Architecture + CI Automation
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Simplified async architecture | Done | Sync Sage + CLAUDE.md enforced Task subagent |
+| Background Task pattern | Done | Non-blocking via `run_in_background=true` |
+| Auto-version CI workflow | Done | GitHub Actions auto-bumps on release |
+| Version sync across files | Done | pyproject.toml, plugin.json, marketplace.json |
+
+---
+
+## v2.2 (Planned)
 
 ### Focus: Advanced Retrieval + Knowledge Management
 
@@ -90,13 +103,12 @@ Version timeline and planned features.
 | Freshness decay | Recent knowledge weighted higher |
 | Cross-project search | Priority cascade (project → global with boost) |
 | Knowledge versioning | History array for updates |
-| Knowledge edit/deprecate | Inline update without delete, "deprecated" status for outdated facts |
-| Structural triggers | Topic drift detection, convergence signals |
-| Uncertainty trigger | Detect hedging language ("I'm not sure", "might be") as checkpoint moment |
+| Knowledge edit/deprecate | Inline update without delete, "deprecated" status |
+| `sage knowledge debug` | Transparency for retrieval tuning |
 
 ---
 
-## v2.2 (Planned)
+## v2.3 (Planned)
 
 ### Focus: PKM Integration
 
@@ -109,7 +121,7 @@ Version timeline and planned features.
 
 ---
 
-## v2.3 (Planned)
+## v2.4 (Planned)
 
 ### Focus: Advanced Hooks & Triggers
 
@@ -123,7 +135,7 @@ Version timeline and planned features.
 
 ---
 
-## v2.4 (Planned)
+## v2.5 (Planned)
 
 ### Focus: Token Economics & Observability
 
@@ -135,7 +147,7 @@ Version timeline and planned features.
 
 ---
 
-## v2.5 (Planned)
+## v2.6 (Planned)
 
 ### Focus: Code-Aware Intelligence
 
@@ -218,6 +230,8 @@ Version timeline and planned features.
 | v1.2 | Jan 2026 | BGE-large embeddings, checkpoint templates, knowledge types, 397 tests |
 | v2.0 | Jan 2026 | Async operations, Task polling notifications, 535 tests |
 | v2.0.1 | Jan 2026 | Security fix: replaced bash watcher with Read-tool polling |
+| v2.1.0 | Jan 2026 | Simplified architecture: sync Sage + Task subagent pattern |
+| v2.1.1 | Jan 2026 | Auto-version CI workflow, version sync across all files, 578 tests |
 
 ---
 
