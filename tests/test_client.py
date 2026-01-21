@@ -1,6 +1,6 @@
 """Tests for sage.client module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from sage.client import ApiResponse, Message, send_message
 
@@ -31,11 +31,13 @@ class TestSendMessage:
         message_delta_event.usage = MagicMock()
         message_delta_event.delta.stop_reason = "end_turn"
 
-        mock_stream.__iter__ = lambda self: iter([
-            text_delta_event1,
-            text_delta_event2,
-            message_delta_event,
-        ])
+        mock_stream.__iter__ = lambda self: iter(
+            [
+                text_delta_event1,
+                text_delta_event2,
+                message_delta_event,
+            ]
+        )
 
         # Create mock final message
         mock_final = MagicMock()
@@ -121,12 +123,10 @@ class TestSendMessage:
         import anthropic
 
         mock_client = MagicMock()
-        mock_client.messages.stream.return_value.__enter__.side_effect = (
-            anthropic.APIStatusError(
-                message="Bad request",
-                response=MagicMock(status_code=400),
-                body={"error": {"message": "Bad request"}},
-            )
+        mock_client.messages.stream.return_value.__enter__.side_effect = anthropic.APIStatusError(
+            message="Bad request",
+            response=MagicMock(status_code=400),
+            body={"error": {"message": "Bad request"}},
         )
 
         result = send_message(

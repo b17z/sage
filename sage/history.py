@@ -114,10 +114,7 @@ def read_history(skill_name: str, limit: int | None = None) -> list[HistoryEntry
 def get_recent_context(skill_name: str, max_entries: int = 5) -> list[dict]:
     """Get recent history formatted for context injection."""
     entries = read_history(skill_name, limit=max_entries)
-    return [
-        {"query": e.query, "type": e.type, "ts": e.ts}
-        for e in entries
-    ]
+    return [{"query": e.query, "type": e.type, "ts": e.ts} for e in entries]
 
 
 def calculate_usage(skill_name: str, days: int = 7) -> dict:
@@ -135,7 +132,8 @@ def calculate_usage(skill_name: str, days: int = 7) -> dict:
 
     cutoff = datetime.now(UTC).timestamp() - (days * 86400)
     recent = [
-        e for e in entries
+        e
+        for e in entries
         if datetime.fromisoformat(e.ts.replace("Z", "+00:00")).timestamp() > cutoff
     ]
 

@@ -32,7 +32,7 @@ Configuration Classes
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -112,11 +112,12 @@ def ensure_directories() -> None:
 
 def _sanitize_name(name: str) -> str:
     """Sanitize a name to prevent path traversal attacks.
-    
+
     Only allows alphanumeric, hyphens, underscores.
     Prevents names like '../../../.bashrc' from escaping directories.
     """
     import re
+
     sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "-", name).strip("-")
     return sanitized or "unnamed"
 
@@ -155,6 +156,20 @@ class SageConfig:
 
     # Embedding model - BGE-large for better retrieval quality
     embedding_model: str = "BAAI/bge-large-en-v1.5"
+
+    # Async settings (v2.0)
+    async_enabled: bool = False  # Sync by default; use CLAUDE.md Task subagent for backgrounding
+    notify_success: bool = True  # Show success notifications via hook
+    notify_errors: bool = True  # Show error notifications (always recommended)
+    worker_timeout: float = 5.0  # Graceful shutdown timeout in seconds
+
+    # Logging settings (v2.0.1)
+    logging_enabled: bool = True  # Enable structured JSON logging to ~/.sage/logs/
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+
+    # Poll agent settings (v2.0.2)
+    poll_agent_type: str = "general-purpose"  # Agent type for task polling
+    poll_agent_model: str = "haiku"  # Model for polling agent (haiku is efficient)
 
     @classmethod
     def load(cls, sage_dir: Path) -> "SageConfig":
@@ -218,6 +233,10 @@ class SageConfig:
             "depth_min_messages": self.depth_min_messages,
             "depth_min_tokens": self.depth_min_tokens,
             "embedding_model": self.embedding_model,
+            "async_enabled": self.async_enabled,
+            "notify_success": self.notify_success,
+            "notify_errors": self.notify_errors,
+            "worker_timeout": self.worker_timeout,
         }
 
 

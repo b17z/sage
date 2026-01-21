@@ -191,7 +191,9 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
     if checkpoint.tensions:
         lines.append("## Tensions")
         for t in checkpoint.tensions:
-            lines.append(f"- **{t.between[0]}** vs **{t.between[1]}**: {t.nature} — _{t.resolution}_")
+            lines.append(
+                f"- **{t.between[0]}** vs **{t.between[1]}**: {t.nature} — _{t.resolution}_"
+            )
         lines.append("")
 
     # Unique contributions
@@ -204,7 +206,9 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
     body = "\n".join(lines)
 
     # Combine frontmatter and body
-    fm_yaml = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    fm_yaml = yaml.safe_dump(
+        frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
     return f"---\n{fm_yaml}---\n\n{body}"
 
 
@@ -221,7 +225,7 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             return None
 
         fm_text = content[3:end_idx].strip()
-        body = content[end_idx + 3:].strip()
+        body = content[end_idx + 3 :].strip()
 
         # Parse frontmatter
         fm = yaml.safe_load(fm_text) or {}
@@ -350,10 +354,10 @@ def _parse_source_line(line: str) -> Source | None:
         type_end = line.find(")", type_start)
         if type_start == -1 or type_end == -1:
             return None
-        source_type = line[type_start + 1:type_end]
+        source_type = line[type_start + 1 : type_end]
 
         # Extract take and relation
-        rest = line[type_end + 2:].strip()  # Skip ):
+        rest = line[type_end + 2 :].strip()  # Skip ):
         if " — _" in rest:
             take, relation = rest.rsplit(" — _", 1)
             relation = relation.rstrip("_")
@@ -390,7 +394,7 @@ def _parse_tension_line(line: str) -> Tension | None:
         src2 = line[src2_start:src2_end]
 
         # Extract nature and resolution
-        rest = line[src2_end + 3:].strip()  # Skip **:
+        rest = line[src2_end + 3 :].strip()  # Skip **:
         if " — _" in rest:
             nature, resolution = rest.rsplit(" — _", 1)
             resolution = resolution.rstrip("_")
@@ -412,7 +416,7 @@ def _parse_contribution_line(line: str) -> Contribution | None:
         if type_end == -1:
             return None
         contrib_type = line[4:type_end]
-        content = line[type_end + 3:].strip()  # Skip **:
+        content = line[type_end + 3 :].strip()  # Skip **:
         return Contribution(type=contrib_type, content=content)
     except (IndexError, ValueError):
         return None
@@ -421,6 +425,7 @@ def _parse_contribution_line(line: str) -> Contribution | None:
 # ============================================================================
 # Embedding-based Deduplication
 # ============================================================================
+
 
 def _get_checkpoint_embedding_store():
     """Load the checkpoint embedding store."""
@@ -847,10 +852,25 @@ def create_checkpoint_from_dict(
 
     # Extract custom fields (anything not in standard schema)
     standard_fields = {
-        "core_question", "thesis", "confidence", "open_questions", "sources",
-        "tensions", "unique_contributions", "key_evidence", "reasoning_trace",
-        "action", "decision", "options_considered", "tradeoffs", "recommendation",
-        "risks", "summary", "issues_found", "suggestions", "files_reviewed",
+        "core_question",
+        "thesis",
+        "confidence",
+        "open_questions",
+        "sources",
+        "tensions",
+        "unique_contributions",
+        "key_evidence",
+        "reasoning_trace",
+        "action",
+        "decision",
+        "options_considered",
+        "tradeoffs",
+        "recommendation",
+        "risks",
+        "summary",
+        "issues_found",
+        "suggestions",
+        "files_reviewed",
     }
     custom_fields = {k: v for k, v in data.items() if k not in standard_fields}
 

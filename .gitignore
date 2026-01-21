@@ -54,6 +54,9 @@ pnpm-debug.log*
 # Sage - project .sage/ is shareable, .sage/local/ is not
 .sage/local/
 
+# Audit reports (local, not shared)
+docs/audit-*.md
+
 # Private keys & certificates
 *.pem
 *.key

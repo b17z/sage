@@ -8,7 +8,7 @@ from rich.table import Table
 
 from sage import __version__
 from sage.client import Message, create_client, send_message
-from sage.config import Config, SageConfig, ensure_directories, get_sage_config, SAGE_DIR
+from sage.config import SAGE_DIR, Config, SageConfig, ensure_directories, get_sage_config
 from sage.errors import format_error
 from sage.history import append_entry, calculate_usage, create_entry, read_history
 from sage.init import run_init
@@ -85,6 +85,7 @@ def new(name, description, docs):
     if docs:
         import shutil
         from pathlib import Path
+
         skill_docs = Path.home() / ".claude" / "skills" / name / "docs"
         for doc in docs:
             src = Path(doc)
@@ -269,6 +270,7 @@ def list_cmd():
 
     # Show shared memory count
     from sage.config import SHARED_MEMORY_PATH
+
     if SHARED_MEMORY_PATH.exists():
         content = SHARED_MEMORY_PATH.read_text()
         # Count lines starting with "- "
@@ -293,6 +295,7 @@ def history(skill, limit, as_json):
     if as_json:
         import json
         from dataclasses import asdict
+
         for entry in entries:
             print(json.dumps({k: v for k, v in asdict(entry).items() if v is not None}))
         return
@@ -398,7 +401,9 @@ def context(skill):
     # Recent history
     console.print()
     history = read_history(skill, limit=5)
-    console.print(f"[bold]─── RECENT HISTORY (last {len(history)} of {info.get('history_count', 0)}) ───[/bold]")
+    console.print(
+        f"[bold]─── RECENT HISTORY (last {len(history)} of {info.get('history_count', 0)}) ───[/bold]"
+    )
     if history:
         for entry in history:
             ts = entry.ts[:16].replace("T", " ")
@@ -464,9 +469,17 @@ def config_list():
     _show_tuning_value("keyword_weight", effective.keyword_weight, defaults.keyword_weight)
 
     console.print("  [dim]# Structural detection[/dim]")
-    _show_tuning_value("topic_drift_threshold", effective.topic_drift_threshold, defaults.topic_drift_threshold)
-    _show_tuning_value("convergence_question_drop", effective.convergence_question_drop, defaults.convergence_question_drop)
-    _show_tuning_value("depth_min_messages", effective.depth_min_messages, defaults.depth_min_messages)
+    _show_tuning_value(
+        "topic_drift_threshold", effective.topic_drift_threshold, defaults.topic_drift_threshold
+    )
+    _show_tuning_value(
+        "convergence_question_drop",
+        effective.convergence_question_drop,
+        defaults.convergence_question_drop,
+    )
+    _show_tuning_value(
+        "depth_min_messages", effective.depth_min_messages, defaults.depth_min_messages
+    )
     _show_tuning_value("depth_min_tokens", effective.depth_min_tokens, defaults.depth_min_tokens)
 
     console.print("  [dim]# Model[/dim]")
@@ -561,7 +574,9 @@ def config_set(key: str, value: str, project: bool):
         console.print(f"[red]Unknown config key: {key}[/red]")
         console.print()
         console.print("[dim]Runtime keys: api_key, model, max_history, cache_ttl[/dim]")
-        console.print("[dim]Tuning keys: recall_threshold, dedup_threshold, embedding_weight, ...[/dim]")
+        console.print(
+            "[dim]Tuning keys: recall_threshold, dedup_threshold, embedding_weight, ...[/dim]"
+        )
         sys.exit(1)
 
 
@@ -699,7 +714,9 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
 
 @knowledge.command("list")
 @click.option("--skill", "-s", help="Filter by skill")
-@click.option("--type", "-t", "item_type", help="Filter by type (knowledge, preference, todo, reference)")
+@click.option(
+    "--type", "-t", "item_type", help="Filter by type (knowledge, preference, todo, reference)"
+)
 def knowledge_list(skill, item_type):
     """List knowledge items."""
     items = list_knowledge(skill)
@@ -769,7 +786,9 @@ def knowledge_match(query, skill):
         console.print("[yellow]No knowledge matched this query.[/yellow]")
         return
 
-    console.print(f"📚 [bold]Would recall {result.count} items (~{result.total_tokens} tokens):[/bold]")
+    console.print(
+        f"📚 [bold]Would recall {result.count} items (~{result.total_tokens} tokens):[/bold]"
+    )
     for item in result.items:
         console.print(f"  [green]✓[/green] {item.id}")
         console.print(f"    Keywords: {', '.join(item.triggers.keywords)}")
@@ -928,7 +947,9 @@ def checkpoint_restore(checkpoint_id, skill):
 
     # Show what's being restored
     console.print(f"[bold]Restoring checkpoint:[/bold] {cp.id}")
-    console.print(f"  Thesis: {cp.thesis[:60]}..." if len(cp.thesis) > 60 else f"  Thesis: {cp.thesis}")
+    console.print(
+        f"  Thesis: {cp.thesis[:60]}..." if len(cp.thesis) > 60 else f"  Thesis: {cp.thesis}"
+    )
     console.print(f"  Confidence: {cp.confidence:.0%}")
     console.print(f"  Open questions: {len(cp.open_questions)}")
     console.print(f"  Sources: {len(cp.sources)}")
@@ -937,7 +958,9 @@ def checkpoint_restore(checkpoint_id, skill):
     # Format context for injection
     context = format_checkpoint_for_context(cp)
     console.print("[dim]Checkpoint context ready. Use with:[/dim]")
-    console.print(f"[dim]  sage ask {skill} \"<your question>\" --input <checkpoint-context-file>[/dim]")
+    console.print(
+        f'[dim]  sage ask {skill} "<your question>" --input <checkpoint-context-file>[/dim]'
+    )
     console.print()
     console.print("[bold]Or copy this context:[/bold]")
     console.print()
@@ -972,7 +995,7 @@ def hooks():
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing hooks")
 def hooks_install(force):
     """Install Sage hooks into Claude Code.
-    
+
     Copies hook scripts to ~/.claude/hooks/ and updates
     ~/.claude/settings.json with the hook configuration.
     """
@@ -987,6 +1010,7 @@ def hooks_install(force):
     if not hooks_src.exists():
         # Try installed package location
         import sage
+
         package_dir = Path(sage.__file__).parent.parent
         hooks_src = package_dir / ".claude" / "hooks"
 
@@ -1019,7 +1043,9 @@ def hooks_install(force):
             continue
 
         if dest.exists() and not force:
-            console.print(f"[yellow]Skipping {hook_file} (exists, use --force to overwrite)[/yellow]")
+            console.print(
+                f"[yellow]Skipping {hook_file} (exists, use --force to overwrite)[/yellow]"
+            )
             continue
 
         shutil.copy2(src, dest)
@@ -1041,9 +1067,15 @@ def hooks_install(force):
             {
                 "matcher": "",
                 "hooks": [
-                    {"type": "command", "command": str(hooks_dest / "post-response-context-check.sh")},
-                    {"type": "command", "command": str(hooks_dest / "post-response-semantic-detector.sh")},
-                ]
+                    {
+                        "type": "command",
+                        "command": str(hooks_dest / "post-response-context-check.sh"),
+                    },
+                    {
+                        "type": "command",
+                        "command": str(hooks_dest / "post-response-semantic-detector.sh"),
+                    },
+                ],
             }
         ],
         "PreCompact": [
@@ -1051,9 +1083,9 @@ def hooks_install(force):
                 "matcher": "",
                 "hooks": [
                     {"type": "command", "command": str(hooks_dest / "pre-compact.sh")},
-                ]
+                ],
             }
-        ]
+        ],
     }
 
     # Merge with existing hooks (don't overwrite other hooks)
@@ -1076,7 +1108,7 @@ def hooks_install(force):
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 def hooks_uninstall(force):
     """Remove Sage hooks from Claude Code.
-    
+
     Removes hook scripts from ~/.claude/hooks/ and removes
     Sage hook configuration from ~/.claude/settings.json.
     """
@@ -1182,7 +1214,7 @@ def mcp():
 @mcp.command("install")
 def mcp_install():
     """Install Sage MCP server into Claude Code.
-    
+
     Adds the sage MCP server to ~/.claude.json so Claude Code
     can use Sage checkpoint and knowledge tools.
     """
@@ -1214,7 +1246,7 @@ def mcp_install():
         "type": "stdio",
         "command": python_path,
         "args": ["-m", "sage.mcp_server"],
-        "env": {}
+        "env": {},
     }
 
     # Write config
@@ -1336,7 +1368,11 @@ def templates_list():
         if template:
             required_count = sum(1 for f in template.fields if f.required)
             fields_info = f"{len(template.fields)} ({required_count} required)"
-            desc = template.description[:40] + "..." if len(template.description) > 40 else template.description
+            desc = (
+                template.description[:40] + "..."
+                if len(template.description) > 40
+                else template.description
+            )
             table.add_row(name, fields_info, desc or "-")
 
     console.print(table)
@@ -1376,6 +1412,259 @@ def templates_show(name):
     if template.jinja_template:
         console.print()
         console.print("[bold]Custom Jinja2 template:[/bold] Yes")
+
+
+# ============================================================================
+# Hooks Commands
+# ============================================================================
+
+
+@main.group()
+def hooks():
+    """Manage Claude Code hooks for Sage notifications."""
+    pass
+
+
+@hooks.command("install")
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing hooks")
+def hooks_install(force):
+    """Install Sage notification hooks to Claude Code.
+
+    This installs the post-response hook that displays Sage notifications
+    (checkpoint saves, knowledge saves, etc.) after each Claude response.
+
+    The hook script is installed to ~/.claude/hooks/post-response-sage-notify.sh
+
+    Requires: jq (JSON processor) for best experience.
+    """
+    import shutil
+    from pathlib import Path
+
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    hook_name = "post-response-sage-notify.sh"
+    dest_path = hooks_dir / hook_name
+
+    # Check if hook already exists
+    if dest_path.exists() and not force:
+        console.print(f"[yellow]Hook already installed: {dest_path}[/yellow]")
+        console.print("[dim]Use --force to overwrite[/dim]")
+        return
+
+    # Get source hook from package
+    try:
+        # Try to get from installed package
+        source_path = Path(__file__).parent / "hooks" / hook_name
+        if source_path.exists():
+            shutil.copy(source_path, dest_path)
+        else:
+            console.print(f"[red]Hook script not found: {source_path}[/red]")
+            return
+    except Exception as e:
+        console.print(f"[red]Failed to install hook: {e}[/red]")
+        return
+
+    # Make executable
+    dest_path.chmod(0o755)
+
+    console.print(f"[green]✓[/green] Installed hook: {dest_path}")
+    console.print()
+    console.print("[bold]Hook installed![/bold]")
+    console.print()
+    console.print("The hook will display Sage notifications after each Claude response.")
+    console.print("Example: ⏺ Sage: Checkpoint saved: 2026-01-21_auth-patterns")
+    console.print()
+
+    # Check for jq
+    import shutil as sh
+
+    if not sh.which("jq"):
+        console.print("[yellow]Note: Install 'jq' for best notification formatting[/yellow]")
+        console.print("[dim]  macOS: brew install jq[/dim]")
+        console.print("[dim]  Linux: apt install jq[/dim]")
+
+
+@hooks.command("uninstall")
+def hooks_uninstall():
+    """Remove Sage notification hooks from Claude Code."""
+    from pathlib import Path
+
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    hook_path = hooks_dir / "post-response-sage-notify.sh"
+
+    if not hook_path.exists():
+        console.print("[yellow]Hook not installed[/yellow]")
+        return
+
+    hook_path.unlink()
+    console.print(f"[green]✓[/green] Removed hook: {hook_path}")
+
+
+@hooks.command("status")
+def hooks_status():
+    """Check status of Sage hooks."""
+    import shutil as sh
+    from pathlib import Path
+
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    hook_path = hooks_dir / "post-response-sage-notify.sh"
+
+    console.print("[bold]Sage Hooks Status[/bold]")
+    console.print()
+
+    # Check hook installation
+    if hook_path.exists():
+        console.print(f"[green]✓[/green] Notification hook installed: {hook_path}")
+    else:
+        console.print("[yellow]✗[/yellow] Notification hook not installed")
+        console.print("[dim]  Run: sage hooks install[/dim]")
+
+    # Check jq
+    if sh.which("jq"):
+        console.print("[green]✓[/green] jq installed (JSON processor)")
+    else:
+        console.print("[yellow]✗[/yellow] jq not installed (optional, for better formatting)")
+        console.print("[dim]  macOS: brew install jq[/dim]")
+        console.print("[dim]  Linux: apt install jq[/dim]")
+
+    # Check pending notifications
+    from sage.config import SAGE_DIR
+
+    notify_file = SAGE_DIR / "notifications.jsonl"
+    if notify_file.exists():
+        with open(notify_file) as f:
+            count = sum(1 for _ in f)
+        console.print(f"[yellow]![/yellow] {count} pending notification(s)")
+        console.print(f"[dim]  File: {notify_file}[/dim]")
+    else:
+        console.print("[green]✓[/green] No pending notifications")
+
+
+# ============================================================================
+# Admin Commands
+# ============================================================================
+
+
+@main.group()
+def admin():
+    """Administrative commands for Sage maintenance."""
+    pass
+
+
+@admin.command("rebuild-embeddings")
+@click.option("--force", "-f", is_flag=True, help="Rebuild even if model hasn't changed")
+def admin_rebuild_embeddings(force):
+    """Rebuild all embeddings after model change.
+
+    Use this after changing the embedding_model config to regenerate all
+    stored embeddings with the new model. This ensures consistent similarity
+    scores across all knowledge items and checkpoints.
+
+    Note: For the MCP server to use the new model, also call sage_reload_config
+    via Claude, or restart Claude Code.
+    """
+
+    from sage import embeddings
+    from sage.checkpoint import list_checkpoints
+    from sage.config import get_sage_config
+    from sage.knowledge import list_knowledge
+
+    config = get_sage_config()
+
+    # Check for model mismatch
+    is_mismatch, stored_model, current_model = embeddings.check_model_mismatch()
+
+    if not is_mismatch and not force:
+        console.print(f"[yellow]Embeddings already use {current_model}[/yellow]")
+        console.print("[dim]Use --force to rebuild anyway[/dim]")
+        return
+
+    if is_mismatch:
+        console.print(f"[bold]Model changed: {stored_model} -> {current_model}[/bold]")
+    else:
+        console.print(f"[bold]Force rebuilding embeddings for: {current_model}[/bold]")
+
+    console.print()
+
+    # Rebuild knowledge embeddings
+    knowledge_items = list_knowledge()
+    if knowledge_items:
+        console.print(f"Rebuilding {len(knowledge_items)} knowledge embeddings...")
+
+        from sage.knowledge import _get_embedding_store, _save_embedding_store
+
+        # Load knowledge store (will be empty due to mismatch detection)
+        store = _get_embedding_store()
+
+        # Rebuild each item
+        for item in knowledge_items:
+            result = embeddings.get_embedding(item.content)
+            if result.is_err():
+                console.print(f"  [red]✗[/red] {item.id}: {result.unwrap_err().message}")
+                continue
+            store = store.add(item.id, result.unwrap())
+            console.print(f"  [green]✓[/green] {item.id}")
+
+        # Save rebuilt store
+        _save_embedding_store(store)
+        console.print(f"[green]✓[/green] Saved {len(store)} knowledge embeddings")
+    else:
+        console.print("[dim]No knowledge items to rebuild[/dim]")
+
+    console.print()
+
+    # Rebuild checkpoint embeddings
+    checkpoints = list_checkpoints(limit=100)
+    if checkpoints:
+        console.print(f"Rebuilding {len(checkpoints)} checkpoint embeddings...")
+
+        from sage.checkpoint import (
+            _get_checkpoint_embedding_store,
+            _save_checkpoint_embedding_store,
+        )
+
+        # Load checkpoint store (will be empty due to mismatch detection)
+        store = _get_checkpoint_embedding_store()
+
+        # Rebuild each checkpoint
+        for cp in checkpoints:
+            result = embeddings.get_embedding(cp.thesis)
+            if result.is_err():
+                console.print(f"  [red]✗[/red] {cp.id[:30]}: {result.unwrap_err().message}")
+                continue
+            store = store.add(cp.id, result.unwrap())
+            console.print(f"  [green]✓[/green] {cp.id[:30]}...")
+
+        # Save rebuilt store
+        _save_checkpoint_embedding_store(store)
+        console.print(f"[green]✓[/green] Saved {len(store)} checkpoint embeddings")
+    else:
+        console.print("[dim]No checkpoints to rebuild[/dim]")
+
+    console.print()
+    console.print("[bold]Embeddings rebuilt![/bold]")
+    console.print()
+    console.print("[dim]If using MCP server, call sage_reload_config via Claude[/dim]")
+    console.print("[dim]or restart Claude Code to pick up the new embeddings.[/dim]")
+
+
+@admin.command("clear-cache")
+def admin_clear_cache():
+    """Clear all cached data (embeddings, etc.)."""
+    from sage.config import SAGE_DIR
+
+    embeddings_dir = SAGE_DIR / "embeddings"
+
+    if not embeddings_dir.exists():
+        console.print("[yellow]No cache to clear[/yellow]")
+        return
+
+    import shutil
+
+    shutil.rmtree(embeddings_dir)
+    console.print(f"[green]✓[/green] Cleared {embeddings_dir}")
+    console.print("[dim]Embeddings will be regenerated on next use[/dim]")
 
 
 if __name__ == "__main__":

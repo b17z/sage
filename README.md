@@ -37,27 +37,43 @@ Each checkpoint captures:
 ### 1. Install
 
 ```bash
-# From PyPI
-pip install claude-sage
+# From PyPI (recommended)
+pip install claude-sage[mcp]
 
 # Or from source
 git clone https://github.com/b17z/sage.git
 cd sage
 pip install -e ".[mcp]"
+```
 
-# Install MCP server and hooks
-sage mcp install
+### 2. Configure Claude Code
+
+Add to your `.mcp.json` (project or `~/.claude/.mcp.json` for global):
+
+```json
+{
+  "mcpServers": {
+    "sage": {
+      "command": "sage-mcp"
+    }
+  }
+}
+```
+
+Or install hooks for auto-checkpoint detection:
+
+```bash
 sage hooks install
 ```
 
-### 2. Test it
+### 3. Test it
 
 ```bash
 # Start Claude Code
 claude
 
 # Have a conversation, do some research
-# Watch for checkpoint notifications
+# Sage MCP tools are now available to Claude
 # Claude will checkpoint automatically on synthesis moments
 
 # Later, list your checkpoints:
@@ -273,9 +289,9 @@ Hooks have:
 
 ```bash
 # Install dev dependencies
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"
 
-# Run tests (397 tests)
+# Run tests (535 tests)
 pytest tests/ -v
 
 # Lint and format

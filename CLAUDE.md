@@ -1,24 +1,26 @@
 # Sage
 
-Research orchestration CLI that manages "skills" - specialized AI research personas powered by Claude. Implements semantic checkpointing for preserving context across conversations.
+Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v1.2 (BGE-large embeddings, checkpoint templates, knowledge types)
-**Test count:** 397 tests (maintain or increase)
+**Current version:** v2.0.1 (async operations, Task polling, structured logging)
+**Test count:** 578 tests (maintain or increase)
 
 ## Quick Reference
 
 ```bash
-sage list                    # List all skills
-sage ask <skill> "<query>"   # One-shot query
-sage context <skill>         # Show what a skill knows
-sage history <skill>         # Query history
-sage usage                   # Token/cost analytics
+# Checkpoints
+sage checkpoint list         # List saved checkpoints
+sage checkpoint show <id>    # Show checkpoint details
 
 # Knowledge management
 sage knowledge list          # List stored knowledge
 sage knowledge add <file> --id <id> --keywords <kw1,kw2>
 sage knowledge match "query" # Test what would be recalled
 sage knowledge rm <id>       # Remove knowledge item
+
+# Configuration
+sage config list             # Show current config
+sage config set <key> <val>  # Set a value
 ```
 
 ## Architecture
@@ -27,37 +29,29 @@ sage knowledge rm <id>       # Remove knowledge item
 ~/.sage/                     # User-level (NEVER in repos - contains secrets)
 ├── config.yaml              # API key, model preferences
 ├── tuning.yaml              # User-level threshold defaults
-├── embeddings/              # Binary embedding caches
-└── skills/<name>/
-    └── history.jsonl        # Interaction log
+├── tasks/                   # Async task result files
+├── checkpoints/             # Global checkpoints
+└── knowledge/               # Global knowledge
 
 <project>/.sage/             # Project-level (shareable via git)
 ├── checkpoints/             # Research checkpoints (team context)
 ├── knowledge/               # Knowledge base (team insights)
 ├── tuning.yaml              # Project-specific thresholds
 └── local/                   # GITIGNORED - project-local overrides
-
-~/.claude/skills/            # Skill definitions (Agent Skills standard)
-└── <name>/
-    ├── SKILL.md             # System prompt + YAML frontmatter
-    └── docs/                # Reference materials
 ```
 
 ## Key Modules
 
 | File | Purpose |
 |------|---------|
-| `sage/cli.py` | Click CLI - all commands |
-| `sage/client.py` | Anthropic API with streaming, retry, caching |
-| `sage/skill.py` | Skill CRUD, SKILL.md parsing, context building |
-| `sage/history.py` | JSONL logging, usage analytics |
-| `sage/errors.py` | Result types (`Ok`/`Err`), error constructors |
-| `sage/config.py` | Config management, path constants |
+| `sage/mcp_server.py` | MCP tools for Claude Code (async) |
+| `sage/checkpoint.py` | Checkpoint schema, save/load |
 | `sage/knowledge.py` | Knowledge storage, retrieval, hybrid scoring |
 | `sage/embeddings.py` | Embedding model, similarity functions |
-| `sage/checkpoint.py` | Checkpoint schema, save/load |
-| `sage/mcp_server.py` | MCP tools for Claude Code |
-| `sage/triggers/` | v2.0: structural, linguistic, combiner |
+| `sage/tasks.py` | Async task infrastructure, task polling |
+| `sage/config.py` | Config management, path constants |
+| `sage/cli.py` | Click CLI - all commands |
+| `sage/errors.py` | Result types (`Ok`/`Err`), error constructors |
 
 ## Documentation Hierarchy
 
@@ -73,19 +67,18 @@ sage knowledge rm <id>       # Remove knowledge item
 
 **Result types (errors as values):**
 ```python
-def load_skill(name: str) -> Result[Skill, SageError]:
-    if not skill_exists:
-        return err(skill_not_found(name))
-    return ok(skill)
+def save_checkpoint(cp: Checkpoint) -> Result[Path, SageError]:
+    if is_duplicate(cp):
+        return err(duplicate_checkpoint(cp.id))
+    return ok(write_checkpoint(cp))
 ```
 
-**Skill data flow:**
-1. `SKILL.md` parsed (YAML frontmatter + content)
-2. Docs from `docs/` loaded
-3. Shared memory injected
-4. Context built via `build_context()`
-5. Streamed via Anthropic API with ephemeral cache
-6. Logged to `history.jsonl`
+**Checkpoint flow:**
+1. Claude detects checkpoint moment (synthesis, branch point, etc.)
+2. Calls `sage_save_checkpoint` or `sage_autosave_check` MCP tool
+3. Task queued, "📋 Queued" returned immediately
+4. Worker validates, generates embeddings, writes to `.sage/checkpoints/`
+5. Claude can poll for completion via Task subagent
 
 ## Development
 
@@ -112,6 +105,8 @@ sage knowledge match "query"        # Test what would be recalled
 sage config list                    # Show config
 sage config set recall_threshold 0.65
 sage config set recall_threshold 0.60 --project  # Project-level
+sage config set poll_agent_type general-purpose  # Poll agent type
+sage config set poll_agent_model haiku           # Poll agent model
 sage config reset                   # Reset tuning to defaults
 sage admin rebuild-embeddings       # After model swap
 ```
@@ -157,18 +152,18 @@ def test_handles_empty_input():
     assert result == sensible_default  # No crash
 ```
 
-## v2.0 Implementation Order
+## What's Shipped in v2.0
 
-1. ✅ **Config system** (`sage/config.py`) — Foundation for tunable thresholds
-2. ✅ **CLI config commands** — `sage config list/set/reset` subcommands
-3. ✅ **Storage structure** — Secrets vs shareable split, security hardening
-4. **Embedding upgrade** — Swap model, add query prefix
-5. **Knowledge debug** — Uses config, shows tuning tips
-6. **Structural detection** — Uses config thresholds
-7. **Trigger combiner** — Uses structural + linguistic
-8. **Checkpoint key_evidence** — Schema extension
-
-Each step: implement → test → commit.
+- ✅ Config system with cascade (project → user → default)
+- ✅ CLI config commands (`sage config list/set/reset`)
+- ✅ Storage structure (secrets vs shareable split)
+- ✅ BGE-large embeddings with query prefix
+- ✅ Checkpoint templates (default, research, decision, code-review)
+- ✅ Knowledge types (knowledge, preference, todo, reference)
+- ✅ Context hydration (key_evidence, reasoning_trace)
+- ✅ Depth thresholds (prevent shallow checkpoints)
+- ✅ Async operations with Task polling notifications
+- ✅ Graceful shutdown with task persistence
 
 ## Checkpoint Methodology (docs/checkpoint.md)
 
@@ -187,12 +182,10 @@ Schema preserves: core_question, thesis, confidence, open_questions, sources, te
 
 Automatic injection of stored insights based on query keywords:
 
-1. Knowledge items stored in `~/.sage/knowledge/` with keyword triggers
-2. On query, matching keywords are scored and relevant items recalled
-3. Recalled knowledge injected into context before API call
-4. User sees "📚 Knowledge recalled (N)" notification
-
-See `skills/knowledge/SKILL.md` for the auto-invoke skill.
+1. Knowledge items stored in project's `.sage/knowledge/` with keyword triggers
+2. On query, matching keywords scored via hybrid retrieval (70% semantic + 30% keyword)
+3. Recalled knowledge injected into context via MCP tools
+4. Use `sage_recall_knowledge(query)` to retrieve relevant knowledge
 
 ## Research Task Completion (REQUIRED)
 
@@ -221,13 +214,26 @@ Hook detection triggers:
 
 **NEVER ignore hook detection messages.** They indicate checkpoint-worthy moments.
 
-## Planned Features (docs/design-knowledge-checkpoints.md)
+## REQUIRED: Sage Background Operations
 
-- **Chat Mode**: Multi-turn REPL with `/checkpoint`, `/restore` commands
-- **Checkpoint Restore**: Resume from saved checkpoints
-- **Checkpoint Branching**: Try different approaches from same point
+Sage write operations block for 2-5 seconds (embedding generation + I/O). **ALWAYS** run them via background Task subagent to avoid blocking the main conversation.
 
----
+**ALWAYS** use background Task for these MCP tools:
+- `sage_save_checkpoint`
+- `sage_save_knowledge`
+- `sage_autosave_check`
+
+**NEVER** call these directly from the main conversation.
+
+**Pattern:**
+```
+Task(subagent_type='general-purpose', model='haiku', run_in_background=true,
+     prompt='Call sage_save_checkpoint with core_question="...", thesis="...", confidence=0.X, trigger="...". Return the result.')
+```
+
+The subagent calls the MCP tool, waits for completion, and returns. You get a native `<task-notification>` when done.
+
+**Legacy async mode:** For advanced use cases, set `sage config set async_enabled true` to use queue-based async with polling. This is opt-in and not recommended for most users.
 
 ## Don't Forget
 
@@ -235,4 +241,3 @@ Hook detection triggers:
 - [ ] New features need tests (unit + integration)
 - [ ] Update test count in this file when adding tests
 - [ ] Config values should come from `get_config()`, not hardcoded
-- [ ] Structural triggers INITIATE, linguistic triggers CONFIRM

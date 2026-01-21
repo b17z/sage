@@ -143,10 +143,12 @@ def load_skill(name: str) -> Result[Skill, SageError]:
     content = skill_md.read_text()
     metadata = parse_skill_frontmatter(content)
     if not metadata:
-        return err(SageError(
-            code="skill_invalid",
-            message=f"Could not parse skill metadata for '{name}'",
-        ))
+        return err(
+            SageError(
+                code="skill_invalid",
+                message=f"Could not parse skill metadata for '{name}'",
+            )
+        )
 
     # Load docs
     docs = []
@@ -162,13 +164,15 @@ def load_skill(name: str) -> Result[Skill, SageError]:
     if "{shared_memory}" in content:
         content = content.replace("{shared_memory}", shared_memory or "(No shared memory yet)")
 
-    return ok(Skill(
-        name=name,
-        metadata=metadata,
-        content=content,
-        docs=tuple(docs),
-        shared_memory=shared_memory,
-    ))
+    return ok(
+        Skill(
+            name=name,
+            metadata=metadata,
+            content=content,
+            docs=tuple(docs),
+            shared_memory=shared_memory,
+        )
+    )
 
 
 def create_skill(
@@ -236,21 +240,20 @@ def get_skill_info(name: str) -> Result[dict, SageError]:
         last_active = history[0].ts
 
     # Calculate doc sizes (rough token estimate: 1 token ≈ 4 chars)
-    doc_info = [
-        {"name": name, "tokens": len(content) // 4}
-        for name, content in skill.docs
-    ]
+    doc_info = [{"name": name, "tokens": len(content) // 4} for name, content in skill.docs]
 
-    return ok({
-        "name": skill.name,
-        "metadata": skill.metadata,
-        "docs": doc_info,
-        "doc_count": len(skill.docs),
-        "session_count": session_count,
-        "history_count": len(read_history(name)),
-        "last_active": last_active,
-        "shared_memory_size": len(skill.shared_memory) // 4,  # rough token estimate
-    })
+    return ok(
+        {
+            "name": skill.name,
+            "metadata": skill.metadata,
+            "docs": doc_info,
+            "doc_count": len(skill.docs),
+            "session_count": session_count,
+            "history_count": len(read_history(name)),
+            "last_active": last_active,
+            "shared_memory_size": len(skill.shared_memory) // 4,  # rough token estimate
+        }
+    )
 
 
 def build_context(skill: Skill, include_docs: bool = True) -> str:

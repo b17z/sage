@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 
-from sage.config import detect_project_root
 from sage.checkpoint import (
     Checkpoint,
     get_checkpoints_dir,
@@ -13,6 +12,7 @@ from sage.checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
+from sage.config import SageConfig, detect_project_root
 
 
 class TestDetectProjectRoot:
@@ -126,8 +126,10 @@ class TestProjectLocalCheckpoints:
         path = save_checkpoint(cp, project_path=project_with_sage)
 
         assert path.exists()
-        assert project_with_sage / ".sage" / "checkpoints" in path.parents or \
-               path.parent == project_with_sage / ".sage" / "checkpoints"
+        assert (
+            project_with_sage / ".sage" / "checkpoints" in path.parents
+            or path.parent == project_with_sage / ".sage" / "checkpoints"
+        )
 
     def test_load_from_project_local(self, project_with_sage: Path):
         """load_checkpoint() loads from project-local directory."""
@@ -224,13 +226,23 @@ class TestMCPProjectIntegration:
         (global_dir / "checkpoints").mkdir()
         return global_dir
 
-    def test_mcp_save_checkpoint_uses_project_root(self, project_with_sage: Path):
+    @pytest.fixture
+    def sync_config(self, monkeypatch):
+        """Disable async mode for these tests."""
+        config = SageConfig(async_enabled=False)
+        monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda project_path=None: config)
+        return config
+
+    @pytest.mark.asyncio
+    async def test_mcp_save_checkpoint_uses_project_root(
+        self, project_with_sage: Path, sync_config
+    ):
         """sage_save_checkpoint() saves to project-local when _PROJECT_ROOT is set."""
         from sage import mcp_server
 
         # Patch the module-level _PROJECT_ROOT
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_save_checkpoint(
+            result = await mcp_server.sage_save_checkpoint(
                 core_question="MCP integration test question",
                 thesis="MCP saves to project-local directory",
                 confidence=0.8,
@@ -245,13 +257,16 @@ class TestMCPProjectIntegration:
         checkpoint_files = list(checkpoints_dir.glob("*.md"))
         assert len(checkpoint_files) == 1
 
-    def test_mcp_list_checkpoints_uses_project_root(self, project_with_sage: Path):
+    @pytest.mark.asyncio
+    async def test_mcp_list_checkpoints_uses_project_root(
+        self, project_with_sage: Path, sync_config
+    ):
         """sage_list_checkpoints() lists from project-local when _PROJECT_ROOT is set."""
         from sage import mcp_server
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # Save a checkpoint first
-            mcp_server.sage_save_checkpoint(
+            await mcp_server.sage_save_checkpoint(
                 core_question="List test",
                 thesis="Checkpoint for listing",
                 confidence=0.7,
@@ -264,13 +279,16 @@ class TestMCPProjectIntegration:
         assert "Found 1 checkpoint(s)" in result
         assert "Checkpoint for listing" in result
 
-    def test_mcp_load_checkpoint_uses_project_root(self, project_with_sage: Path):
+    @pytest.mark.asyncio
+    async def test_mcp_load_checkpoint_uses_project_root(
+        self, project_with_sage: Path, sync_config
+    ):
         """sage_load_checkpoint() loads from project-local when _PROJECT_ROOT is set."""
         from sage import mcp_server
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # Save a checkpoint
-            save_result = mcp_server.sage_save_checkpoint(
+            save_result = await mcp_server.sage_save_checkpoint(
                 core_question="Load test question",
                 thesis="Checkpoint for loading test",
                 confidence=0.85,
@@ -286,12 +304,13 @@ class TestMCPProjectIntegration:
         assert "Load test question" in load_result
         assert "Checkpoint for loading test" in load_result
 
-    def test_mcp_autosave_check_uses_project_root(self, project_with_sage: Path):
+    @pytest.mark.asyncio
+    async def test_mcp_autosave_check_uses_project_root(self, project_with_sage: Path, sync_config):
         """sage_autosave_check() saves to project-local when _PROJECT_ROOT is set."""
         from sage import mcp_server
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_autosave_check(
+            result = await mcp_server.sage_autosave_check(
                 trigger_event="synthesis",
                 core_question="Autosave integration test",
                 current_thesis="Testing autosave with project-local storage",
@@ -305,8 +324,9 @@ class TestMCPProjectIntegration:
         checkpoint_files = list(checkpoints_dir.glob("*.md"))
         assert len(checkpoint_files) == 1
 
-    def test_mcp_deduplication_is_project_scoped(
-        self, project_with_sage: Path, global_sage_dir: Path
+    @pytest.mark.asyncio
+    async def test_mcp_deduplication_is_project_scoped(
+        self, project_with_sage: Path, global_sage_dir: Path, sync_config
     ):
         """Deduplication only checks within the same project scope."""
         from sage import mcp_server
@@ -316,7 +336,7 @@ class TestMCPProjectIntegration:
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            mcp_server.sage_save_checkpoint(
+            await mcp_server.sage_save_checkpoint(
                 core_question="Global question",
                 thesis="This thesis exists globally",
                 confidence=0.8,
@@ -325,7 +345,7 @@ class TestMCPProjectIntegration:
 
         # Same thesis should save to project-local (different scope = not duplicate)
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_autosave_check(
+            result = await mcp_server.sage_autosave_check(
                 trigger_event="synthesis",
                 core_question="Project question",
                 current_thesis="This thesis exists globally",  # Same thesis
@@ -335,13 +355,14 @@ class TestMCPProjectIntegration:
         # Should save, not be flagged as duplicate
         assert "📍 Autosaved:" in result
 
-    def test_mcp_deduplication_within_project(self, project_with_sage: Path):
+    @pytest.mark.asyncio
+    async def test_mcp_deduplication_within_project(self, project_with_sage: Path, sync_config):
         """Deduplication detects duplicates within the same project."""
         from sage import mcp_server
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # First save
-            mcp_server.sage_save_checkpoint(
+            await mcp_server.sage_save_checkpoint(
                 core_question="Dedup test",
                 thesis="This is a unique thesis for deduplication testing",
                 confidence=0.8,
@@ -349,7 +370,7 @@ class TestMCPProjectIntegration:
             )
 
             # Try to save very similar thesis
-            result = mcp_server.sage_autosave_check(
+            result = await mcp_server.sage_autosave_check(
                 trigger_event="synthesis",
                 core_question="Dedup test",
                 current_thesis="This is a unique thesis for deduplication testing",
@@ -359,15 +380,16 @@ class TestMCPProjectIntegration:
         # Should be flagged as duplicate
         assert "⏸ Not saving: semantically similar" in result
 
-    def test_mcp_project_and_global_isolation(
-        self, project_with_sage: Path, global_sage_dir: Path
+    @pytest.mark.asyncio
+    async def test_mcp_project_and_global_isolation(
+        self, project_with_sage: Path, global_sage_dir: Path, sync_config
     ):
         """Project-local and global checkpoints are fully isolated through MCP."""
         from sage import mcp_server
 
         # Save to project-local
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            mcp_server.sage_save_checkpoint(
+            await mcp_server.sage_save_checkpoint(
                 core_question="Project question",
                 thesis="Project-local checkpoint via MCP",
                 confidence=0.8,
@@ -380,7 +402,7 @@ class TestMCPProjectIntegration:
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            mcp_server.sage_save_checkpoint(
+            await mcp_server.sage_save_checkpoint(
                 core_question="Global question",
                 thesis="Global checkpoint via MCP",
                 confidence=0.8,
@@ -395,7 +417,8 @@ class TestMCPProjectIntegration:
         assert "Global checkpoint via MCP" in global_list
         assert "Project-local checkpoint via MCP" not in global_list
 
-    def test_mcp_with_no_project_root_uses_global(self, global_sage_dir: Path):
+    @pytest.mark.asyncio
+    async def test_mcp_with_no_project_root_uses_global(self, global_sage_dir: Path, sync_config):
         """When _PROJECT_ROOT is None, MCP tools use global directory."""
         from sage import mcp_server
 
@@ -403,7 +426,7 @@ class TestMCPProjectIntegration:
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            result = mcp_server.sage_save_checkpoint(
+            result = await mcp_server.sage_save_checkpoint(
                 core_question="Fallback test",
                 thesis="Should save to global when no project",
                 confidence=0.7,

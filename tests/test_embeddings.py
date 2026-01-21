@@ -9,18 +9,14 @@ import pytest
 
 from sage.embeddings import (
     DEFAULT_MODEL,
-    EMBEDDINGS_DIR,
-    EMBEDDINGS_META_FILE,
     MODEL_INFO,
     EmbeddingStore,
-    SimilarItem,
     check_model_mismatch,
     cosine_similarity,
     cosine_similarity_matrix,
     find_similar,
     get_configured_model,
     get_model_info,
-    is_available,
     load_embeddings,
     save_embeddings,
 )
@@ -38,11 +34,13 @@ def mock_embeddings_dir(tmp_path: Path):
 def sample_embeddings():
     """Create sample normalized embeddings for testing."""
     # 3 vectors of dimension 4, normalized
-    embeddings = np.array([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.707, 0.707, 0.0, 0.0],  # 45 degrees between first two
-    ])
+    embeddings = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.707, 0.707, 0.0, 0.0],  # 45 degrees between first two
+        ]
+    )
     # Normalize
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     return embeddings / norms
@@ -194,7 +192,7 @@ class TestSaveLoadEmbeddings:
         # Mock get_model_info to return matching dimension for test embeddings
         monkeypatch.setattr(
             "sage.embeddings.get_model_info",
-            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0}
+            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0},
         )
 
         store = EmbeddingStore.empty(dim=3)
@@ -297,13 +295,13 @@ class TestIsAvailable:
     def test_unavailable_when_not_installed(self):
         """is_available() returns False when sentence-transformers not installed."""
         with patch.dict("sys.modules", {"sentence_transformers": None}):
-            import importlib
             from sage import embeddings
 
             # Create a version that actually checks import
             def check_available():
                 try:
                     import sentence_transformers  # noqa: F401
+
                     return True
                 except (ImportError, TypeError):
                     return False
@@ -324,12 +322,16 @@ class TestGetEmbedding:
         mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
         mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
 
-        with patch("sage.embeddings.is_available", return_value=True), \
-             patch("sage.embeddings.get_model") as mock_get_model:
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+        ):
             from sage.embeddings import ok
+
             mock_get_model.return_value = ok(mock_model)
 
             from sage.embeddings import get_embedding
+
             result = get_embedding("test text")
 
             assert result.is_ok()
@@ -340,6 +342,7 @@ class TestGetEmbedding:
         """get_embedding() returns error when embeddings unavailable."""
         with patch("sage.embeddings.is_available", return_value=False):
             from sage.embeddings import get_model
+
             result = get_model()
 
             assert result.is_err()
@@ -449,10 +452,13 @@ class TestQueryEmbedding:
         mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
         mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
 
-        with patch("sage.embeddings.is_available", return_value=True), \
-             patch("sage.embeddings.get_model") as mock_get_model, \
-             patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"):
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"),
+        ):
             from sage.embeddings import get_query_embedding, ok
+
             mock_get_model.return_value = ok(mock_model)
 
             result = get_query_embedding("test query")
@@ -470,10 +476,13 @@ class TestQueryEmbedding:
         mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
         mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
 
-        with patch("sage.embeddings.is_available", return_value=True), \
-             patch("sage.embeddings.get_model") as mock_get_model, \
-             patch("sage.embeddings.get_configured_model", return_value="all-MiniLM-L6-v2"):
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch("sage.embeddings.get_configured_model", return_value="all-MiniLM-L6-v2"),
+        ):
             from sage.embeddings import get_query_embedding, ok
+
             mock_get_model.return_value = ok(mock_model)
 
             result = get_query_embedding("test query")
@@ -490,10 +499,13 @@ class TestQueryEmbedding:
         mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
         mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
 
-        with patch("sage.embeddings.is_available", return_value=True), \
-             patch("sage.embeddings.get_model") as mock_get_model, \
-             patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"):
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"),
+        ):
             from sage.embeddings import get_embedding, ok
+
             mock_get_model.return_value = ok(mock_model)
 
             result = get_embedding("document text")
@@ -512,7 +524,9 @@ class TestModelMismatchDetection:
         """No metadata file means no mismatch."""
         # Point to empty temp dir
         monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", tmp_path / "meta.json")
-        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+        monkeypatch.setattr(
+            "sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5"
+        )
 
         is_mismatch, stored, current = check_model_mismatch()
 
@@ -525,7 +539,9 @@ class TestModelMismatchDetection:
         meta_file = tmp_path / "meta.json"
         meta_file.write_text(json.dumps({"model": "BAAI/bge-large-en-v1.5"}))
         monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
-        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+        monkeypatch.setattr(
+            "sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5"
+        )
 
         is_mismatch, stored, current = check_model_mismatch()
 
@@ -538,7 +554,9 @@ class TestModelMismatchDetection:
         meta_file = tmp_path / "meta.json"
         meta_file.write_text(json.dumps({"model": "all-MiniLM-L6-v2"}))
         monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
-        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+        monkeypatch.setattr(
+            "sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5"
+        )
 
         is_mismatch, stored, current = check_model_mismatch()
 
@@ -559,7 +577,9 @@ class TestModelMismatchDetection:
         meta_file.write_text(json.dumps({"model": "all-MiniLM-L6-v2"}))
 
         monkeypatch.setattr("sage.embeddings.EMBEDDINGS_META_FILE", meta_file)
-        monkeypatch.setattr("sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5")
+        monkeypatch.setattr(
+            "sage.embeddings.get_configured_model", lambda: "BAAI/bge-large-en-v1.5"
+        )
 
         result = load_embeddings(embeddings_path)
 
@@ -624,20 +644,76 @@ class TestBatchEmbeddings:
     def test_batch_embeddings_returns_correct_shape(self):
         """Batch embeddings returns correct shape."""
         mock_model = MagicMock()
-        mock_embeddings = np.array([
-            [0.5, 0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5, -0.5],
-        ])
+        mock_embeddings = np.array(
+            [
+                [0.5, 0.5, 0.5, 0.5],
+                [0.5, 0.5, 0.5, -0.5],
+            ]
+        )
         # Normalize
         mock_embeddings = mock_embeddings / np.linalg.norm(mock_embeddings, axis=1, keepdims=True)
         mock_model.encode.return_value = mock_embeddings
 
-        with patch("sage.embeddings.is_available", return_value=True), \
-             patch("sage.embeddings.get_model") as mock_get_model:
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+        ):
             from sage.embeddings import get_embeddings_batch, ok
+
             mock_get_model.return_value = ok(mock_model)
 
             result = get_embeddings_batch(["text1", "text2"])
 
             assert result.is_ok()
             assert result.unwrap().shape == (2, 4)
+
+
+class TestClearModelCache:
+    """Tests for clear_model_cache function."""
+
+    def test_clear_model_cache_clears_globals(self, monkeypatch):
+        """clear_model_cache clears the cached model and name."""
+        import sage.embeddings
+
+        # Set up cached state
+        mock_model = MagicMock()
+        monkeypatch.setattr(sage.embeddings, "_model", mock_model)
+        monkeypatch.setattr(sage.embeddings, "_model_name", "test-model")
+
+        # Clear cache
+        sage.embeddings.clear_model_cache()
+
+        # Verify cleared
+        assert sage.embeddings._model is None
+        assert sage.embeddings._model_name is None
+
+    def test_clear_model_cache_no_op_when_empty(self, monkeypatch):
+        """clear_model_cache is safe when no model is cached."""
+        import sage.embeddings
+
+        # Ensure no cached model
+        monkeypatch.setattr(sage.embeddings, "_model", None)
+        monkeypatch.setattr(sage.embeddings, "_model_name", None)
+
+        # Should not raise
+        sage.embeddings.clear_model_cache()
+
+        assert sage.embeddings._model is None
+        assert sage.embeddings._model_name is None
+
+    def test_clear_model_cache_allows_new_model_load(self, monkeypatch):
+        """After clearing cache, get_model loads fresh model."""
+        import sage.embeddings
+
+        # Simulate cached model
+        old_model = MagicMock()
+        old_model.name = "old"
+        monkeypatch.setattr(sage.embeddings, "_model", old_model)
+        monkeypatch.setattr(sage.embeddings, "_model_name", "old-model")
+
+        # Clear cache
+        sage.embeddings.clear_model_cache()
+
+        # Verify next get_model would load fresh (by checking globals are None)
+        assert sage.embeddings._model is None
+        # If we called get_model now, it would load a new model

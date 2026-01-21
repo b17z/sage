@@ -2,6 +2,24 @@
 
 Exposes checkpoint and knowledge operations as MCP tools for Claude Code.
 
+Architecture (v2.0 - Async with Task Polling)
+---------------------------------------------
+Write operations (checkpoint/knowledge saves) are now async:
+
+1. Tool receives request
+2. Tool validates input (fast, sync)
+3. Tool queues Task and returns "📋 Queued" + POLL instructions immediately
+4. Claude spawns background Task subagent to poll using Read tool
+5. Worker processes Task in background via asyncio.to_thread()
+6. Worker writes result to ~/.sage/tasks/<task_id>.result
+7. Worker touches ~/.sage/tasks/<task_id>.done (signals completion)
+8. Task subagent detects .done file via Read, returns result
+9. Claude Code shows native <task-notification> automatically
+
+This approach gives native subagent-like UX with no bash permissions needed.
+
+Read operations remain synchronous (Claude needs the result immediately).
+
 Usage:
     python -m sage.mcp_server
 
@@ -16,9 +34,37 @@ Or via Claude Code MCP config:
     }
 """
 
+from __future__ import annotations
+
+import asyncio
+from typing import TYPE_CHECKING
+
 from mcp.server.fastmcp import FastMCP
 
-from sage.config import detect_project_root
+from sage.config import detect_project_root, get_sage_config
+from sage.logging import (
+    get_logger,
+    log_task_completed,
+    log_task_failed,
+    log_task_queued,
+    log_task_started,
+)
+from sage.tasks import (
+    Task,
+    TaskResult,
+    clear_pending_tasks,
+    generate_task_id,
+    get_task_paths,
+    load_pending_tasks,
+    save_pending_tasks,
+    validate_task_data,
+    write_task_result,
+)
+
+if TYPE_CHECKING:
+    pass
+
+logger = get_logger(__name__)
 from sage.checkpoint import (
     Checkpoint,
     create_checkpoint_from_dict,
@@ -29,7 +75,6 @@ from sage.checkpoint import (
     save_checkpoint,
 )
 from sage.knowledge import (
-    KNOWLEDGE_TYPES,
     add_knowledge,
     format_recalled_context,
     get_pending_todos,
@@ -40,11 +85,338 @@ from sage.knowledge import (
     remove_knowledge,
 )
 
+
+def _format_poll_instructions(task_id: str) -> str:
+    """Format polling instructions for Claude to track async task completion.
+
+    Uses a background Task agent to poll for completion and return results.
+    Agent type and model are configurable via SageConfig (poll_agent_type, poll_agent_model).
+
+    Use `sage_reload_config` to pick up changes without restarting Claude Code.
+    """
+    config = get_sage_config(_PROJECT_ROOT)
+    paths = get_task_paths(task_id)
+    prompt = f"""Poll for Sage async task completion:
+
+1. Read file: {paths["done_file"]}
+2. If "file not found" error, run: Bash(sleep 2), then goto step 1
+3. Once file exists, Read: {paths["result_file"]}
+4. Parse JSON, return the "message" field value
+
+Max 30 attempts. If timeout, return "Sage: task timed out after 60s"."""
+
+    agent_type = config.poll_agent_type
+    model = config.poll_agent_model
+    return f"POLL: Task(subagent_type='{agent_type}', model='{model}', run_in_background=true, prompt=below)\n```\n{prompt}\n```"
+
+
 # Initialize MCP server
 mcp = FastMCP("sage")
 
 # Detect project root at startup for project-local checkpoints
 _PROJECT_ROOT = detect_project_root()
+
+# =============================================================================
+# Async Infrastructure
+# =============================================================================
+
+# Task queue for background processing
+_task_queue: asyncio.Queue[Task] = asyncio.Queue()
+
+# Worker task handle (for shutdown)
+_worker_task: asyncio.Task | None = None
+
+# Shutdown flag
+_shutdown_requested: bool = False
+
+
+async def _worker() -> None:
+    """Background worker that processes tasks from queue.
+
+    Runs continuously until shutdown is requested.
+    Processes tasks via asyncio.to_thread() to avoid blocking.
+    """
+    global _shutdown_requested
+    import time
+
+    while not _shutdown_requested:
+        try:
+            # Wait for task with timeout to check shutdown flag periodically
+            try:
+                task = await asyncio.wait_for(_task_queue.get(), timeout=1.0)
+            except TimeoutError:
+                continue
+
+            # Log task started
+            log_task_started(task.id, task.type)
+            start_time = time.monotonic()
+
+            # Process the task
+            try:
+                result = await _process_task(task)
+
+                # Calculate duration
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+
+                # Write task result file for Task polling to pick up
+                write_task_result(
+                    task_id=task.id,
+                    status=result.status,
+                    message=result.message,
+                    error=result.error,
+                )
+
+                # Log completion
+                if result.status == "success":
+                    log_task_completed(task.id, task.type, duration_ms)
+                else:
+                    log_task_failed(task.id, task.type, result.error or "Unknown error")
+
+            except Exception as e:
+                # Unexpected error - write failure result
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+                log_task_failed(task.id, task.type, str(e))
+                write_task_result(
+                    task_id=task.id,
+                    status="failed",
+                    message=f"Task failed: {e}",
+                    error=str(e),
+                )
+
+            finally:
+                _task_queue.task_done()
+
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            # Don't let worker crash from unexpected errors
+            logger.error("Worker encountered unexpected error", exc_info=True)
+
+
+async def _process_task(task: Task) -> TaskResult:
+    """Process a single task in a thread pool.
+
+    Args:
+        task: Task to process
+
+    Returns:
+        TaskResult with success/failure status
+    """
+    try:
+        if task.type == "checkpoint":
+            return await asyncio.to_thread(_sync_save_checkpoint, task)
+        elif task.type == "knowledge":
+            return await asyncio.to_thread(_sync_save_knowledge, task)
+        else:
+            return TaskResult(
+                task_id=task.id,
+                status="failed",
+                message=f"Unknown task type: {task.type}",
+                error=f"Invalid type: {task.type}",
+            )
+    except Exception as e:
+        logger.exception(f"Task processing failed: {task.id}")
+        return TaskResult(
+            task_id=task.id,
+            status="failed",
+            message=f"Task failed: {e}",
+            error=str(e),
+        )
+
+
+def _sync_save_checkpoint(task: Task) -> TaskResult:
+    """Synchronous checkpoint save (runs in thread pool).
+
+    Args:
+        task: Checkpoint task with data
+
+    Returns:
+        TaskResult with success/failure status
+    """
+    try:
+        data = task.data
+
+        checkpoint = create_checkpoint_from_dict(
+            data,
+            trigger=data.get("trigger", "synthesis"),
+            template=data.get("template", "default"),
+        )
+
+        # Add depth metadata if present
+        if data.get("message_count") or data.get("token_estimate"):
+            checkpoint = Checkpoint(
+                id=checkpoint.id,
+                ts=checkpoint.ts,
+                trigger=checkpoint.trigger,
+                core_question=checkpoint.core_question,
+                thesis=checkpoint.thesis,
+                confidence=checkpoint.confidence,
+                open_questions=checkpoint.open_questions,
+                sources=checkpoint.sources,
+                tensions=checkpoint.tensions,
+                unique_contributions=checkpoint.unique_contributions,
+                key_evidence=checkpoint.key_evidence,
+                reasoning_trace=checkpoint.reasoning_trace,
+                action_goal=checkpoint.action_goal,
+                action_type=checkpoint.action_type,
+                skill=checkpoint.skill,
+                project=checkpoint.project,
+                parent_checkpoint=checkpoint.parent_checkpoint,
+                message_count=data.get("message_count", 0),
+                token_estimate=data.get("token_estimate", 0),
+            )
+
+        path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+
+        template = data.get("template", "default")
+        template_info = f" (template: {template})" if template != "default" else ""
+
+        return TaskResult(
+            task_id=task.id,
+            status="success",
+            message=f"Checkpoint saved: {checkpoint.id}{template_info}",
+        )
+
+    except Exception as e:
+        logger.exception(f"Checkpoint save failed: {task.id}")
+        return TaskResult(
+            task_id=task.id,
+            status="failed",
+            message=f"Checkpoint save failed: {e}",
+            error=str(e),
+        )
+
+
+def _sync_save_knowledge(task: Task) -> TaskResult:
+    """Synchronous knowledge save (runs in thread pool).
+
+    Args:
+        task: Knowledge task with data
+
+    Returns:
+        TaskResult with success/failure status
+    """
+    try:
+        data = task.data
+
+        item = add_knowledge(
+            content=data["content"],
+            knowledge_id=data["knowledge_id"],
+            keywords=data["keywords"],
+            skill=data.get("skill"),
+            source=data.get("source", ""),
+            item_type=data.get("item_type", "knowledge"),
+        )
+
+        scope = f"skill:{data.get('skill')}" if data.get("skill") else "global"
+        type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
+
+        return TaskResult(
+            task_id=task.id,
+            status="success",
+            message=f"Knowledge saved: {item.id}{type_label} ({scope})",
+        )
+
+    except Exception as e:
+        logger.exception(f"Knowledge save failed: {task.id}")
+        return TaskResult(
+            task_id=task.id,
+            status="failed",
+            message=f"Knowledge save failed: {e}",
+            error=str(e),
+        )
+
+
+async def _warmup_model() -> None:
+    """Pre-load embedding model in background.
+
+    This prevents the 30+ second first-load delay from blocking MCP tools.
+    """
+    try:
+        from sage import embeddings
+
+        if embeddings.is_available():
+            logger.info("Warming up embedding model...")
+            await asyncio.to_thread(embeddings.get_model)
+            logger.info("Embedding model warmed up")
+    except Exception:
+        # Warmup failure is not critical
+        logger.warning("Embedding model warmup failed (will load on first use)")
+
+
+async def _reload_pending_tasks() -> None:
+    """Reload pending tasks from previous session."""
+    tasks = load_pending_tasks()
+    if tasks:
+        logger.info(f"Reloading {len(tasks)} pending tasks from previous session")
+        for task in tasks:
+            await _task_queue.put(task)
+        clear_pending_tasks()
+
+
+# =============================================================================
+# Lifecycle Management
+# =============================================================================
+
+
+def _ensure_worker_running() -> None:
+    """Ensure the background worker is running.
+
+    This is called lazily when a task needs to be queued.
+    Uses module-level state to ensure single worker instance.
+    """
+    global _worker_task, _shutdown_requested
+
+    if _worker_task is not None and not _worker_task.done():
+        return  # Worker already running
+
+    if _shutdown_requested:
+        return  # Don't start if shutting down
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - this shouldn't happen in async context
+        logger.warning("No event loop - worker not started")
+        return
+
+    _worker_task = loop.create_task(_worker())
+    logger.info("Sage async worker started")
+
+    # Reload pending tasks on first start
+    loop.create_task(_reload_pending_tasks())
+
+    # Warm up model (fire and forget)
+    loop.create_task(_warmup_model())
+
+
+def _sync_shutdown() -> None:
+    """Synchronous shutdown handler for atexit.
+
+    Note: This runs in a sync context, so we can't await the queue.
+    We just save any pending tasks for next session.
+    """
+    global _shutdown_requested
+
+    _shutdown_requested = True
+
+    # Save any remaining tasks synchronously
+    pending = []
+    while not _task_queue.empty():
+        try:
+            pending.append(_task_queue.get_nowait())
+        except Exception:
+            break
+
+    if pending:
+        save_pending_tasks(pending)
+        logger.info(f"Saved {len(pending)} pending tasks for next session")
+
+
+# Register shutdown handler
+import atexit
+
+atexit.register(_sync_shutdown)
 
 
 # =============================================================================
@@ -53,7 +425,7 @@ _PROJECT_ROOT = detect_project_root()
 
 
 @mcp.tool()
-def sage_save_checkpoint(
+async def sage_save_checkpoint(
     core_question: str,
     thesis: str,
     confidence: float,
@@ -90,12 +462,13 @@ def sage_save_checkpoint(
         template: Checkpoint template to use (default, research, decision, code-review)
 
     Returns:
-        Confirmation message with checkpoint ID
+        Confirmation message with checkpoint ID (queued for async save)
     """
-    # Validate confidence bounds
+    # Validate confidence bounds (fast, sync)
     if not (0.0 <= confidence <= 1.0):
         return f"⏸ Invalid confidence {confidence}: must be between 0.0 and 1.0"
 
+    # Build task data
     data = {
         "core_question": core_question,
         "thesis": thesis,
@@ -107,13 +480,48 @@ def sage_save_checkpoint(
         "action": {"goal": action_goal, "type": action_type},
         "key_evidence": key_evidence or [],
         "reasoning_trace": reasoning_trace,
+        "trigger": trigger,
+        "template": template,
     }
 
-    checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
-    path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+    # Validate task data
+    is_valid, error_msg = validate_task_data("checkpoint", data)
+    if not is_valid:
+        return f"⏸ Invalid checkpoint data: {error_msg}"
 
-    template_info = f" (template: {template})" if template != "default" else ""
-    return f"✓ Checkpoint saved: {checkpoint.id}{template_info}\nPath: {path}"
+    # Check if async is enabled
+    config = get_sage_config(_PROJECT_ROOT)
+
+    if config.async_enabled:
+        # Ensure worker is running
+        _ensure_worker_running()
+
+        # Queue for async processing
+        task = Task(
+            id=generate_task_id(),
+            type="checkpoint",
+            data=data,
+        )
+        await _task_queue.put(task)
+        log_task_queued(task.id, task.type)
+
+        thesis_preview = thesis[:50] + "..." if len(thesis) > 50 else thesis
+        thesis_preview = thesis_preview.replace("\n", " ")
+        template_info = f" (template: {template})" if template != "default" else ""
+
+        poll_instructions = _format_poll_instructions(task.id)
+        return (
+            f"📋 Checkpoint queued{template_info}: {thesis_preview}\n"
+            f"Task: {task.id}\n\n"
+            f"{poll_instructions}"
+        )
+    else:
+        # Sync fallback
+        checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
+        path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+
+        template_info = f" (template: {template})" if template != "default" else ""
+        return f"✓ Checkpoint saved: {checkpoint.id}{template_info}\nPath: {path}"
 
 
 @mcp.tool()
@@ -241,7 +649,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-def sage_save_knowledge(
+async def sage_save_knowledge(
     knowledge_id: str,
     content: str,
     keywords: list[str],
@@ -263,20 +671,62 @@ def sage_save_knowledge(
         item_type: Type of knowledge (knowledge, preference, todo, reference)
 
     Returns:
-        Confirmation message
+        Confirmation message (queued for async save)
     """
-    item = add_knowledge(
-        content=content,
-        knowledge_id=knowledge_id,
-        keywords=keywords,
-        skill=skill,
-        source=source,
-        item_type=item_type,
-    )
+    # Build task data
+    data = {
+        "knowledge_id": knowledge_id,
+        "content": content,
+        "keywords": keywords,
+        "skill": skill,
+        "source": source,
+        "item_type": item_type,
+    }
 
-    scope = f"skill:{skill}" if skill else "global"
-    type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
-    return f"✓ Knowledge saved: {item.id}{type_label} ({scope}, ~{item.metadata.tokens} tokens)"
+    # Validate task data
+    is_valid, error_msg = validate_task_data("knowledge", data)
+    if not is_valid:
+        return f"⏸ Invalid knowledge data: {error_msg}"
+
+    # Check if async is enabled
+    config = get_sage_config(_PROJECT_ROOT)
+
+    if config.async_enabled:
+        # Ensure worker is running
+        _ensure_worker_running()
+
+        # Queue for async processing
+        task = Task(
+            id=generate_task_id(),
+            type="knowledge",
+            data=data,
+        )
+        await _task_queue.put(task)
+        log_task_queued(task.id, task.type)
+
+        scope = f"skill:{skill}" if skill else "global"
+        type_label = f" [{item_type}]" if item_type != "knowledge" else ""
+
+        poll_instructions = _format_poll_instructions(task.id)
+        return (
+            f"📋 Knowledge queued: {knowledge_id}{type_label} ({scope})\n"
+            f"Task: {task.id}\n\n"
+            f"{poll_instructions}"
+        )
+    else:
+        # Sync fallback
+        item = add_knowledge(
+            content=content,
+            knowledge_id=knowledge_id,
+            keywords=keywords,
+            skill=skill,
+            source=source,
+            item_type=item_type,
+        )
+
+        scope = f"skill:{skill}" if skill else "global"
+        type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
+        return f"✓ Knowledge saved: {item.id}{type_label} ({scope}, ~{item.metadata.tokens} tokens)"
 
 
 @mcp.tool()
@@ -421,6 +871,59 @@ def sage_get_pending_todos() -> str:
 
 
 # =============================================================================
+# Admin Tools
+# =============================================================================
+
+
+@mcp.tool()
+def sage_reload_config() -> str:
+    """Reload Sage configuration and clear cached models.
+
+    Call this after changing Sage config (e.g., embedding_model) to pick up
+    changes without restarting Claude Code. Clears the cached embedding model
+    so the next operation loads the newly configured model.
+
+    Returns:
+        Status message showing what was reloaded
+    """
+    global _PROJECT_ROOT
+
+    from sage import embeddings
+    from sage.config import detect_project_root, get_sage_config
+
+    # Re-detect project root
+    old_project = _PROJECT_ROOT
+    _PROJECT_ROOT = detect_project_root()
+    project_changed = old_project != _PROJECT_ROOT
+
+    # Clear embedding model cache
+    old_model = embeddings._model_name
+    embeddings.clear_model_cache()
+
+    # Get new config to show what's active
+    config = get_sage_config(_PROJECT_ROOT)
+
+    lines = ["✓ Configuration reloaded\n"]
+
+    if project_changed:
+        lines.append(f"  Project root: {old_project} -> {_PROJECT_ROOT}")
+    else:
+        lines.append(f"  Project root: {_PROJECT_ROOT or '(none)'}")
+
+    if old_model:
+        lines.append(f"  Cleared cached model: {old_model}")
+        lines.append(f"  New model (on next use): {config.embedding_model}")
+    else:
+        lines.append(f"  Embedding model: {config.embedding_model}")
+
+    lines.append(f"  Recall threshold: {config.recall_threshold}")
+    lines.append(f"  Dedup threshold: {config.dedup_threshold}")
+    lines.append(f"  Poll agent: {config.poll_agent_type} ({config.poll_agent_model})")
+
+    return "\n".join(lines)
+
+
+# =============================================================================
 # Autosave Tools
 # =============================================================================
 
@@ -440,7 +943,7 @@ AUTOSAVE_THRESHOLDS = {
 
 
 @mcp.tool()
-def sage_autosave_check(
+async def sage_autosave_check(
     trigger_event: str,
     core_question: str,
     current_thesis: str,
@@ -477,10 +980,8 @@ def sage_autosave_check(
         token_estimate: Estimated tokens used (for depth threshold)
 
     Returns:
-        Confirmation if saved, or explanation if not saved
+        Confirmation if saved/queued, or explanation if not saved
     """
-    from sage.config import get_sage_config
-
     config = get_sage_config(_PROJECT_ROOT)
 
     # Validate confidence bounds
@@ -523,6 +1024,7 @@ def sage_autosave_check(
             )
 
     # Check for duplicate (semantic similarity to recent checkpoints)
+    # This check runs sync since it's fast (just embedding comparison)
     dedup_result = is_duplicate_checkpoint(current_thesis, project_path=_PROJECT_ROOT)
     if dedup_result.is_duplicate:
         return (
@@ -531,7 +1033,7 @@ def sage_autosave_check(
             f"Similar: {dedup_result.similar_checkpoint_id}"
         )
 
-    # Save the checkpoint
+    # Build checkpoint data
     data = {
         "core_question": core_question,
         "thesis": current_thesis,
@@ -543,39 +1045,62 @@ def sage_autosave_check(
         "action": {"goal": "", "type": "learning"},
         "key_evidence": key_evidence or [],
         "reasoning_trace": reasoning_trace,
+        "trigger": trigger_event,
+        "template": "default",
+        "message_count": message_count,
+        "token_estimate": token_estimate,
     }
-
-    checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
-
-    # Add depth metadata to checkpoint
-    checkpoint = Checkpoint(
-        id=checkpoint.id,
-        ts=checkpoint.ts,
-        trigger=checkpoint.trigger,
-        core_question=checkpoint.core_question,
-        thesis=checkpoint.thesis,
-        confidence=checkpoint.confidence,
-        open_questions=checkpoint.open_questions,
-        sources=checkpoint.sources,
-        tensions=checkpoint.tensions,
-        unique_contributions=checkpoint.unique_contributions,
-        key_evidence=checkpoint.key_evidence,
-        reasoning_trace=checkpoint.reasoning_trace,
-        action_goal=checkpoint.action_goal,
-        action_type=checkpoint.action_type,
-        skill=checkpoint.skill,
-        project=checkpoint.project,
-        parent_checkpoint=checkpoint.parent_checkpoint,
-        message_count=message_count,
-        token_estimate=token_estimate,
-    )
-
-    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis
     thesis_preview = thesis_preview.replace("\n", " ")
 
-    return f"📍 Autosaved: {thesis_preview}\nCheckpoint: {checkpoint.id}"
+    if config.async_enabled:
+        # Ensure worker is running
+        _ensure_worker_running()
+
+        # Queue for async processing
+        task = Task(
+            id=generate_task_id(),
+            type="checkpoint",
+            data=data,
+        )
+        await _task_queue.put(task)
+        log_task_queued(task.id, task.type)
+
+        poll_instructions = _format_poll_instructions(task.id)
+        return (
+            f"📋 Autosave queued: {thesis_preview}\n" f"Task: {task.id}\n\n" f"{poll_instructions}"
+        )
+    else:
+        # Sync fallback
+        checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
+
+        # Add depth metadata to checkpoint
+        checkpoint = Checkpoint(
+            id=checkpoint.id,
+            ts=checkpoint.ts,
+            trigger=checkpoint.trigger,
+            core_question=checkpoint.core_question,
+            thesis=checkpoint.thesis,
+            confidence=checkpoint.confidence,
+            open_questions=checkpoint.open_questions,
+            sources=checkpoint.sources,
+            tensions=checkpoint.tensions,
+            unique_contributions=checkpoint.unique_contributions,
+            key_evidence=checkpoint.key_evidence,
+            reasoning_trace=checkpoint.reasoning_trace,
+            action_goal=checkpoint.action_goal,
+            action_type=checkpoint.action_type,
+            skill=checkpoint.skill,
+            project=checkpoint.project,
+            parent_checkpoint=checkpoint.parent_checkpoint,
+            message_count=message_count,
+            token_estimate=token_estimate,
+        )
+
+        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+
+        return f"📍 Autosaved: {thesis_preview}\nCheckpoint: {checkpoint.id}"
 
 
 # =============================================================================
