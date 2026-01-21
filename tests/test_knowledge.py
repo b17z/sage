@@ -190,6 +190,192 @@ class TestAddRemoveKnowledge:
         assert (mock_knowledge_paths / "global" / f"{item.id}.md").exists()
 
 
+class TestUpdateKnowledge:
+    """Tests for update_knowledge(), deprecate_knowledge(), archive_knowledge()."""
+
+    def test_update_knowledge_changes_content(self, mock_knowledge_paths: Path):
+        """update_knowledge() updates content and re-embeds."""
+        from sage.knowledge import update_knowledge
+
+        item = add_knowledge(
+            content="Original content",
+            knowledge_id="test-update",
+            keywords=["test"],
+        )
+
+        updated = update_knowledge(
+            knowledge_id="test-update",
+            content="Updated content",
+        )
+
+        assert updated is not None
+        assert updated.content == "Updated content"
+        assert updated.id == "test-update"
+
+    def test_update_knowledge_changes_keywords(self, mock_knowledge_paths: Path):
+        """update_knowledge() updates keywords."""
+        from sage.knowledge import update_knowledge
+
+        add_knowledge(
+            content="Content",
+            knowledge_id="test-keywords",
+            keywords=["old", "keywords"],
+        )
+
+        updated = update_knowledge(
+            knowledge_id="test-keywords",
+            keywords=["new", "keywords", "here"],
+        )
+
+        assert updated is not None
+        assert updated.triggers.keywords == ("new", "keywords", "here")
+
+    def test_update_knowledge_changes_status(self, mock_knowledge_paths: Path):
+        """update_knowledge() updates status."""
+        from sage.knowledge import update_knowledge
+
+        add_knowledge(
+            content="Content",
+            knowledge_id="test-status",
+            keywords=["test"],
+        )
+
+        updated = update_knowledge(
+            knowledge_id="test-status",
+            status="deprecated",
+        )
+
+        assert updated is not None
+        assert updated.metadata.status == "deprecated"
+
+    def test_update_knowledge_returns_none_for_missing(self, mock_knowledge_paths: Path):
+        """update_knowledge() returns None if item not found."""
+        from sage.knowledge import update_knowledge
+
+        result = update_knowledge(
+            knowledge_id="nonexistent-item",
+            content="New content",
+        )
+
+        assert result is None
+
+    def test_update_knowledge_preserves_unchanged_fields(self, mock_knowledge_paths: Path):
+        """update_knowledge() preserves fields not being updated."""
+        from sage.knowledge import update_knowledge
+
+        add_knowledge(
+            content="Original content",
+            knowledge_id="test-preserve",
+            keywords=["original", "keywords"],
+            source="original source",
+        )
+
+        updated = update_knowledge(
+            knowledge_id="test-preserve",
+            content="New content",
+        )
+
+        assert updated is not None
+        assert updated.content == "New content"
+        assert updated.triggers.keywords == ("original", "keywords")
+        assert updated.metadata.source == "original source"
+
+    def test_deprecate_knowledge_sets_status(self, mock_knowledge_paths: Path):
+        """deprecate_knowledge() marks item as deprecated."""
+        from sage.knowledge import deprecate_knowledge
+
+        add_knowledge(
+            content="Content",
+            knowledge_id="test-deprecate",
+            keywords=["test"],
+        )
+
+        result = deprecate_knowledge(
+            knowledge_id="test-deprecate",
+            reason="Outdated information",
+        )
+
+        assert result is not None
+        assert result.metadata.status == "deprecated"
+        assert "DEPRECATED" in result.metadata.source
+        assert "Outdated information" in result.metadata.source
+
+    def test_deprecate_knowledge_with_replacement(self, mock_knowledge_paths: Path):
+        """deprecate_knowledge() includes replacement reference."""
+        from sage.knowledge import deprecate_knowledge
+
+        add_knowledge(
+            content="Old content",
+            knowledge_id="old-item",
+            keywords=["test"],
+        )
+        add_knowledge(
+            content="New content",
+            knowledge_id="new-item",
+            keywords=["test"],
+        )
+
+        result = deprecate_knowledge(
+            knowledge_id="old-item",
+            reason="Replaced",
+            replacement_id="new-item",
+        )
+
+        assert result is not None
+        assert "new-item" in result.metadata.source
+
+    def test_archive_knowledge_sets_status(self, mock_knowledge_paths: Path):
+        """archive_knowledge() marks item as archived."""
+        from sage.knowledge import archive_knowledge
+
+        add_knowledge(
+            content="Content",
+            knowledge_id="test-archive",
+            keywords=["test"],
+        )
+
+        result = archive_knowledge("test-archive")
+
+        assert result is not None
+        assert result.metadata.status == "archived"
+
+    def test_archived_items_excluded_from_recall(self, mock_knowledge_paths: Path):
+        """Archived items are not returned by recall_knowledge()."""
+        from sage.knowledge import archive_knowledge
+
+        add_knowledge(
+            content="Content about testing",
+            knowledge_id="test-exclude",
+            keywords=["testing", "excluded"],
+        )
+
+        # Verify it matches before archiving
+        result = recall_knowledge("testing excluded", skill_name="test", threshold=0.0)
+        assert any(i.id == "test-exclude" for i in result.items)
+
+        # Archive it
+        archive_knowledge("test-exclude")
+
+        # Verify it's excluded after archiving
+        result = recall_knowledge("testing excluded", skill_name="test", threshold=0.0)
+        assert not any(i.id == "test-exclude" for i in result.items)
+
+    def test_deprecated_items_still_recalled(self, mock_knowledge_paths: Path):
+        """Deprecated items are still returned by recall_knowledge()."""
+        from sage.knowledge import deprecate_knowledge
+
+        add_knowledge(
+            content="Content about features",
+            knowledge_id="test-deprecated-recall",
+            keywords=["features", "deprecated"],
+        )
+
+        deprecate_knowledge("test-deprecated-recall", reason="Old")
+
+        result = recall_knowledge("features deprecated", skill_name="test", threshold=0.0)
+        assert any(i.id == "test-deprecated-recall" for i in result.items)
+
+
 class TestRecallKnowledge:
     """Tests for recall_knowledge()."""
 
