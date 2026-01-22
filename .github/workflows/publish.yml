@@ -29,11 +29,15 @@ jobs:
           # Update marketplace.json
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" .claude-plugin/marketplace.json
 
+          # Update sage/__init__.py
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" sage/__init__.py
+
           # Show what changed
           echo "=== Updated versions ==="
           grep "^version" pyproject.toml
           grep "version" plugins/sage/.claude-plugin/plugin.json
           grep "version" .claude-plugin/marketplace.json
+          grep "__version__" sage/__init__.py
 
       - name: Commit version bump
         run: |

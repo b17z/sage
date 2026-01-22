@@ -1,6 +1,6 @@
 """Sage: Research orchestration layer for Agent Skills."""
 
-__version__ = "1.1.0"
+__version__ = "2.2.0"
 
 # Branded types for type-safe IDs
 from sage.types import CheckpointId, KnowledgeId, SkillName, TaskId, TemplateName
