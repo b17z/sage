@@ -11,7 +11,7 @@ import pytest
 
 from sage.config import SageConfig
 from sage.mcp_server import (
-    AUTOSAVE_THRESHOLDS,
+    AUTOSAVE_TRIGGERS,
     sage_autosave_check,
     sage_list_checkpoints,
     sage_list_knowledge,
@@ -423,7 +423,7 @@ class TestAutosaveCheck:
         ]
 
         for trigger in expected_triggers:
-            assert trigger in AUTOSAVE_THRESHOLDS
+            assert trigger in AUTOSAVE_TRIGGERS
 
     async def test_autosave_rejects_invalid_confidence(self, isolated_project):
         """Rejects invalid confidence values."""

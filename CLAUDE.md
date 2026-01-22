@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.2.0 (MCP-first, knowledge management, debug tools)
-**Test count:** 675 tests (maintain or increase)
+**Current version:** v2.4.0 (session continuity, compaction watcher)
+**Test count:** 869 tests (maintain or increase)
 
 ## Quick Reference
 
@@ -21,6 +21,12 @@ sage knowledge rm <id>       # Remove knowledge item
 # Configuration
 sage config list             # Show current config
 sage config set <key> <val>  # Set a value
+
+# Session Continuity (v2.4)
+sage watcher start           # Start compaction watcher daemon
+sage watcher stop            # Stop watcher
+sage watcher status          # Check watcher status
+sage continuity status       # Check pending continuity
 ```
 
 ## MCP Tools (for Claude Code)
@@ -29,7 +35,8 @@ sage config set <key> <val>  # Set a value
 |------|---------|
 | **System** | |
 | `sage_version()` | Get version + config info |
-| `sage_health()` | System diagnostics |
+| `sage_health()` | System diagnostics + continuity injection |
+| `sage_continuity_status()` | Check/inject session continuity |
 | `sage_get_config()` | Show all config values |
 | `sage_set_config(key, value)` | Set tuning parameter |
 | `sage_reload_config()` | Apply config changes |
@@ -74,6 +81,9 @@ sage config set <key> <val>  # Set a value
 | `sage/checkpoint.py` | Checkpoint schema, save/load |
 | `sage/knowledge.py` | Knowledge storage, retrieval, hybrid scoring |
 | `sage/embeddings.py` | Embedding model, similarity functions |
+| `sage/triggers/` | Structural (embeddings) + linguistic (patterns) trigger detection |
+| `sage/continuity.py` | Session continuity markers for compaction recovery |
+| `sage/watcher.py` | Compaction watcher daemon (monitors JSONL transcripts) |
 | `sage/tasks.py` | Async task infrastructure, task polling |
 | `sage/config.py` | Config management, path constants |
 | `sage/cli.py` | Click CLI - all commands |
@@ -131,6 +141,8 @@ sage knowledge match "query"        # Test what would be recalled
 sage config list                    # Show config
 sage config set recall_threshold 0.65
 sage config set recall_threshold 0.60 --project  # Project-level
+sage config set trigger_threshold 0.60           # Trigger detection threshold
+sage config set topic_drift_threshold 0.50       # Topic similarity threshold
 sage config set poll_agent_type general-purpose  # Poll agent type
 sage config set poll_agent_model haiku           # Poll agent model
 sage config reset                   # Reset tuning to defaults

@@ -173,3 +173,37 @@ def format_error(error: SageError) -> str:
     if error.suggestion:
         result += f"\n  {error.suggestion}"
     return result
+
+
+def result_to_mcp_response[T](
+    result: Result[T, SageError],
+    success_formatter=None,
+    success_prefix: str = "✓",
+) -> str:
+    """Convert a Result to an MCP tool response string.
+
+    Provides consistent formatting for MCP tool outputs:
+    - Success: "{prefix} {formatted_value}"
+    - Error: "Error: {message}" with optional suggestion
+
+    Args:
+        result: Result to convert
+        success_formatter: Optional function to format success value
+        success_prefix: Prefix for success messages (default "✓")
+
+    Returns:
+        Formatted string suitable for MCP tool response
+
+    Example:
+        result = save_knowledge(...)
+        return result_to_mcp_response(result, lambda item: f"Saved {item.id}")
+    """
+    match result:
+        case Ok(value):
+            if success_formatter:
+                formatted = success_formatter(value)
+            else:
+                formatted = str(value)
+            return f"{success_prefix} {formatted}"
+        case Err(error):
+            return format_error(error)
