@@ -464,6 +464,7 @@ def sage_health() -> str:
 
     Use this to diagnose issues or verify Sage is properly configured.
     """
+    from sage import __version__, check_for_updates
     from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
     from sage.config import CONFIG_PATH, SAGE_DIR, get_sage_config
     from sage.embeddings import check_model_mismatch, get_configured_model, is_available
@@ -472,6 +473,14 @@ def sage_health() -> str:
 
     lines = ["Sage Health Check", "─" * 40]
     issues = []
+
+    # Check version
+    update_available, latest = check_for_updates()
+    if update_available and latest:
+        lines.append(f"⚠️ Update available: v{__version__} → v{latest}")
+        issues.append(f"Run: pip install --upgrade claude-sage")
+    else:
+        lines.append(f"✓ Version: v{__version__} (latest)")
 
     # Check .sage directory
     if SAGE_DIR.exists():
@@ -1628,8 +1637,24 @@ async def sage_autosave_check(
 # =============================================================================
 
 
+def _check_for_updates_on_startup() -> None:
+    """Check for updates and log if available."""
+    from sage import __version__, check_for_updates
+
+    try:
+        update_available, latest = check_for_updates()
+        if update_available and latest:
+            logger.warning(
+                f"Update available: v{__version__} → v{latest}. "
+                f"Run: pip install --upgrade claude-sage"
+            )
+    except Exception:
+        pass  # Never fail startup due to update check
+
+
 def main():
     """Run the Sage MCP server."""
+    _check_for_updates_on_startup()
     mcp.run()
 
 
