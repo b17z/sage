@@ -1,6 +1,6 @@
 {
   "name": "sage",
-  "version": "2.2.0",
+  "version": "2.4.0",
   "description": "Semantic checkpointing for Claude Code. Auto-checkpoint at meaningful moments, recall across sessions.",
   "author": {
     "name": "b17z",
