@@ -148,9 +148,10 @@ class SageConfig:
     embedding_weight: float = 0.70
     keyword_weight: float = 0.30
 
-    # Structural detection thresholds (for future trigger detection)
+    # Structural detection thresholds (for trigger detection)
     topic_drift_threshold: float = 0.50
     convergence_question_drop: float = 0.20
+    trigger_threshold: float = 0.60  # Combined score threshold for 70/30 hybrid
     depth_min_messages: int = 8
     depth_min_tokens: int = 2000
 
@@ -170,6 +171,34 @@ class SageConfig:
     # Poll agent settings (v2.0.2)
     poll_agent_type: str = "general-purpose"  # Agent type for task polling
     poll_agent_model: str = "haiku"  # Model for polling agent (haiku is efficient)
+
+    # Autosave trigger thresholds (v2.3) - minimum confidence to trigger checkpoint
+    autosave_research_start: float = 0.0  # Always save starting point
+    autosave_web_search_complete: float = 0.3  # Save if we learned something
+    autosave_synthesis: float = 0.5  # Save meaningful conclusions
+    autosave_topic_shift: float = 0.3  # Save before switching
+    autosave_user_validated: float = 0.4  # User confirmed something
+    autosave_constraint_discovered: float = 0.3  # Important pivot point
+    autosave_branch_point: float = 0.4  # Decision point
+    autosave_precompact: float = 0.0  # Always save before context compaction
+    autosave_context_threshold: float = 0.0  # Always save when context threshold hit
+    autosave_manual: float = 0.0  # Always save manual requests
+
+    # Session continuity settings (v2.4)
+    continuity_enabled: bool = True  # Inject context after compaction
+    watcher_auto_start: bool = False  # Auto-start watcher on MCP init (opt-in)
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        import logging
+
+        # Warn if weights don't sum to 1.0 (with floating point tolerance)
+        weight_sum = self.embedding_weight + self.keyword_weight
+        if abs(weight_sum - 1.0) > 0.001:
+            logging.getLogger(__name__).warning(
+                f"embedding_weight ({self.embedding_weight}) + keyword_weight ({self.keyword_weight}) "
+                f"= {weight_sum}, expected 1.0. This may affect scoring accuracy."
+            )
 
     @classmethod
     def load(cls, sage_dir: Path) -> "SageConfig":
@@ -222,22 +251,22 @@ class SageConfig:
         return config_path
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert config to dictionary."""
-        return {
-            "recall_threshold": self.recall_threshold,
-            "dedup_threshold": self.dedup_threshold,
-            "embedding_weight": self.embedding_weight,
-            "keyword_weight": self.keyword_weight,
-            "topic_drift_threshold": self.topic_drift_threshold,
-            "convergence_question_drop": self.convergence_question_drop,
-            "depth_min_messages": self.depth_min_messages,
-            "depth_min_tokens": self.depth_min_tokens,
-            "embedding_model": self.embedding_model,
-            "async_enabled": self.async_enabled,
-            "notify_success": self.notify_success,
-            "notify_errors": self.notify_errors,
-            "worker_timeout": self.worker_timeout,
-        }
+        """Convert config to dictionary (all fields)."""
+        return {field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()}
+
+    def get_autosave_threshold(self, trigger_event: str) -> float | None:
+        """Get autosave threshold for a trigger event.
+
+        Args:
+            trigger_event: The trigger name (e.g., "synthesis", "manual")
+
+        Returns:
+            Threshold value, or None if unknown trigger
+        """
+        attr_name = f"autosave_{trigger_event}"
+        if hasattr(self, attr_name):
+            return getattr(self, attr_name)
+        return None
 
 
 def get_sage_config(project_path: Path | None = None) -> SageConfig:

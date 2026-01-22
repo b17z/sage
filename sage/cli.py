@@ -1924,5 +1924,226 @@ def admin_clear_cache():
     console.print("[dim]Embeddings will be regenerated on next use[/dim]")
 
 
+# ============================================================================
+# Watcher Commands (Session Continuity)
+# ============================================================================
+
+
+@main.group()
+def watcher():
+    """Manage compaction watcher daemon for session continuity.
+
+    The watcher monitors Claude Code transcripts for compaction events.
+    When detected, it writes a marker so the next Sage tool call can
+    inject context from the most recent checkpoint.
+    """
+    pass
+
+
+@watcher.command("start")
+def watcher_start():
+    """Start the compaction watcher daemon.
+
+    Runs in the background and watches Claude Code transcripts for
+    compaction events (isCompactSummary: true in JSONL).
+
+    When compaction is detected:
+    1. Finds the most recent checkpoint
+    2. Writes a continuity marker
+    3. Next sage tool call injects the checkpoint context
+    """
+    from sage.watcher import find_active_transcript, start_daemon
+
+    # Check for transcript first
+    transcript = find_active_transcript()
+    if not transcript:
+        console.print("[red]No Claude Code transcript found[/red]")
+        console.print("[dim]Start a Claude Code session first[/dim]")
+        sys.exit(1)
+
+    console.print(f"[dim]Found transcript: {transcript}[/dim]")
+
+    if start_daemon():
+        from sage.watcher import get_watcher_status
+
+        status = get_watcher_status()
+        console.print(f"[green]✓[/green] Watcher started (PID {status['pid']})")
+        console.print(f"  Watching: {transcript}")
+        console.print(f"  Log: {status['log_file']}")
+    else:
+        from sage.watcher import is_running
+
+        if is_running():
+            console.print("[yellow]Watcher already running[/yellow]")
+            console.print("[dim]Use 'sage watcher status' for details[/dim]")
+        else:
+            console.print("[red]Failed to start watcher[/red]")
+            console.print("[dim]Check ~/.sage/logs/watcher.log for details[/dim]")
+            sys.exit(1)
+
+
+@watcher.command("stop")
+def watcher_stop():
+    """Stop the compaction watcher daemon."""
+    from sage.watcher import stop_daemon
+
+    if stop_daemon():
+        console.print("[green]✓[/green] Watcher stopped")
+    else:
+        console.print("[yellow]Watcher was not running[/yellow]")
+
+
+@watcher.command("status")
+def watcher_status():
+    """Show watcher daemon status."""
+    from sage.watcher import get_watcher_status
+
+    status = get_watcher_status()
+
+    console.print("[bold]Compaction Watcher Status[/bold]")
+    console.print("─" * 40)
+
+    if status["running"]:
+        console.print(f"[green]✓[/green] Running (PID {status['pid']})")
+    else:
+        console.print("[dim]○[/dim] Not running")
+
+    if status.get("transcript"):
+        console.print(f"  Transcript: {status['transcript']}")
+    else:
+        console.print("  [dim]No active transcript found[/dim]")
+
+    console.print(f"  Log file: {status['log_file']}")
+
+    # Show last few log lines if available
+    from pathlib import Path
+
+    log_path = Path(status["log_file"])
+    if log_path.exists():
+        console.print()
+        console.print("[bold]Recent log:[/bold]")
+        lines = log_path.read_text().strip().split("\n")[-5:]
+        for line in lines:
+            console.print(f"  [dim]{line}[/dim]")
+
+
+# ============================================================================
+# Continuity Commands
+# ============================================================================
+
+
+@main.group()
+def continuity():
+    """Manage session continuity markers.
+
+    Continuity markers are created by the watcher when compaction is detected.
+    The marker tells Sage to inject checkpoint context on the next tool call.
+    """
+    pass
+
+
+@continuity.command("status")
+def continuity_status():
+    """Show current continuity status."""
+    from sage.config import get_sage_config
+    from sage.continuity import (
+        get_continuity_marker,
+        get_most_recent_checkpoint,
+        has_pending_continuity,
+    )
+    from sage.watcher import get_watcher_status
+
+    config = get_sage_config()
+
+    console.print("[bold]Session Continuity Status[/bold]")
+    console.print("─" * 40)
+
+    # Config status
+    if config.continuity_enabled:
+        console.print("[green]✓[/green] Continuity enabled")
+    else:
+        console.print("[yellow]○[/yellow] Continuity disabled")
+        console.print("  [dim]Enable: sage config set continuity_enabled true[/dim]")
+
+    # Watcher status
+    watcher = get_watcher_status()
+    if watcher["running"]:
+        console.print(f"[green]✓[/green] Watcher running (PID {watcher['pid']})")
+    else:
+        console.print("[dim]○[/dim] Watcher not running")
+        console.print("  [dim]Start: sage watcher start[/dim]")
+
+    # Pending marker
+    console.print()
+    if has_pending_continuity():
+        marker = get_continuity_marker()
+        console.print("[yellow]⚡[/yellow] Pending continuity marker!")
+        if marker:
+            console.print(f"  Reason: {marker.get('reason', 'unknown')}")
+            console.print(f"  Marked at: {marker.get('marked_at', 'unknown')}")
+            if marker.get("checkpoint_path"):
+                console.print(f"  Checkpoint: {marker['checkpoint_path']}")
+            if marker.get("compaction_summary"):
+                summary = marker["compaction_summary"][:100]
+                console.print(f"  Summary: {summary}...")
+        console.print()
+        console.print("[dim]Context will be injected on next sage tool call[/dim]")
+    else:
+        console.print("[dim]○[/dim] No pending continuity")
+
+    # Most recent checkpoint
+    console.print()
+    recent_cp = get_most_recent_checkpoint()
+    if recent_cp:
+        console.print(f"[dim]Most recent checkpoint: {recent_cp.name}[/dim]")
+    else:
+        console.print("[dim]No checkpoints saved yet[/dim]")
+
+
+@continuity.command("clear")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def continuity_clear(force):
+    """Clear pending continuity marker.
+
+    Use this if you want to skip automatic context injection after compaction.
+    """
+    from sage.continuity import clear_continuity, has_pending_continuity
+
+    if not has_pending_continuity():
+        console.print("[yellow]No pending continuity marker[/yellow]")
+        return
+
+    if not force:
+        if not click.confirm("Clear pending continuity marker?"):
+            console.print("Cancelled.")
+            return
+
+    clear_continuity()
+    console.print("[green]✓[/green] Continuity marker cleared")
+
+
+@continuity.command("mark")
+@click.option("--reason", "-r", default="manual", help="Reason for marking")
+def continuity_mark(reason):
+    """Manually create a continuity marker.
+
+    This is mainly for testing. The marker will trigger context injection
+    on the next sage MCP tool call.
+    """
+    from sage.continuity import mark_for_continuity
+
+    result = mark_for_continuity(reason=reason)
+
+    if result.ok:
+        console.print(f"[green]✓[/green] Continuity marker created")
+        console.print(f"  Reason: {reason}")
+        console.print(f"  Marker: {result.value}")
+        console.print()
+        console.print("[dim]Context will be injected on next sage tool call[/dim]")
+    else:
+        console.print(f"[red]Failed to create marker: {result.unwrap_err().message}[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

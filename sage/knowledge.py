@@ -44,6 +44,10 @@ TYPE_THRESHOLDS: dict[str, float] = {
 # Default threshold for unknown types
 DEFAULT_TYPE_THRESHOLD = 0.70
 
+# Max keyword score for normalization (keyword scoring typically gives 0-9)
+# Used to normalize keyword scores to 0-1 range for hybrid scoring
+MAX_KEYWORD_SCORE = 9.0
+
 
 @dataclass(frozen=True)
 class KnowledgeTriggers:
@@ -488,8 +492,8 @@ def score_item_combined(
     # Get weights from config
     config = get_sage_config()
 
-    # Normalize keyword score to 0-1 range (assuming max ~9)
-    keyword_normalized = min(keyword_score / 9.0, 1.0)
+    # Normalize keyword score to 0-1 range
+    keyword_normalized = min(keyword_score / MAX_KEYWORD_SCORE, 1.0)
 
     # Combined weighted score
     combined = (

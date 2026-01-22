@@ -56,7 +56,7 @@ class Contribution:
     content: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Checkpoint:
     """A semantic checkpoint of research state."""
 

@@ -42,6 +42,11 @@ from typing import TYPE_CHECKING
 from mcp.server.fastmcp import FastMCP
 
 from sage.config import detect_project_root, get_sage_config
+from sage.continuity import (
+    clear_continuity,
+    get_continuity_marker,
+    has_pending_continuity,
+)
 from sage.logging import (
     get_logger,
     log_task_completed,
@@ -420,6 +425,69 @@ atexit.register(_sync_shutdown)
 
 
 # =============================================================================
+# Continuity Injection
+# =============================================================================
+
+
+def _get_continuity_context() -> str | None:
+    """Get pending continuity context for injection.
+
+    Checks if there's a continuity marker from a previous compaction.
+    If found, loads and formats the context, then clears the marker.
+
+    Returns:
+        Formatted context string, or None if no pending continuity.
+    """
+    if not has_pending_continuity():
+        return None
+
+    marker = get_continuity_marker()
+    if not marker:
+        return None
+
+    config = get_sage_config(_PROJECT_ROOT)
+    if not config.continuity_enabled:
+        clear_continuity()
+        return None
+
+    lines = ["═══ SESSION CONTINUITY ═══", ""]
+
+    # Include compaction summary if present
+    if marker.get("compaction_summary"):
+        summary = marker["compaction_summary"]
+        # Truncate very long summaries
+        if len(summary) > 2000:
+            summary = summary[:2000] + "..."
+        lines.append("**Claude Code Compaction Summary:**")
+        lines.append(summary)
+        lines.append("")
+
+    # Load and inject checkpoint if available
+    # Use checkpoint_id for portable lookup (falls back to checkpoint_path for legacy)
+    checkpoint_id = marker.get("checkpoint_id") or marker.get("checkpoint_path")
+    if checkpoint_id:
+        # If it's a full path (legacy), extract just the stem
+        if "/" in checkpoint_id or "\\" in checkpoint_id:
+            checkpoint_id = Path(checkpoint_id).stem
+        checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
+        if checkpoint:
+            lines.append("**Last Checkpoint:**")
+            lines.append(format_checkpoint_for_context(checkpoint))
+        else:
+            lines.append(f"*Checkpoint not found: {checkpoint_id}*")
+    else:
+        lines.append("*No checkpoint was saved before compaction.*")
+
+    lines.append("")
+    lines.append("═══════════════════════════")
+
+    # Clear the marker
+    clear_continuity()
+
+    return "\n".join(lines)
+
+
+# =============================================================================
 # System Tools
 # =============================================================================
 
@@ -461,8 +529,10 @@ def sage_health() -> str:
     - Checkpoint and knowledge counts
     - File permissions
     - Pending tasks
+    - Session continuity status
 
     Use this to diagnose issues or verify Sage is properly configured.
+    Also automatically injects continuity context if pending from a compaction.
     """
     from sage import __version__, check_for_updates
     from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
@@ -470,6 +540,10 @@ def sage_health() -> str:
     from sage.embeddings import check_model_mismatch, get_configured_model, is_available
     from sage.knowledge import KNOWLEDGE_DIR, list_knowledge
     from sage.tasks import TASKS_DIR, load_pending_tasks
+    from sage.watcher import get_watcher_status
+
+    # Check for continuity injection first
+    continuity_context = _get_continuity_context()
 
     lines = ["Sage Health Check", "─" * 40]
     issues = []
@@ -536,6 +610,14 @@ def sage_health() -> str:
     else:
         lines.append("○ Tasks directory: not created yet")
 
+    # Check watcher status
+    watcher_status = get_watcher_status()
+    if watcher_status["running"]:
+        lines.append(f"✓ Compaction watcher: running (PID {watcher_status['pid']})")
+    else:
+        lines.append("○ Compaction watcher: not running")
+        lines.append("  Start with: sage watcher start")
+
     # Summary
     lines.append("")
     if issues:
@@ -544,6 +626,59 @@ def sage_health() -> str:
             lines.append(f"  • {issue}")
     else:
         lines.append("All systems healthy!")
+
+    result = "\n".join(lines)
+
+    # Prepend continuity context if pending
+    if continuity_context:
+        return continuity_context + "\n\n" + result
+
+    return result
+
+
+@mcp.tool()
+def sage_continuity_status() -> str:
+    """Check session continuity status and inject pending context.
+
+    Call this at the start of a new session to:
+    1. Check if context was compacted
+    2. Inject any pending continuity context from checkpoints
+    3. Get watcher daemon status
+
+    This is the primary entry point for session continuity after compaction.
+
+    Returns:
+        Continuity context if pending, or status message
+    """
+    from sage.watcher import get_watcher_status
+
+    # Check for and inject continuity context
+    continuity_context = _get_continuity_context()
+
+    if continuity_context:
+        return continuity_context
+
+    # No pending continuity - return status info
+    config = get_sage_config(_PROJECT_ROOT)
+    watcher = get_watcher_status()
+
+    lines = ["Session Continuity Status", "─" * 30, ""]
+
+    if not config.continuity_enabled:
+        lines.append("⚠️ Continuity disabled in config")
+        lines.append("Enable with: sage config set continuity_enabled true")
+        return "\n".join(lines)
+
+    lines.append("✓ No pending continuity (context not compacted)")
+    lines.append("")
+
+    if watcher["running"]:
+        lines.append(f"✓ Watcher running (PID {watcher['pid']})")
+        if watcher.get("transcript"):
+            lines.append(f"  Watching: {watcher['transcript']}")
+    else:
+        lines.append("○ Watcher not running")
+        lines.append("  Start with: sage watcher start")
 
     return "\n".join(lines)
 
@@ -1456,18 +1591,18 @@ def sage_reload_config() -> str:
 # Autosave Tools
 # =============================================================================
 
-# Minimum confidence thresholds for each trigger type
-AUTOSAVE_THRESHOLDS = {
-    "research_start": 0.0,  # Always save starting point
-    "web_search_complete": 0.3,  # Save if we learned something
-    "synthesis": 0.5,  # Save meaningful conclusions
-    "topic_shift": 0.3,  # Save before switching
-    "user_validated": 0.4,  # User confirmed something
-    "constraint_discovered": 0.3,  # Important pivot point
-    "branch_point": 0.4,  # Decision point
-    "precompact": 0.0,  # Always save before context compaction
-    "context_threshold": 0.0,  # Always save when context threshold hit
-    "manual": 0.0,  # Always save manual requests
+# Valid autosave trigger events (threshold lookup via SageConfig.get_autosave_threshold)
+AUTOSAVE_TRIGGERS = {
+    "research_start",
+    "web_search_complete",
+    "synthesis",
+    "topic_shift",
+    "user_validated",
+    "constraint_discovered",
+    "branch_point",
+    "precompact",
+    "context_threshold",
+    "manual",
 }
 
 
@@ -1517,11 +1652,15 @@ async def sage_autosave_check(
     if not (0.0 <= confidence <= 1.0):
         return f"⏸ Invalid confidence {confidence}: must be between 0.0 and 1.0"
 
-    # Validate trigger event
-    threshold = AUTOSAVE_THRESHOLDS.get(trigger_event)
-    if threshold is None:
-        valid_triggers = ", ".join(AUTOSAVE_THRESHOLDS.keys())
+    # Validate trigger event and get threshold from config
+    if trigger_event not in AUTOSAVE_TRIGGERS:
+        valid_triggers = ", ".join(sorted(AUTOSAVE_TRIGGERS))
         return f"Unknown trigger: {trigger_event}. Valid triggers: {valid_triggers}"
+
+    threshold = config.get_autosave_threshold(trigger_event)
+    if threshold is None:
+        # Fallback for any unknown trigger (shouldn't happen after validation)
+        threshold = 0.5
 
     # Check if we should save
     if confidence < threshold:

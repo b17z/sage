@@ -318,8 +318,9 @@ embedding_weight: 0.70       # Weight for semantic similarity (0-1)
 keyword_weight: 0.30         # Weight for keyword matching (0-1)
 
 # Structural detection thresholds
-topic_drift_threshold: 0.50  # Topic change detection
-convergence_question_drop: 0.20
+topic_drift_threshold: 0.50  # Topic similarity threshold for drift
+convergence_question_drop: 0.20  # Question ratio drop for synthesis
+trigger_threshold: 0.60      # Combined 70/30 score for triggering
 depth_min_messages: 8        # Min messages for depth checkpoint
 depth_min_tokens: 2000       # Min tokens for depth checkpoint
 
@@ -489,6 +490,74 @@ Use `sage_load_checkpoint(id)` to inject a checkpoint into context.
 
 ---
 
+## Structural Trigger Detection (v2.3)
+
+Automatic detection of checkpoint-worthy moments via semantic analysis.
+
+### 70/30 Hybrid Scoring
+
+Triggers use the same scoring approach as knowledge recall:
+- **70% structural** — Embedding-based detection (topic drift, convergence)
+- **30% linguistic** — Pattern matching (keywords, phrases)
+
+This weighting prevents noisy triggers from keywords alone.
+
+### Structural Detection
+
+| Signal | Method | What It Detects |
+|--------|--------|-----------------|
+| **Topic drift** | Cosine similarity vs recent centroid | Conversation changed subjects |
+| **Convergence** | Question→statement ratio shift | Research phase ending, synthesis beginning |
+
+**Topic Drift:**
+- Computes centroid of last 5 message embeddings
+- If current message similarity < threshold (default 0.50), drift detected
+- High confidence (1 - similarity) on low similarity
+
+**Convergence:**
+- Tracks question ratio in early vs late conversation halves
+- When early is >50% questions and late drops below threshold, synthesis detected
+
+### Linguistic Detection
+
+Pattern matching for explicit trigger phrases:
+
+| Type | Example Patterns |
+|------|------------------|
+| **Topic shift** | "moving on to", "let's turn to", "changing topics" |
+| **Branch point** | "two approaches", "alternatively", "trade-off" |
+| **Constraint** | "won't work because", "blocked by", "showstopper" |
+| **Synthesis** | "in conclusion", "putting this together", "TL;DR" |
+
+Patterns inside code blocks, inline code, and quotes are filtered out.
+
+### Configuration
+
+```yaml
+# ~/.sage/tuning.yaml
+trigger_threshold: 0.60      # Combined score threshold (0-1)
+topic_drift_threshold: 0.50  # Similarity threshold for drift
+convergence_question_drop: 0.20  # Question ratio drop
+```
+
+### Usage
+
+```python
+from sage.triggers import TriggerDetector, TriggerType
+
+detector = TriggerDetector()
+
+# Feed messages as conversation progresses
+result = detector.analyze("Let's move on to databases", "assistant")
+
+if result.should_trigger:
+    trigger = result.trigger
+    print(f"Checkpoint: {trigger.type.value} ({trigger.confidence:.0%})")
+    # → Checkpoint: topic_shift (75%)
+```
+
+---
+
 ## Hooks
 
 ### Available Hooks
@@ -524,6 +593,108 @@ Environment variables:
 SAGE_CONTEXT_THRESHOLD=70      # Context % threshold
 SAGE_CONTEXT_WINDOW=200000     # Context window size
 SAGE_CONTEXT_COOLDOWN=60       # Cooldown seconds
+```
+
+---
+
+## Session Continuity (v2.4)
+
+Automatic context restoration after Claude Code compaction events.
+
+### How It Works
+
+1. **70% context hook** saves checkpoint (existing behavior)
+2. **Watcher daemon** detects `isCompactSummary: true` in Claude Code JSONL transcript
+3. **Watcher writes marker** pointing to most recent checkpoint
+4. **First sage tool call** after compaction injects checkpoint context automatically
+
+### Watcher Daemon
+
+The watcher is a background daemon that monitors Claude Code transcripts:
+
+```bash
+sage watcher start    # Start watching for compaction
+sage watcher stop     # Stop the watcher
+sage watcher status   # Check if running
+```
+
+**What it watches:**
+- Claude Code JSONL transcripts in `~/.claude/projects/`
+- Detects `{"isCompactSummary": true, "message": {"content": "..."}}`
+- Extracts compaction summary and writes continuity marker
+
+### Continuity Injection
+
+When compaction is detected:
+1. Watcher finds most recent checkpoint
+2. Writes marker to `~/.sage/continuity.json`
+3. On next `sage_health()` or `sage_continuity_status()` call:
+   - Marker is read and formatted
+   - Checkpoint context is loaded
+   - Context is prepended to response
+   - Marker is cleared (one-time injection)
+
+### CLI Commands
+
+```bash
+# Watcher management
+sage watcher start              # Start daemon
+sage watcher stop               # Stop daemon
+sage watcher status             # Show status with log tail
+
+# Continuity management
+sage continuity status          # Show pending marker details
+sage continuity clear [--force] # Clear pending marker
+sage continuity mark [--reason] # Manually create marker (for testing)
+```
+
+### MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `sage_continuity_status()` | Check continuity state, inject if pending |
+| `sage_health()` | Includes watcher status, injects if pending |
+
+### Configuration
+
+```yaml
+# ~/.sage/tuning.yaml
+continuity_enabled: true   # Enable context injection (default)
+watcher_auto_start: false  # Auto-start on MCP init (opt-in)
+```
+
+### Security
+
+- **Daemon runs as user's process** — no privilege escalation
+- **PID file has 0o600 permissions** — only owner can read
+- **Log file has 0o600 permissions** — only owner can read
+- **Path validation** — symlinks outside expected directories are skipped
+- **No code execution** — JSON parsed safely, only string content extracted
+- **Line length limit** — 10MB max to prevent memory exhaustion
+
+### Typical Flow
+
+```
+User: [researching something]
+Claude: [saves checkpoint at 70% context]
+
+[Context compacts automatically]
+
+Claude: [calls sage_health()]
+→ "═══ SESSION CONTINUITY ═══
+
+   **Claude Code Compaction Summary:**
+   User was researching Python async patterns for FastAPI services...
+
+   **Last Checkpoint:**
+   Core question: How to handle async database operations?
+   Thesis: Use async connection pools with proper context managers...
+   ═══════════════════════════
+
+   Sage Health Check
+   ─────────────────────────────────────────
+   ✓ Version: v2.4.0 (latest)
+   ..."
 ```
 
 ---
