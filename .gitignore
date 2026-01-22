@@ -66,3 +66,4 @@ docs/audit-*.md
 *.cer
 id_rsa*
 id_ed25519*
+.sage/
