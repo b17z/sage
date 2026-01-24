@@ -60,22 +60,6 @@ class TestMarkForContinuity:
         assert marker is not None
         assert "marked_at" in marker
 
-    def test_marker_contains_checkpoint_path(self, cleanup_continuity, temp_sage_dir):
-        """Marker includes checkpoint path when provided."""
-        checkpoint_path = temp_sage_dir / "checkpoints" / "test.md"
-        checkpoint_path.write_text("# Test Checkpoint")
-
-        with patch("sage.continuity.SAGE_DIR", temp_sage_dir):
-            result = mark_for_continuity(
-                checkpoint_path=checkpoint_path,
-                reason="test",
-            )
-
-        assert result.ok
-        marker = get_continuity_marker()
-        assert marker is not None
-        assert marker["checkpoint_path"] == str(checkpoint_path)
-
     def test_marker_contains_checkpoint_id(self, cleanup_continuity, temp_sage_dir):
         """Marker includes checkpoint ID (stem) for portable lookup."""
         checkpoint_path = temp_sage_dir / "checkpoints" / "2026-01-22_my-checkpoint.md"
@@ -304,29 +288,31 @@ class TestIntegration:
         assert result.ok
         marker = get_continuity_marker()
         assert marker is not None
-        # Checkpoint path should be set to the auto-found one
-        assert marker["checkpoint_path"] is not None
-        assert "auto-found" in marker["checkpoint_path"]
+        # Checkpoint ID should be set to the auto-found one (stem only)
+        assert marker["checkpoint_id"] is not None
+        assert marker["checkpoint_id"] == "auto-found"
 
 
 class TestSecurityValidation:
     """Security-related tests."""
 
-    def test_validates_checkpoint_path(self, temp_sage_dir, cleanup_continuity):
-        """Logs warning for checkpoint paths outside expected directories."""
-        # This test verifies the security check exists but doesn't block
-        # legitimate edge cases (warning only, not error)
+    def test_id_based_lookup_is_safe(self, temp_sage_dir, cleanup_continuity):
+        """ID-based lookup is inherently safe - no path traversal possible."""
+        # Any path input is reduced to just the ID (filename stem)
+        # The load side resolves IDs to paths internally
         outside_path = Path("/tmp/outside-checkpoint.md")
 
         with patch("sage.continuity.SAGE_DIR", temp_sage_dir):
-            # Should still work but log a warning
             result = mark_for_continuity(
                 checkpoint_path=outside_path,
                 reason="test",
             )
 
-        # Result is still Ok (warning only)
         assert result.ok
+        marker = get_continuity_marker()
+        # Only stores ID, not path - safe from traversal
+        assert marker["checkpoint_id"] == "outside-checkpoint"
+        assert "checkpoint_path" not in marker
 
     def test_marker_file_created_with_restricted_permissions(self, cleanup_continuity):
         """Marker file is created with 0o600 permissions."""

@@ -98,27 +98,14 @@ def mark_for_continuity(
         checkpoint_path = get_most_recent_checkpoint(project_dir)
 
     # Extract checkpoint ID (filename stem) for portable lookup
+    # ID-based lookup is safe - no path traversal concerns
     checkpoint_id: Optional[str] = None
     if checkpoint_path is not None:
         checkpoint_path = Path(checkpoint_path).resolve()
         checkpoint_id = checkpoint_path.stem  # Just the filename without extension
 
-        # Security: ensure it's under expected directories
-        allowed_parents = [SAGE_DIR / "checkpoints"]
-        if project_dir:
-            allowed_parents.append(project_dir / ".sage" / "checkpoints")
-
-        is_allowed = any(
-            allowed in checkpoint_path.parents or checkpoint_path.parent == allowed
-            for allowed in allowed_parents
-        )
-        if not is_allowed:
-            logger.warning(f"Checkpoint path outside allowed directories: {checkpoint_path}")
-            # Still allow it but log - could be legitimate edge case
-
     data = {
-        "checkpoint_id": checkpoint_id,  # Store ID, not path - for portable lookup
-        "checkpoint_path": str(checkpoint_path) if checkpoint_path else None,  # Keep for debugging
+        "checkpoint_id": checkpoint_id,  # Store ID only - load_checkpoint handles resolution
         "compaction_summary": compaction_summary,
         "marked_at": datetime.now(UTC).isoformat(),
         "reason": reason,

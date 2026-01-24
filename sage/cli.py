@@ -61,7 +61,6 @@ def init(api_key, skill, description, non_interactive):
 @main.command()
 def health():
     """Check Sage system health and diagnostics."""
-    from pathlib import Path
 
     from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
     from sage.config import CONFIG_PATH, SAGE_DIR, get_sage_config
@@ -86,7 +85,7 @@ def health():
     if CONFIG_PATH.exists():
         console.print(f"[green]✓[/green] Config loaded: {CONFIG_PATH}")
     else:
-        console.print(f"[yellow]![/yellow] No config file (using defaults)")
+        console.print("[yellow]![/yellow] No config file (using defaults)")
 
     # Check embeddings
     if is_available():
@@ -169,9 +168,9 @@ def debug(query, skill, knowledge_only, checkpoints_only):
     from sage.config import get_sage_config
     from sage.knowledge import (
         _get_all_embedding_similarities,
+        get_type_threshold,
         load_index,
         score_item_combined,
-        get_type_threshold,
     )
 
     config = get_sage_config()
@@ -2081,8 +2080,8 @@ def continuity_status():
         if marker:
             console.print(f"  Reason: {marker.get('reason', 'unknown')}")
             console.print(f"  Marked at: {marker.get('marked_at', 'unknown')}")
-            if marker.get("checkpoint_path"):
-                console.print(f"  Checkpoint: {marker['checkpoint_path']}")
+            if marker.get("checkpoint_id"):
+                console.print(f"  Checkpoint: {marker['checkpoint_id']}")
             if marker.get("compaction_summary"):
                 summary = marker["compaction_summary"][:100]
                 console.print(f"  Summary: {summary}...")
@@ -2135,7 +2134,7 @@ def continuity_mark(reason):
     result = mark_for_continuity(reason=reason)
 
     if result.ok:
-        console.print(f"[green]✓[/green] Continuity marker created")
+        console.print("[green]✓[/green] Continuity marker created")
         console.print(f"  Reason: {reason}")
         console.print(f"  Marker: {result.value}")
         console.print()
@@ -2143,6 +2142,135 @@ def continuity_mark(reason):
     else:
         console.print(f"[red]Failed to create marker: {result.unwrap_err().message}[/red]")
         sys.exit(1)
+
+
+# ============================================================================
+# Skills Commands (Sage Methodology Skills)
+# ============================================================================
+
+
+@main.group()
+def skills():
+    """Manage Sage methodology skills.
+
+    Sage ships default skills that teach Claude how to use Sage effectively.
+    These are separate from research skills created via 'sage create'.
+
+    Skills are installed to ~/.claude/skills/sage/
+    """
+    pass
+
+
+@skills.command("install")
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing skills")
+def skills_install(force):
+    """Install default Sage methodology skills.
+
+    Installs:
+    - sage-memory: Background Task pattern for saves
+    - sage-research: Checkpoint methodology
+    - sage-session: Session start ritual
+
+    Skills are installed to ~/.claude/skills/sage/
+    """
+    from sage.default_skills import SAGE_SKILLS_DIR, install_all_skills
+
+    console.print("[bold]Installing Sage Skills[/bold]")
+    console.print(f"Location: {SAGE_SKILLS_DIR}")
+    console.print("─" * 40)
+
+    results = install_all_skills(force=force)
+
+    for skill_name, success, message in results:
+        if success:
+            console.print(f"[green]✓[/green] {message}")
+        else:
+            console.print(f"[yellow]○[/yellow] {message}")
+
+    console.print()
+    console.print("[dim]Skills will be loaded by Claude when context matches triggers.[/dim]")
+
+
+@skills.command("list")
+def skills_list():
+    """List installed Sage methodology skills."""
+    from sage.default_skills import (
+        DEFAULT_SKILLS,
+        SAGE_SKILLS_DIR,
+        check_skill_version,
+        get_installed_sage_skills,
+    )
+
+    installed = get_installed_sage_skills()
+
+    if not installed:
+        console.print("[yellow]No Sage skills installed.[/yellow]")
+        console.print("Install with: sage skills install")
+        return
+
+    console.print(f"[bold]Installed Sage Skills[/bold] ({SAGE_SKILLS_DIR})")
+    console.print("─" * 50)
+
+    table = Table()
+    table.add_column("SKILL")
+    table.add_column("VERSION")
+    table.add_column("STATUS")
+
+    available_names = [s.name for s in DEFAULT_SKILLS]
+
+    for skill_name in installed:
+        installed_ver, available_ver = check_skill_version(skill_name)
+
+        if skill_name not in available_names:
+            status = "[dim]custom[/dim]"
+        elif installed_ver == available_ver:
+            status = "[green]up to date[/green]"
+        else:
+            status = f"[yellow]update available ({available_ver})[/yellow]"
+
+        table.add_row(skill_name, installed_ver or "-", status)
+
+    console.print(table)
+
+
+@skills.command("update")
+def skills_update():
+    """Update Sage methodology skills to latest versions."""
+    from sage.default_skills import install_all_skills
+
+    console.print("[bold]Updating Sage Skills[/bold]")
+    console.print("─" * 40)
+
+    results = install_all_skills(force=True)
+
+    for skill_name, success, message in results:
+        if success:
+            console.print(f"[green]✓[/green] {message}")
+        else:
+            console.print(f"[red]✗[/red] {message}")
+
+    console.print()
+    console.print("[green]Skills updated to latest versions.[/green]")
+
+
+@skills.command("show")
+@click.argument("name")
+def skills_show(name):
+    """Show a Sage methodology skill's content.
+
+    Security: skill name is sanitized to prevent path traversal.
+    """
+    from sage.default_skills import get_skill_path
+
+    skill_path = get_skill_path(name)
+
+    if not skill_path.exists():
+        console.print(f"[red]Skill not found: {name}[/red]")
+        console.print(f"  Expected: {skill_path}")
+        sys.exit(1)
+
+    content = skill_path.read_text()
+    console.print(content)
 
 
 if __name__ == "__main__":

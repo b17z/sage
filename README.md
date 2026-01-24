@@ -221,6 +221,28 @@ sage watcher stop     # Stop the daemon
 
 The watcher monitors Claude Code's transcript files and triggers continuity checkpoints when compaction is detected.
 
+### Sage Skills (v2.6+)
+
+Sage ships methodology as Claude Skills for progressive disclosure:
+
+```bash
+sage skills install    # Install: sage-memory, sage-research, sage-session
+sage skills list       # Check installed skills
+sage skills update     # Update to latest versions
+```
+
+**The Split:**
+- **CLAUDE.md** — Tool reference (always loaded)
+- **Skills** — Methodology (load on-demand when context matches)
+- **MCP** — Memory storage (always available)
+
+Skills teach Claude *how* to use Sage:
+- `sage-memory` — Background Task pattern for non-blocking saves
+- `sage-research` — When and how to checkpoint
+- `sage-session` — Session start ritual
+
+See [docs/skills.md](docs/skills.md) for architecture details.
+
 ### Configurable Thresholds
 
 Tune retrieval and detection via `~/.sage/tuning.yaml` or `.sage/tuning.yaml`:
@@ -294,6 +316,12 @@ sage watcher stop                 # Stop the watcher
 sage watcher status               # Check watcher status
 sage continuity status            # Check pending continuity
 
+# Skills (v2.6+)
+sage skills install               # Install Sage methodology skills
+sage skills list                  # List installed skills
+sage skills update                # Update to latest versions
+sage skills show <name>           # Show skill content
+
 # Config
 sage config list                  # Show current config
 sage config set <key> <value>     # Set a value (user-level)
@@ -353,6 +381,7 @@ Hooks have:
 
 - [Architecture](docs/ARCHITECTURE.md) — System design and data flow
 - [Features](docs/FEATURES.md) — Complete feature reference
+- [Skills](docs/skills.md) — Skills architecture and methodology
 - [Session Continuity](docs/continuity.md) — Compaction recovery and session persistence
 - [Checkpoint Methodology](docs/checkpoint.md) — Full framework for semantic checkpointing
 - [Hooks](docs/hooks.md) — Hook system documentation
@@ -364,7 +393,7 @@ Hooks have:
 # Install dev dependencies
 pip install -e ".[dev,mcp]"
 
-# Run tests (884 tests)
+# Run tests (932 tests)
 pytest tests/ -v
 
 # Lint and format
