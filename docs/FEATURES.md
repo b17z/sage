@@ -2,6 +2,38 @@
 
 Complete reference for all Sage capabilities.
 
+## Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              THE SAGE LOOP                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+     ┌──────────┐         ┌──────────┐         ┌──────────┐
+     │ Research │────────▶│ Trigger  │────────▶│  Save    │
+     │          │         │ detected │         │checkpoint│
+     └──────────┘         └──────────┘         └────┬─────┘
+          ▲                                         │
+          │    ┌──────────────────────────────────┐ │
+          │    │        ~/.sage/checkpoints/       │◀┘
+          │    │                                  │
+          │    │  thesis + confidence + sources  │
+          │    │  + tensions + open questions    │
+          │    └──────────────────────────────────┘
+          │                     │
+          │                     ▼
+     ┌────┴─────┐         ┌──────────┐         ┌──────────┐
+     │ Continue │◀────────│  Inject  │◀────────│Compaction│
+     │seamlessly│         │ context  │         │ detected │
+     └──────────┘         └──────────┘         └──────────┘
+```
+
+**Triggers:** synthesis, branch point, constraint, topic shift, manual, context threshold, pre-compact
+
+**Auto-restore:** Watcher daemon detects compaction → injects last checkpoint on next tool call
+
+---
+
 ## Checkpointing
 
 ### Automatic Checkpoints
@@ -763,29 +795,88 @@ proactive_threshold: 0.4  # vs recall_threshold: 0.7
 
 ---
 
-## Skills (Optional)
+## Skills (v2.6)
 
-### Skill Definition
+Sage ships methodology as Claude Skills for progressive disclosure—skills load on-demand when context matches triggers.
 
-Skills are defined in `~/.claude/skills/<name>/SKILL.md`:
+### The Three Layers
+
+```
+┌────────────────────────────────────────────────┐
+│  Skills (methodology)                          │
+│  Teach Claude WHEN and HOW to checkpoint       │
+│  Load on-demand when context matches           │
+├────────────────────────────────────────────────┤
+│  MCP Server (tools)                            │
+│  Provides the checkpoint/knowledge TOOLS       │
+│  Always available to Claude                    │
+├────────────────────────────────────────────────┤
+│  Storage                                       │
+│  Markdown files in ~/.sage/ or .sage/          │
+│  Obsidian-compatible format                    │
+└────────────────────────────────────────────────┘
+```
+
+### Default Sage Skills
+
+| Skill | Triggers | Purpose |
+|-------|----------|---------|
+| `sage-memory` | checkpoint, save knowledge, autosave | Background Task pattern for non-blocking saves |
+| `sage-research` | research, synthesis, hypothesis | When and how to checkpoint during research |
+| `sage-session` | session start, hello, new session | Session start ritual (call `sage_health()`) |
+
+### Installation
+
+```bash
+sage skills install   # Install all Sage methodology skills
+sage skills list      # Check installed skills
+sage skills update    # Update to latest versions
+sage skills show <name>  # View skill content
+```
+
+### How Skills Work
+
+1. Skills live in `~/.claude/skills/sage/<skill-name>/SKILL.md`
+2. Each skill has YAML frontmatter with `triggers` list
+3. When conversation context matches triggers, Claude loads the skill
+4. Skill content teaches Claude the methodology
+
+### Skill Format
+
+```markdown
+---
+name: sage-memory
+description: Background save pattern for Sage operations
+triggers: [checkpoint, save knowledge, autosave, persist]
+author: sage
+version: 1.0.0
+---
+
+# Sage Memory Operations
+
+When saving to Sage, **always use a background Task**...
+```
+
+### Custom Skills
+
+Create your own methodology skills:
+
+```bash
+mkdir -p ~/.claude/skills/my-skill
+```
+
+Create `SKILL.md`:
 
 ```markdown
 ---
 name: my-skill
-description: What this skill does
-expertise: Domain expertise
+description: My custom methodology
+triggers: [keyword1, keyword2]
 ---
 
-System prompt content here...
-```
+# My Skill
 
-### Skill Commands
-
-```bash
-sage list                    # List all skills
-sage ask <skill> "<query>"   # One-shot query
-sage context <skill>         # Show what a skill knows
-sage history <skill>         # Query history
+Instructions for Claude...
 ```
 
 ---
