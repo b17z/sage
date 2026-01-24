@@ -3,7 +3,7 @@
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
 **Current version:** v2.4.0 (session continuity, compaction watcher)
-**Test count:** 869 tests (maintain or increase)
+**Test count:** 884 tests (maintain or increase)
 
 ## Quick Reference
 

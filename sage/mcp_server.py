@@ -487,6 +487,123 @@ def _get_continuity_context() -> str | None:
     return "\n".join(lines)
 
 
+def _get_project_context() -> str | None:
+    """Build a context query from project signals.
+
+    Detects project identity from multiple sources:
+    - Directory name
+    - Git remote (repo name)
+    - Package name from pyproject.toml or package.json
+
+    Returns:
+        Query string for knowledge recall, or None if no context found
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    signals = []
+
+    # 1. Current directory name
+    if _PROJECT_ROOT:
+        dir_name = _PROJECT_ROOT.name
+        if dir_name and dir_name not in (".", "/", "~"):
+            signals.append(dir_name)
+
+    # 2. Git remote name (repo name)
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=_PROJECT_ROOT,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip()
+            # Extract repo name from URL (handle both https and ssh)
+            # https://github.com/user/repo.git -> repo
+            # git@github.com:user/repo.git -> repo
+            if "/" in url:
+                repo_name = url.split("/")[-1].replace(".git", "")
+                if repo_name and repo_name not in signals:
+                    signals.append(repo_name)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # 3. Package name from pyproject.toml
+    if _PROJECT_ROOT:
+        pyproject = _PROJECT_ROOT / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                content = pyproject.read_text()
+                # Simple extraction - look for name = "..."
+                for line in content.split("\n"):
+                    if line.strip().startswith("name") and "=" in line:
+                        # name = "package-name"
+                        name = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if name and name not in signals:
+                            signals.append(name)
+                        break
+            except OSError:
+                pass
+
+        # 4. Package name from package.json
+        pkg_json = _PROJECT_ROOT / "package.json"
+        if pkg_json.exists():
+            try:
+                data = json.loads(pkg_json.read_text())
+                name = data.get("name", "")
+                if name and name not in signals:
+                    signals.append(name)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    if not signals:
+        return None
+
+    # Combine signals into a query
+    return " ".join(signals)
+
+
+def _get_proactive_recall() -> str | None:
+    """Proactively recall knowledge based on project context.
+
+    Called at session start to inject relevant knowledge before user asks.
+
+    Returns:
+        Formatted recalled knowledge, or None if nothing relevant found
+    """
+    from sage.knowledge import recall_knowledge
+
+    context = _get_project_context()
+    if not context:
+        return None
+
+    # Recall knowledge matching project context
+    result = recall_knowledge(context, skill_name="")
+
+    if result.count == 0:
+        return None
+
+    # Format for injection
+    lines = [
+        "═══ RECALLED KNOWLEDGE ═══",
+        f"*Based on project context: {context}*",
+        "",
+    ]
+
+    for item in result.items:
+        keywords = list(item.triggers.keywords)[:3]
+        lines.append(f"**{item.id}** ({', '.join(keywords)})")
+        lines.append(item.content)
+        lines.append("")
+
+    lines.append("═══════════════════════════")
+
+    return "\n".join(lines)
+
+
 # =============================================================================
 # System Tools
 # =============================================================================
@@ -632,7 +749,12 @@ def sage_health() -> str:
 
     # Prepend continuity context if pending
     if continuity_context:
-        return continuity_context + "\n\n" + result
+        result = continuity_context + "\n\n" + result
+
+    # Append proactive recall if we have relevant knowledge
+    proactive_recall = _get_proactive_recall()
+    if proactive_recall:
+        result = result + "\n\n" + proactive_recall
 
     return result
 
