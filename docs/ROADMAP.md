@@ -2,7 +2,7 @@
 
 Version timeline and planned features.
 
-## Current: v2.1.x (January 2026)
+## Current: v2.5.x (January 2026)
 
 ### What's Shipped
 
@@ -33,7 +33,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 675 tests covering all modules
+- 884 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -92,61 +92,59 @@ All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2
 
 ---
 
-## v2.2 (In Progress)
+## v2.2 (Shipped)
 
 ### Focus: Advanced Retrieval + Knowledge Management
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| `sage debug` command | **Done** | Unified retrieval debugging (knowledge + checkpoints) |
-| Knowledge edit | **Done** | `sage knowledge edit` - update content/keywords/status |
-| Knowledge deprecate | **Done** | `sage knowledge deprecate` - mark outdated with reason |
-| Knowledge archive | **Done** | `sage knowledge archive` - hide from recall |
-| Freshness decay | Planned | Recent knowledge weighted higher |
-| Cross-project search | Planned | Priority cascade (project → global with boost) |
-| Knowledge versioning | Planned | History array for updates |
-
-### Knowledge Maintenance Automation (Planned)
-
-| Feature | Priority | Description |
-|---------|----------|-------------|
-| Staleness report | High | `sage knowledge stale` - items not recalled in 30+ days |
-| Duplicate detection | High | Warn when adding knowledge similar to existing item |
-| MCP deprecation tool | Medium | `sage_suggest_deprecation(id, reason)` - Claude flags outdated info |
-| Recall feedback | Medium | Claude signals "this was wrong" → auto-flag for review |
-| Date/version detection | Low | Parse content for dates/versions, flag when old |
-| Contradiction detection | Low | New checkpoint contradicts knowledge → suggest update |
+| `sage debug` command | Done | Unified retrieval debugging (knowledge + checkpoints) |
+| Knowledge edit | Done | `sage knowledge edit` - update content/keywords/status |
+| Knowledge deprecate | Done | `sage knowledge deprecate` - mark outdated with reason |
+| Knowledge archive | Done | `sage knowledge archive` - hide from recall |
 
 ---
 
-## v2.3 (Planned)
+## v2.3 (Shipped)
 
-### Focus: PKM Integration
+### Focus: Structural Trigger Detection
 
-| Feature | Description |
-|---------|-------------|
-| Obsidian mode | Optional vault integration |
-| Wikilink support | `[[checkpoints/id]]` references |
-| Graph visualization | Checkpoint/knowledge relationships |
-| Conflict resolution | Human-in-the-loop for sync issues |
-
----
-
-## v2.4 (Planned)
-
-### Focus: Advanced Hooks & Triggers
-
-| Feature | Description |
-|---------|-------------|
-| Structural triggers | Topic drift detection, convergence signals |
-| Uncertainty trigger | Detect hedging language as checkpoint moment |
-| Hook analytics | Track trigger frequency, false positive rate |
-
-*Note: Async operations originally planned for v2.3 were shipped in v2.0.*
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Structural triggers | Done | Topic drift detection, convergence signals |
+| 70/30 hybrid scoring | Done | Embeddings (70%) + patterns (30%) for triggers |
+| Linguistic detection | Done | Pattern matching for trigger phrases |
+| Hook integration | Done | Semantic detector uses structural analysis |
 
 ---
 
-## v2.5 (Planned)
+## v2.4 (Shipped)
+
+### Focus: Session Continuity
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Compaction watcher | Done | Daemon monitors JSONL for compaction events |
+| Continuity markers | Done | Preserve state across compaction |
+| Auto-injection | Done | Context restored on first tool call |
+| CLI commands | Done | `sage watcher start/stop/status`, `sage continuity status` |
+
+---
+
+## v2.5 (Shipping)
+
+### Focus: Proactive Recall + Auto-Injection
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Project context detection | Done | Detect project from dir, git, pyproject, package.json |
+| Proactive recall | Done | Auto-recall knowledge matching project context |
+| Auto-injection on first call | Done | Session context on any first sage tool call |
+| Lower recall threshold | Done | 0.4 threshold for proactive (vs 0.7 normal) |
+
+---
+
+## v2.6 (Planned)
 
 ### Focus: Token Economics & Observability
 
@@ -169,7 +167,7 @@ Savings:                    97,000 tokens (~$0.29 at $3/1M)
 
 ---
 
-## v2.6 (Planned)
+## v2.7 (Planned)
 
 ### Focus: Code-Aware Intelligence
 
@@ -255,6 +253,9 @@ Savings:                    97,000 tokens (~$0.29 at $3/1M)
 | v2.1.0 | Jan 2026 | Simplified architecture: sync Sage + Task subagent pattern |
 | v2.1.1 | Jan 2026 | Auto-version CI workflow, version sync across all files, 578 tests |
 | v2.2.0 | Jan 2026 | Knowledge updates: debug, edit, deprecate, archive commands, 675 tests |
+| v2.3.0 | Jan 2026 | Structural trigger detection, 70/30 hybrid scoring, 780 tests |
+| v2.4.0 | Jan 2026 | Session continuity, compaction watcher daemon, 850 tests |
+| v2.5.0 | Jan 2026 | Proactive recall, auto-injection on first tool call, 884 tests |
 
 ---
 
