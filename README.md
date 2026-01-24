@@ -81,6 +81,36 @@ sage checkpoint list
 sage checkpoint show <checkpoint-id>
 ```
 
+### 4. Add to Your Project (Recommended)
+
+Add this to your project's `CLAUDE.md` to ensure Claude uses Sage:
+
+```markdown
+## Sage Memory
+
+You have Sage MCP tools for persistent memory. **Use them.**
+
+### Session Start
+Call `sage_health()` to check for continuity from previous sessions.
+
+### After Web Searches
+Call `sage_autosave_check(trigger_event="web_search_complete", core_question="...", current_thesis="...", confidence=0.X)`
+
+### When Synthesizing
+Call `sage_autosave_check(trigger_event="synthesis", ...)` when concluding.
+
+### Before Topic Changes
+Call `sage_autosave_check(trigger_event="topic_shift", ...)` before moving on.
+
+### Save Knowledge
+Call `sage_save_knowledge(knowledge_id="...", content="...", keywords=[...])` for reusable insights.
+
+### Recall Knowledge
+Call `sage_recall_knowledge(query="...")` before starting work.
+```
+
+See [docs/CLAUDE_SNIPPET.md](docs/CLAUDE_SNIPPET.md) for the full snippet.
+
 ## Features
 
 ### Auto-Checkpoint (MCP Server)
@@ -291,7 +321,7 @@ Hooks have:
 # Install dev dependencies
 pip install -e ".[dev,mcp]"
 
-# Run tests (578 tests)
+# Run tests (869 tests)
 pytest tests/ -v
 
 # Lint and format

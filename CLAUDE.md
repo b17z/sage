@@ -29,6 +29,45 @@ sage watcher status          # Check watcher status
 sage continuity status       # Check pending continuity
 ```
 
+## REQUIRED: Using Sage (Read This First)
+
+Sage gives you persistent memory. **Use it.**
+
+### On Session Start
+Call `sage_health()` to check for continuity from previous sessions.
+
+### After Web Searches
+**ALWAYS** call after processing search results:
+```
+sage_autosave_check(trigger_event="web_search_complete", core_question="...", current_thesis="...", confidence=0.X)
+```
+
+### When Synthesizing Conclusions
+When you say "therefore", "in summary", "the answer is":
+```
+sage_autosave_check(trigger_event="synthesis", core_question="...", current_thesis="...", confidence=0.X)
+```
+
+### Before Changing Topics
+Checkpoint before moving on:
+```
+sage_autosave_check(trigger_event="topic_shift", core_question="...", current_thesis="...", confidence=0.X)
+```
+
+### Saving Reusable Knowledge
+When you learn something worth remembering:
+```
+sage_save_knowledge(knowledge_id="kebab-case-id", content="...", keywords=["kw1", "kw2"])
+```
+
+### Recalling Knowledge
+Before starting work, check what you already know:
+```
+sage_recall_knowledge(query="what you're working on")
+```
+
+---
+
 ## MCP Tools (for Claude Code)
 
 | Tool | Purpose |

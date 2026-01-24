@@ -523,6 +523,8 @@ def sage_version() -> str:
 def sage_health() -> str:
     """Check Sage system health and diagnostics.
 
+    **CALL THIS ON SESSION START** to check for continuity from previous sessions.
+
     Returns status of all Sage subsystems including:
     - Configuration files
     - Embedding model availability
@@ -531,7 +533,6 @@ def sage_health() -> str:
     - Pending tasks
     - Session continuity status
 
-    Use this to diagnose issues or verify Sage is properly configured.
     Also automatically injects continuity context if pending from a compaction.
     """
     from sage import __version__, check_for_updates
@@ -1119,12 +1120,12 @@ async def sage_save_knowledge(
 ) -> str:
     """Save an insight to the knowledge base for future recall.
 
-    Knowledge items are automatically recalled when queries match their keywords.
-    Keep items concise (~100 tokens) for efficient recall.
+    **USE THIS** when you learn something reusable about this project.
+    Knowledge is automatically recalled in future sessions when queries match.
 
     Args:
         knowledge_id: Unique identifier (use kebab-case, e.g., "usdc-compliance")
-        content: The knowledge content (markdown, keep concise)
+        content: The knowledge content (markdown, keep concise ~100 tokens)
         keywords: Trigger keywords for matching
         skill: Optional skill scope (None = global)
         source: Where this knowledge came from
@@ -1193,11 +1194,11 @@ async def sage_save_knowledge(
 def sage_recall_knowledge(query: str, skill: str = "") -> str:
     """Recall relevant knowledge for a query.
 
-    Searches the knowledge base for items matching the query and returns
-    formatted context for injection.
+    **CALL THIS** before starting work on a topic to check what you already know.
+    Returns previously saved knowledge that matches the query.
 
     Args:
-        query: The query to match against
+        query: The query to match against (e.g., "what you're working on")
         skill: Current skill context (for scoped knowledge)
 
     Returns:
@@ -1623,14 +1624,16 @@ async def sage_autosave_check(
 ) -> str:
     """Check if an autosave checkpoint should be created.
 
-    Call this at natural breakpoints in research: after web searches, when reaching
-    conclusions, when topics shift, etc. The tool decides whether to save based on
-    the trigger type and confidence level.
+    **REQUIRED USAGE:**
+    - After web searches: trigger_event="web_search_complete"
+    - When synthesizing conclusions: trigger_event="synthesis"
+    - Before changing topics: trigger_event="topic_shift"
+    - At decision points: trigger_event="branch_point"
 
     Args:
-        trigger_event: What triggered this check (research_start, web_search_complete,
-                      synthesis, topic_shift, user_validated, constraint_discovered,
-                      branch_point, precompact, context_threshold, manual)
+        trigger_event: What triggered this check (web_search_complete, synthesis,
+                      topic_shift, branch_point, constraint_discovered, precompact,
+                      context_threshold, manual)
         core_question: What decision/action is this research driving toward?
         current_thesis: Current synthesized position (1-2 sentences)
         confidence: Confidence in thesis (0.0-1.0)
