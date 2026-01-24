@@ -10,7 +10,7 @@
     {
       "name": "sage",
       "description": "Semantic checkpointing with hooks and MCP server for cross-session memory",
-      "version": "2.4.0",
+      "version": "2.5.0",
       "author": {
         "name": "b17z",
         "email": "ben@b17z.io"
