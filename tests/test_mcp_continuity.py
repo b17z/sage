@@ -6,6 +6,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_session_state():
+    """Reset session injection state before each test."""
+    from sage.mcp_server import _reset_session_state
+
+    _reset_session_state()
+    yield
+    _reset_session_state()
+
+
 @pytest.fixture
 def cleanup_continuity():
     """Clean up continuity marker after test."""

@@ -122,6 +122,57 @@ mcp = FastMCP("sage")
 _PROJECT_ROOT = detect_project_root()
 
 # =============================================================================
+# Session Start Auto-Injection
+# =============================================================================
+
+# Track whether we've injected session context (continuity + proactive recall)
+_session_context_injected = False
+
+
+def _reset_session_state() -> None:
+    """Reset session state for testing. Not for production use."""
+    global _session_context_injected
+    _session_context_injected = False
+
+
+def _get_session_start_context() -> str | None:
+    """Get session start context (continuity + proactive recall) on first call only.
+
+    Returns context string on first call of the session, None on subsequent calls.
+    This enables automatic context injection without requiring explicit sage_health() call.
+    """
+    global _session_context_injected
+    if _session_context_injected:
+        return None
+    _session_context_injected = True
+
+    parts = []
+
+    # Get continuity context (from compaction)
+    continuity = _get_continuity_context()
+    if continuity:
+        parts.append(continuity)
+
+    # Get proactive recall (project-relevant knowledge)
+    proactive = _get_proactive_recall()
+    if proactive:
+        parts.append(proactive)
+
+    if not parts:
+        return None
+
+    return "\n\n".join(parts)
+
+
+def _inject_session_context(response: str) -> str:
+    """Prepend session start context to a tool response if first call."""
+    context = _get_session_start_context()
+    if context:
+        return context + "\n\n" + response
+    return response
+
+
+# =============================================================================
 # Async Infrastructure
 # =============================================================================
 
@@ -638,7 +689,7 @@ def sage_version() -> str:
         f"  Keyword weight: {cfg.keyword_weight}",
     ]
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()
@@ -665,8 +716,7 @@ def sage_health() -> str:
     from sage.tasks import TASKS_DIR, load_pending_tasks
     from sage.watcher import get_watcher_status
 
-    # Check for continuity injection first
-    continuity_context = _get_continuity_context()
+    # Session start context will be injected via _inject_session_context at the end
 
     lines = ["Sage Health Check", "─" * 40]
     issues = []
@@ -752,16 +802,8 @@ def sage_health() -> str:
 
     result = "\n".join(lines)
 
-    # Prepend continuity context if pending
-    if continuity_context:
-        result = continuity_context + "\n\n" + result
-
-    # Append proactive recall if we have relevant knowledge
-    proactive_recall = _get_proactive_recall()
-    if proactive_recall:
-        result = result + "\n\n" + proactive_recall
-
-    return result
+    # Inject session start context (continuity + proactive recall) if first call
+    return _inject_session_context(result)
 
 
 @mcp.tool()
@@ -1126,7 +1168,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
 
     if not checkpoints:
-        return "No checkpoints found."
+        return _inject_session_context("No checkpoints found.")
 
     lines = [f"Found {len(checkpoints)} checkpoint(s):\n"]
     for cp in checkpoints:
@@ -1137,7 +1179,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
         lines.append(f"  Confidence: {cp.confidence:.0%} | Trigger: {cp.trigger}")
         lines.append("")
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()
@@ -1337,10 +1379,10 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
 
     if result.count == 0:
         if not embeddings.is_available():
-            return "No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*"
-        return "No relevant knowledge found."
+            return _inject_session_context("No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*")
+        return _inject_session_context("No relevant knowledge found.")
 
-    return format_recalled_context(result)
+    return _inject_session_context(format_recalled_context(result))
 
 
 @mcp.tool()
@@ -1356,7 +1398,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
     items = list_knowledge(skill)
 
     if not items:
-        return "No knowledge items found."
+        return _inject_session_context("No knowledge items found.")
 
     lines = [f"Found {len(items)} knowledge item(s):\n"]
     for item in items:
@@ -1371,7 +1413,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
         lines.append(f"  Tokens: ~{item.metadata.tokens}")
         lines.append("")
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()
