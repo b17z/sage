@@ -5,6 +5,18 @@ Semantic memory for Claude Code. Automatically checkpoint research at meaningful
 **Current version:** v2.4.0 (session continuity, compaction watcher)
 **Test count:** 884 tests (maintain or increase)
 
+---
+
+## ⚡ FIRST THING: Call `sage_health()` when starting a new session
+
+This injects:
+- **Continuity context** from previous compacted sessions
+- **Proactive recall** of knowledge relevant to this project
+
+Don't skip this. It's how Sage gives you memory.
+
+---
+
 ## Quick Reference
 
 ```bash

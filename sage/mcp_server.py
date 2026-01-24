@@ -576,14 +576,19 @@ def _get_proactive_recall() -> str | None:
     """
     from sage.knowledge import recall_knowledge
 
-    context = _get_project_context()
-    if not context:
-        return None
+    try:
+        context = _get_project_context()
+        if not context:
+            return None
 
-    # Recall knowledge matching project context
-    result = recall_knowledge(context, skill_name="")
+        # Recall knowledge matching project context
+        # Use lower threshold (0.4) since project name queries are less specific
+        result = recall_knowledge(context, skill_name="", threshold=0.4)
 
-    if result.count == 0:
+        if result.count == 0:
+            return None
+    except Exception:
+        # Don't let proactive recall errors break health check
         return None
 
     # Format for injection
