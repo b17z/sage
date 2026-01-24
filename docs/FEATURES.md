@@ -699,6 +699,70 @@ Claude: [calls sage_health()]
 
 ---
 
+## Proactive Recall (v2.5)
+
+Sage automatically injects relevant knowledge at session start based on project context.
+
+### How It Works
+
+1. **Project detection** — Sage identifies your project from:
+   - Directory name
+   - Git remote URL (extracts repo name)
+   - `pyproject.toml` project name
+   - `package.json` name field
+
+2. **Knowledge matching** — Project signals are used as a query against stored knowledge with a lower threshold (0.4 vs 0.7 normal)
+
+3. **Auto-injection** — Matching knowledge is injected on the first Sage tool call of the session
+
+### Example
+
+Working in a project called `payments-api`:
+
+```
+User: [opens Claude Code in payments-api directory]
+User: "What MCP tools do we have?"
+
+Claude: [calls sage_list_knowledge]
+→ "═══ RECALLED KNOWLEDGE ═══
+   *Based on project context: payments-api*
+
+   **stripe-integration** (stripe, payments, api)
+   Use Stripe PaymentIntents for one-time charges. Always handle
+   webhook signature verification...
+
+   **pci-compliance** (pci, payments, compliance)
+   Never log full card numbers. Use tokenization...
+   ═══════════════════════════
+
+   Found 12 knowledge items..."
+```
+
+### Session Start Context
+
+On first tool call, Sage injects both:
+1. **Continuity context** — If compaction was detected
+2. **Proactive recall** — Knowledge matching project context
+
+This happens automatically on any Sage tool call (`sage_health`, `sage_version`, `sage_list_knowledge`, etc.).
+
+### Configuration
+
+Proactive recall uses a lower threshold than normal recall to be more inclusive:
+
+```yaml
+# Internal default
+proactive_threshold: 0.4  # vs recall_threshold: 0.7
+```
+
+### What Gets Recalled
+
+- Knowledge with keywords matching project signals
+- Both global and skill-scoped knowledge
+- Items ranked by hybrid score (semantic + keyword)
+
+---
+
 ## Skills (Optional)
 
 ### Skill Definition

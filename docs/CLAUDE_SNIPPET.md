@@ -4,14 +4,19 @@ Copy this into your project's CLAUDE.md to enable automatic memory and checkpoin
 
 ---
 
+## ⚡ FIRST THING: Call `sage_health()` when starting a new session
+
+This injects:
+- **Continuity context** from previous compacted sessions
+- **Proactive recall** of knowledge relevant to this project
+
+Don't skip this. It's how Sage gives you memory.
+
+---
+
 ## Sage Memory System
 
 You have access to Sage MCP tools for persistent memory across sessions.
-
-### Session Start
-Call `sage_health()` at the start of meaningful work to:
-- Check for continuity context from previous sessions
-- Verify the memory system is working
 
 ### After Web Searches
 **REQUIRED:** After completing a web search and synthesizing results, call:

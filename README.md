@@ -190,6 +190,37 @@ sage todo list      # List todos
 sage todo done <id> # Mark complete
 ```
 
+### Session Continuity (v2.4+)
+
+Never lose context to compaction again. When Claude's context window fills up and auto-compacts, Sage preserves your research state:
+
+1. **Before compaction**: Sage saves a checkpoint with your current thesis and open questions
+2. **Next session**: Context is automatically injected when you call any Sage tool
+
+No manual intervention needed—just keep working.
+
+### Proactive Recall (v2.5+)
+
+Sage automatically recalls relevant knowledge when you start a session:
+
+- Detects project context (directory name, git remote, package.json/pyproject.toml)
+- Matches stored knowledge against project signals
+- Injects matching knowledge on first Sage tool call
+
+Example: Working in a `payments` project? Sage automatically surfaces your saved knowledge about payment APIs, compliance notes, etc.
+
+### Compaction Watcher (v2.4+, opt-in)
+
+For automatic compaction detection, run the watcher daemon:
+
+```bash
+sage watcher start    # Start monitoring for compaction
+sage watcher status   # Check if running
+sage watcher stop     # Stop the daemon
+```
+
+The watcher monitors Claude Code's transcript files and triggers continuity checkpoints when compaction is detected.
+
 ### Configurable Thresholds
 
 Tune retrieval and detection via `~/.sage/tuning.yaml` or `.sage/tuning.yaml`:
@@ -257,6 +288,12 @@ sage knowledge add <file>         # Add knowledge from file
 sage knowledge match "query"      # Test what would be recalled
 sage knowledge rm <id>            # Remove knowledge item
 
+# Session Continuity
+sage watcher start                # Start compaction watcher daemon
+sage watcher stop                 # Stop the watcher
+sage watcher status               # Check watcher status
+sage continuity status            # Check pending continuity
+
 # Config
 sage config list                  # Show current config
 sage config set <key> <value>     # Set a value (user-level)
@@ -277,14 +314,19 @@ Available to Claude via MCP:
 
 | Tool | Purpose |
 |------|---------|
+| `sage_health` | System diagnostics + auto-inject continuity/proactive recall |
+| `sage_version` | Version and config info |
 | `sage_save_checkpoint` | Save full checkpoint with thesis, sources, tensions |
 | `sage_load_checkpoint` | Restore checkpoint context |
 | `sage_list_checkpoints` | List all checkpoints |
+| `sage_search_checkpoints` | Semantic search across checkpoints |
 | `sage_autosave_check` | Auto-checkpoint with confidence thresholds |
 | `sage_save_knowledge` | Persist facts with keyword triggers |
 | `sage_recall_knowledge` | Query knowledge base semantically |
 | `sage_list_knowledge` | List knowledge items |
+| `sage_update_knowledge` | Edit existing knowledge item |
 | `sage_remove_knowledge` | Delete knowledge items |
+| `sage_continuity_status` | Check/inject session continuity |
 
 ## Hooks
 
@@ -311,6 +353,7 @@ Hooks have:
 
 - [Architecture](docs/ARCHITECTURE.md) — System design and data flow
 - [Features](docs/FEATURES.md) — Complete feature reference
+- [Session Continuity](docs/continuity.md) — Compaction recovery and session persistence
 - [Checkpoint Methodology](docs/checkpoint.md) — Full framework for semantic checkpointing
 - [Hooks](docs/hooks.md) — Hook system documentation
 - [Security](docs/security-deserialization-checklist.md) — Security practices
@@ -321,7 +364,7 @@ Hooks have:
 # Install dev dependencies
 pip install -e ".[dev,mcp]"
 
-# Run tests (869 tests)
+# Run tests (884 tests)
 pytest tests/ -v
 
 # Lint and format

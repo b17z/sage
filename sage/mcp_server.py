@@ -122,6 +122,57 @@ mcp = FastMCP("sage")
 _PROJECT_ROOT = detect_project_root()
 
 # =============================================================================
+# Session Start Auto-Injection
+# =============================================================================
+
+# Track whether we've injected session context (continuity + proactive recall)
+_session_context_injected = False
+
+
+def _reset_session_state() -> None:
+    """Reset session state for testing. Not for production use."""
+    global _session_context_injected
+    _session_context_injected = False
+
+
+def _get_session_start_context() -> str | None:
+    """Get session start context (continuity + proactive recall) on first call only.
+
+    Returns context string on first call of the session, None on subsequent calls.
+    This enables automatic context injection without requiring explicit sage_health() call.
+    """
+    global _session_context_injected
+    if _session_context_injected:
+        return None
+    _session_context_injected = True
+
+    parts = []
+
+    # Get continuity context (from compaction)
+    continuity = _get_continuity_context()
+    if continuity:
+        parts.append(continuity)
+
+    # Get proactive recall (project-relevant knowledge)
+    proactive = _get_proactive_recall()
+    if proactive:
+        parts.append(proactive)
+
+    if not parts:
+        return None
+
+    return "\n\n".join(parts)
+
+
+def _inject_session_context(response: str) -> str:
+    """Prepend session start context to a tool response if first call."""
+    context = _get_session_start_context()
+    if context:
+        return context + "\n\n" + response
+    return response
+
+
+# =============================================================================
 # Async Infrastructure
 # =============================================================================
 
@@ -487,6 +538,128 @@ def _get_continuity_context() -> str | None:
     return "\n".join(lines)
 
 
+def _get_project_context() -> str | None:
+    """Build a context query from project signals.
+
+    Detects project identity from multiple sources:
+    - Directory name
+    - Git remote (repo name)
+    - Package name from pyproject.toml or package.json
+
+    Returns:
+        Query string for knowledge recall, or None if no context found
+    """
+    import json
+    import subprocess
+    from pathlib import Path
+
+    signals = []
+
+    # 1. Current directory name
+    if _PROJECT_ROOT:
+        dir_name = _PROJECT_ROOT.name
+        if dir_name and dir_name not in (".", "/", "~"):
+            signals.append(dir_name)
+
+    # 2. Git remote name (repo name)
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=_PROJECT_ROOT,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip()
+            # Extract repo name from URL (handle both https and ssh)
+            # https://github.com/user/repo.git -> repo
+            # git@github.com:user/repo.git -> repo
+            if "/" in url:
+                repo_name = url.split("/")[-1].replace(".git", "")
+                if repo_name and repo_name not in signals:
+                    signals.append(repo_name)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    # 3. Package name from pyproject.toml
+    if _PROJECT_ROOT:
+        pyproject = _PROJECT_ROOT / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                content = pyproject.read_text()
+                # Simple extraction - look for name = "..."
+                for line in content.split("\n"):
+                    if line.strip().startswith("name") and "=" in line:
+                        # name = "package-name"
+                        name = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if name and name not in signals:
+                            signals.append(name)
+                        break
+            except OSError:
+                pass
+
+        # 4. Package name from package.json
+        pkg_json = _PROJECT_ROOT / "package.json"
+        if pkg_json.exists():
+            try:
+                data = json.loads(pkg_json.read_text())
+                name = data.get("name", "")
+                if name and name not in signals:
+                    signals.append(name)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    if not signals:
+        return None
+
+    # Combine signals into a query
+    return " ".join(signals)
+
+
+def _get_proactive_recall() -> str | None:
+    """Proactively recall knowledge based on project context.
+
+    Called at session start to inject relevant knowledge before user asks.
+
+    Returns:
+        Formatted recalled knowledge, or None if nothing relevant found
+    """
+    from sage.knowledge import recall_knowledge
+
+    try:
+        context = _get_project_context()
+        if not context:
+            return None
+
+        # Recall knowledge matching project context
+        # Use lower threshold (0.4) since project name queries are less specific
+        result = recall_knowledge(context, skill_name="", threshold=0.4)
+
+        if result.count == 0:
+            return None
+    except Exception:
+        # Don't let proactive recall errors break health check
+        return None
+
+    # Format for injection
+    lines = [
+        "═══ RECALLED KNOWLEDGE ═══",
+        f"*Based on project context: {context}*",
+        "",
+    ]
+
+    for item in result.items:
+        keywords = list(item.triggers.keywords)[:3]
+        lines.append(f"**{item.id}** ({', '.join(keywords)})")
+        lines.append(item.content)
+        lines.append("")
+
+    lines.append("═══════════════════════════")
+
+    return "\n".join(lines)
+
+
 # =============================================================================
 # System Tools
 # =============================================================================
@@ -516,7 +689,7 @@ def sage_version() -> str:
         f"  Keyword weight: {cfg.keyword_weight}",
     ]
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()
@@ -543,8 +716,7 @@ def sage_health() -> str:
     from sage.tasks import TASKS_DIR, load_pending_tasks
     from sage.watcher import get_watcher_status
 
-    # Check for continuity injection first
-    continuity_context = _get_continuity_context()
+    # Session start context will be injected via _inject_session_context at the end
 
     lines = ["Sage Health Check", "─" * 40]
     issues = []
@@ -630,11 +802,8 @@ def sage_health() -> str:
 
     result = "\n".join(lines)
 
-    # Prepend continuity context if pending
-    if continuity_context:
-        return continuity_context + "\n\n" + result
-
-    return result
+    # Inject session start context (continuity + proactive recall) if first call
+    return _inject_session_context(result)
 
 
 @mcp.tool()
@@ -999,7 +1168,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
 
     if not checkpoints:
-        return "No checkpoints found."
+        return _inject_session_context("No checkpoints found.")
 
     lines = [f"Found {len(checkpoints)} checkpoint(s):\n"]
     for cp in checkpoints:
@@ -1010,7 +1179,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
         lines.append(f"  Confidence: {cp.confidence:.0%} | Trigger: {cp.trigger}")
         lines.append("")
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()
@@ -1210,10 +1379,10 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
 
     if result.count == 0:
         if not embeddings.is_available():
-            return "No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*"
-        return "No relevant knowledge found."
+            return _inject_session_context("No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*")
+        return _inject_session_context("No relevant knowledge found.")
 
-    return format_recalled_context(result)
+    return _inject_session_context(format_recalled_context(result))
 
 
 @mcp.tool()
@@ -1229,7 +1398,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
     items = list_knowledge(skill)
 
     if not items:
-        return "No knowledge items found."
+        return _inject_session_context("No knowledge items found.")
 
     lines = [f"Found {len(items)} knowledge item(s):\n"]
     for item in items:
@@ -1244,7 +1413,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
         lines.append(f"  Tokens: ~{item.metadata.tokens}")
         lines.append("")
 
-    return "\n".join(lines)
+    return _inject_session_context("\n".join(lines))
 
 
 @mcp.tool()

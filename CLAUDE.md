@@ -2,8 +2,22 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.4.0 (session continuity, compaction watcher)
-**Test count:** 869 tests (maintain or increase)
+**Current version:** v2.5.0 (proactive recall, auto-injection)
+**Test count:** 884 tests (maintain or increase)
+
+---
+
+## ⚡ Session Start: Automatic Context Injection
+
+On your **first Sage tool call** each session, Sage automatically injects:
+- **Continuity context** from previous compacted sessions
+- **Proactive recall** of knowledge relevant to this project
+
+This happens automatically when you call `sage_health()`, `sage_version()`, `sage_list_knowledge()`, etc.
+
+Calling `sage_health()` at session start is still recommended to verify Sage is working.
+
+---
 
 ## Quick Reference
 
