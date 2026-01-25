@@ -2,7 +2,7 @@
 
 Version timeline and planned features.
 
-## Current: v2.5.x (January 2026)
+## Current: v2.6.x (January 2026)
 
 ### What's Shipped
 

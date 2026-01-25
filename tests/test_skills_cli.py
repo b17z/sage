@@ -181,7 +181,7 @@ class TestSkillsIntegration:
             # List
             result = runner.invoke(main, ["skills", "list"])
             assert result.exit_code == 0
-            assert len(DEFAULT_SKILLS) == 3  # Verify we have 3 default skills
+            assert len(DEFAULT_SKILLS) == 4  # Verify we have 4 default skills
             for skill in DEFAULT_SKILLS:
                 assert skill.name in result.output
 

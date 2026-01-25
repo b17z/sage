@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sage — Semantic Checkpointing for Claude Code</title>
-  <meta name="description" content="Persistent memory for Claude Code. Not full transcripts — synthesized insights that survive /compact and session restarts.">
+  <title>Sage — Semantic Memory for Claude Code</title>
+  <meta name="description" content="Persistent memory for Claude Code. Checkpoints capture research state, knowledge persists across sessions, context survives compaction.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
       --text-secondary: #8888a0;
       --text-dim: #5a5a70;
       --border: #2a2a3a;
-      --danger: #ff4757;
+      --success: #22c55e;
       --warning: #ffa502;
     }
 
@@ -235,18 +235,11 @@
       color: var(--accent);
     }
 
-    /* Problem Section */
-    .problem {
-      padding: 100px 0;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-
+    /* Section styling */
     .section-label {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.75rem;
-      color: var(--danger);
+      color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 2px;
       margin-bottom: 16px;
@@ -256,14 +249,14 @@
     }
 
     .section-label::before {
-      content: '!';
+      content: '>';
       display: inline-flex;
       align-items: center;
       justify-content: center;
       width: 18px;
       height: 18px;
-      background: rgba(255, 71, 87, 0.15);
-      border: 1px solid var(--danger);
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
       border-radius: 50%;
       font-size: 0.65rem;
       font-weight: 700;
@@ -277,114 +270,179 @@
       letter-spacing: -0.5px;
     }
 
-    .problem-list {
-      list-style: none;
-      display: grid;
-      gap: 16px;
-      margin-bottom: 40px;
+    /* The Loop Section */
+    .loop {
+      padding: 100px 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
 
-    .problem-list li {
-      display: flex;
-      align-items: flex-start;
-      gap: 16px;
-      padding: 20px;
-      background: var(--bg-tertiary);
+    .loop-diagram {
+      background: var(--bg-primary);
       border: 1px solid var(--border);
       border-radius: 8px;
-      font-size: 1rem;
-    }
-
-    .problem-list li::before {
-      content: '×';
+      padding: 32px;
+      margin-top: 32px;
       font-family: 'JetBrains Mono', monospace;
-      color: var(--danger);
-      font-size: 1.25rem;
-      font-weight: 700;
-      flex-shrink: 0;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      overflow-x: auto;
     }
 
-    .problem-footer {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.9rem;
-      color: var(--text-dim);
-      padding: 20px;
-      background: rgba(255, 165, 2, 0.05);
-      border-left: 3px solid var(--warning);
-      border-radius: 0 6px 6px 0;
+    .loop-diagram pre {
+      color: var(--text-secondary);
+      white-space: pre;
     }
 
-    /* Solution Section */
-    .solution {
-      padding: 100px 0;
-    }
-
-    .section-label.success {
+    .loop-diagram .highlight {
       color: var(--accent);
     }
 
-    .section-label.success::before {
-      content: '>';
-      background: var(--accent-glow);
-      border-color: var(--accent);
+    .loop-diagram .dim {
+      color: var(--text-dim);
     }
 
-    .trigger-grid {
+    /* Features Grid */
+    .features {
+      padding: 100px 0;
+    }
+
+    .feature-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
       margin-top: 40px;
     }
 
-    .trigger-card {
-      padding: 24px;
+    .feature-card {
+      padding: 28px;
       background: var(--bg-secondary);
       border: 1px solid var(--border);
       border-radius: 8px;
       transition: all 0.2s;
     }
 
-    .trigger-card:hover {
+    .feature-card:hover {
       border-color: var(--accent);
       transform: translateY(-2px);
     }
 
-    .trigger-icon {
-      font-size: 1.5rem;
+    .feature-icon {
+      font-size: 1.75rem;
+      margin-bottom: 16px;
+    }
+
+    .feature-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
       margin-bottom: 12px;
     }
 
-    .trigger-title {
-      font-family: 'JetBrains Mono', monospace;
+    .feature-desc {
       font-size: 0.9rem;
-      font-weight: 600;
-      color: var(--accent);
-      margin-bottom: 8px;
-    }
-
-    .trigger-desc {
-      font-size: 0.85rem;
       color: var(--text-secondary);
-      line-height: 1.5;
+      line-height: 1.6;
     }
 
-    /* Limitations Section */
-    .limitations {
-      padding: 100px 0;
+    .feature-tag {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      background: var(--bg-tertiary);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 12px;
     }
 
-    .limitations .section-label::before {
-      content: '⚠';
-      background: rgba(255, 165, 2, 0.15);
-      border-color: var(--warning);
-    }
-
-    /* Built With Section */
-    .built-with {
+    /* Skills Section */
+    .skills {
       padding: 100px 0;
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
+    }
+
+    .skills-intro {
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 40px;
+    }
+
+    .skill-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .skill-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .skill-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 180px;
+    }
+
+    .skill-desc {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* Architecture Section */
+    .architecture {
+      padding: 100px 0;
+    }
+
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 32px;
+    }
+
+    .arch-card {
+      padding: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .arch-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .arch-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .arch-detail {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .arch-detail code {
+      color: var(--accent);
+      font-size: 0.8rem;
     }
 
     /* Install Section */
@@ -403,17 +461,6 @@
     .install-desc {
       color: var(--text-secondary);
       margin-bottom: 32px;
-    }
-
-    .install-block {
-      display: inline-block;
-      max-width: 500px;
-    }
-
-    .install-block .copy-btn {
-      width: auto;
-      padding: 12px 24px;
-      display: inline-flex;
     }
 
     .install-methods {
@@ -490,20 +537,23 @@
       font-size: 0.85rem;
     }
 
-    .install-method-commands .terminal-line {
+    .terminal-line {
+      display: flex;
+      gap: 8px;
       margin-bottom: 4px;
     }
 
-    .install-method-commands .terminal-line:last-child {
+    .terminal-line:last-child {
       margin-bottom: 0;
     }
 
-    .install-method-note {
-      font-size: 0.8rem;
-      color: var(--text-dim);
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
+    .terminal-prompt {
+      color: var(--accent);
+      user-select: none;
+    }
+
+    .terminal-cmd {
+      color: var(--text-primary);
     }
 
     .install-method-gets {
@@ -516,121 +566,37 @@
       color: var(--accent);
     }
 
-    .install-command {
-      display: inline-flex;
-      align-items: center;
-      gap: 16px;
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 4px 4px 4px 24px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 1rem;
-      max-width: 100%;
-      overflow-x: auto;
-    }
-
-    .install-command code {
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-
-    .install-command .prompt {
-      color: var(--accent);
-      user-select: none;
-    }
-
-    .copy-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 44px;
-      height: 44px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-      flex-shrink: 0;
-    }
-
-    .copy-btn:hover {
-      background: var(--accent-glow);
-      border-color: var(--accent);
-    }
-
-    .copy-btn svg {
-      width: 18px;
-      height: 18px;
-      stroke: var(--text-secondary);
-      transition: stroke 0.2s;
-    }
-
-    .copy-btn:hover svg {
-      stroke: var(--accent);
-    }
-
-    .copy-btn.copied svg {
-      stroke: var(--accent);
-    }
-
-    /* How It Works */
-    .how-it-works {
-      padding: 100px 0;
-    }
-
-    .workflow {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      margin-top: 40px;
-      position: relative;
-    }
-
-    .workflow::before {
-      content: '';
-      position: absolute;
-      left: 15px;
-      top: 40px;
-      bottom: 40px;
-      width: 2px;
-      background: linear-gradient(to bottom, var(--accent), var(--border));
-    }
-
-    .workflow-step {
-      display: flex;
-      gap: 24px;
-      align-items: flex-start;
-      padding: 24px 0;
-    }
-
-    .step-number {
-      width: 32px;
-      height: 32px;
-      background: var(--bg-secondary);
-      border: 2px solid var(--accent);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'JetBrains Mono', monospace;
+    .install-method-note {
       font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Stats */
+    .stats {
+      padding: 60px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 32px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2rem;
       font-weight: 700;
       color: var(--accent);
-      flex-shrink: 0;
-      position: relative;
-      z-index: 1;
-    }
-
-    .step-content h3 {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 1rem;
-      font-weight: 600;
       margin-bottom: 8px;
     }
 
-    .step-content p {
-      font-size: 0.9rem;
+    .stat-label {
+      font-size: 0.85rem;
       color: var(--text-secondary);
     }
 
@@ -679,64 +645,6 @@
       height: 18px;
     }
 
-    /* Terminal decoration */
-    .terminal-block {
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-top: 40px;
-    }
-
-    .terminal-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .terminal-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-
-    .terminal-dot.red { background: #ff5f56; }
-    .terminal-dot.yellow { background: #ffbd2e; }
-    .terminal-dot.green { background: #27c93f; }
-
-    .terminal-body {
-      padding: 20px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      line-height: 1.8;
-    }
-
-    .terminal-line {
-      display: flex;
-      gap: 8px;
-    }
-
-    .terminal-prompt {
-      color: var(--accent);
-      user-select: none;
-    }
-
-    .terminal-cmd {
-      color: var(--text-primary);
-    }
-
-    .terminal-output {
-      color: var(--text-secondary);
-      padding-left: 20px;
-    }
-
-    .terminal-highlight {
-      color: var(--accent);
-    }
-
     /* Responsive */
     @media (max-width: 768px) {
       nav {
@@ -747,12 +655,21 @@
         padding: 100px 0 60px;
       }
 
-      .problem, .solution, .install, .how-it-works, .limitations, .built-with {
+      .loop, .features, .skills, .architecture, .install, .stats {
         padding: 60px 0;
       }
 
-      .trigger-grid {
+      .feature-grid, .arch-grid {
         grid-template-columns: 1fr;
+      }
+
+      .skill-item {
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .skill-name {
+        min-width: auto;
       }
 
       .footer-content {
@@ -766,18 +683,8 @@
         align-items: center;
       }
 
-      .workflow::before {
-        display: none;
-      }
-
-      .install-command {
-        flex-direction: column;
-        padding: 16px;
-        gap: 12px;
-      }
-
-      .copy-btn {
-        width: 100%;
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
   </style>
@@ -787,9 +694,9 @@
     <div class="container">
       <a href="#" class="logo">sage</a>
       <nav>
-        <a href="#problem">Problem</a>
-        <a href="#solution">Solution</a>
-        <a href="#limitations">MVP Status</a>
+        <a href="#loop">How It Works</a>
+        <a href="#features">Features</a>
+        <a href="#skills">Skills</a>
         <a href="#install">Install</a>
         <a href="https://github.com/b17z/sage">GitHub</a>
       </nav>
@@ -798,9 +705,9 @@
 
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">Claude Code Extension</div>
+      <div class="hero-badge">v2.6 — Skills Architecture</div>
       <h1>Claude that <span>remembers</span><br>across sessions</h1>
-      <p class="hero-sub">Context survives /compact and session restarts. Claude recalls your research, decisions, and breakthroughs — automatically.</p>
+      <p class="hero-sub">Semantic memory for Claude Code. Checkpoints capture research state, knowledge persists across sessions, context survives compaction automatically.</p>
       <div class="cta-group">
         <a href="#install" class="btn btn-primary">Get Started</a>
         <a href="https://github.com/b17z/sage" class="btn btn-secondary">View Source</a>
@@ -808,184 +715,176 @@
     </div>
   </section>
 
-  <section class="problem" id="problem">
+  <section class="loop" id="loop">
     <div class="container">
-      <div class="section-label">The Problem</div>
-      <h2>You're the orchestration layer</h2>
-      <ul class="problem-list">
-        <li>
-          <div>
-            <strong>Context windows fill up and auto-compact</strong>
-            <div style="color: var(--text-secondary); margin-top: 4px;">Critical research insights vanish mid-session</div>
-          </div>
-        </li>
-        <li>
-          <div>
-            <strong>Sessions end and conversations reset</strong>
-            <div style="color: var(--text-secondary); margin-top: 4px;">Tomorrow you start from zero, re-explaining everything</div>
-          </div>
-        </li>
-        <li>
-          <div>
-            <strong>Projects switch and threads get orphaned</strong>
-            <div style="color: var(--text-secondary); margin-top: 4px;">That breakthrough from last week? Gone.</div>
-          </div>
-        </li>
-      </ul>
-      <div class="problem-footer">
-        You become a conspiracy board — manually maintaining state, copying insights to notes, re-injecting context every session.
-      </div>
-    </div>
-  </section>
-
-  <section class="solution" id="solution">
-    <div class="container">
-      <div class="section-label success">The Solution</div>
-      <h2>Semantic checkpointing</h2>
-      <p style="color: var(--text-secondary); max-width: 560px;">Not full transcripts — synthesized insights. Sage gives Claude persistent memory that captures the essence: your thesis, key decisions, and open questions. Checkpoints trigger at meaningful moments, not when tokens run out.</p>
-
-      <div class="trigger-grid">
-        <div class="trigger-card">
-          <div class="trigger-icon">&#x21BB;</div>
-          <div class="trigger-title">Topic Shift</div>
-          <div class="trigger-desc">Moving to a new area — checkpoint before context changes</div>
-        </div>
-        <div class="trigger-card">
-          <div class="trigger-icon">&#x26A0;</div>
-          <div class="trigger-title">Constraint Discovered</div>
-          <div class="trigger-desc">Critical limitation that changes the approach</div>
-        </div>
-        <div class="trigger-card">
-          <div class="trigger-icon">&#x2194;</div>
-          <div class="trigger-title">Branch Point</div>
-          <div class="trigger-desc">"We could either X or Y" — decision moments</div>
-        </div>
-        <div class="trigger-card">
-          <div class="trigger-icon">&#x2728;</div>
-          <div class="trigger-title">Synthesis Moment</div>
-          <div class="trigger-desc">"Putting this together..." — emergent understanding</div>
-        </div>
-      </div>
-
-      <p style="color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-top: 24px;">Or say <span style="color: var(--accent);">"checkpoint"</span> or <span style="color: var(--accent);">"save this"</span> anytime to trigger manually.</p>
-
-      <div class="terminal-block">
-        <div class="terminal-header">
-          <div class="terminal-dot red"></div>
-          <div class="terminal-dot yellow"></div>
-          <div class="terminal-dot green"></div>
-        </div>
-        <div class="terminal-body">
-          <div class="terminal-line"><span class="terminal-prompt">You:</span> <span class="terminal-cmd">What's the best approach for API rate limiting?</span></div>
-          <br>
-          <div class="terminal-output" style="padding-left: 0; color: var(--accent);">📚 Knowledge recalled (1 item, ~180 tokens)</div>
-          <br>
-          <div class="terminal-line"><span class="terminal-prompt">Claude:</span></div>
-          <div class="terminal-output" style="padding-left: 0; margin-top: 8px;">Based on your earlier research on distributed systems, you found that <span class="terminal-highlight">token bucket algorithms outperform leaky bucket</span> for bursty traffic patterns.</div>
-          <div class="terminal-output" style="padding-left: 0; margin-top: 8px;">Your key constraint was needing <span class="terminal-highlight">sub-millisecond decisions at the edge</span>.</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="how-it-works">
-    <div class="container">
-      <div class="section-label success">How It Works</div>
+      <div class="section-label">The Sage Loop</div>
       <h2>Memory that persists</h2>
+      <p style="color: var(--text-secondary); max-width: 560px;">Checkpoints trigger at meaningful moments—synthesis, branch points, topic shifts—not when tokens run out. Context is automatically restored after compaction.</p>
 
-      <div class="workflow">
-        <div class="workflow-step">
-          <div class="step-number">1</div>
-          <div class="step-content">
-            <h3>One-time setup</h3>
-            <p>Install Sage as an MCP server. Claude gains access to knowledge storage and recall tools.</p>
-          </div>
+      <div class="loop-diagram">
+        <pre>
+     <span class="highlight">Research</span>  ──────►  <span class="highlight">Trigger</span>  ──────►  <span class="highlight">Save</span>
+         │            detected         checkpoint
+         │                                 │
+         │    ┌────────────────────────────┘
+         │    │
+         │    ▼     <span class="dim">~/.sage/checkpoints/</span>
+         │    │
+         │    │     thesis + confidence + sources
+         │    │     + tensions + open questions
+         │    │
+         │    └────────────────────────────┐
+         │                                 │
+         ▼                                 ▼
+     <span class="highlight">Continue</span>  ◄──────  <span class="highlight">Inject</span>  ◄──────  <span class="highlight">Compaction</span>
+    seamlessly        context          detected
+        </pre>
+      </div>
+
+      <p style="color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-top: 24px;">
+        <strong style="color: var(--text-secondary);">Triggers:</strong> synthesis, branch point, constraint, topic shift, manual, context threshold, pre-compact
+      </p>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-label">Features</div>
+      <h2>What Sage does</h2>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4CD;</div>
+          <div class="feature-title">Semantic Checkpoints</div>
+          <div class="feature-desc">Captures thesis, confidence, sources, tensions, and open questions. Not just text—structured research state.</div>
+          <div class="feature-tag">v1.0+</div>
         </div>
-        <div class="workflow-step">
-          <div class="step-number">2</div>
-          <div class="step-content">
-            <h3>Work normally</h3>
-            <p>Use Claude Code as usual. Research, code, synthesize — nothing changes about your workflow.</p>
-          </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4DA;</div>
+          <div class="feature-title">Knowledge Base</div>
+          <div class="feature-desc">Store reusable insights with keyword triggers. Hybrid retrieval (70% semantic + 30% keyword) for accurate recall.</div>
+          <div class="feature-tag">v1.0+</div>
         </div>
-        <div class="workflow-step">
-          <div class="step-number">3</div>
-          <div class="step-content">
-            <h3>Claude saves what matters</h3>
-            <p>When Claude reaches a breakthrough or makes a key decision, it saves the insight automatically. No prompting required.</p>
-          </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F504;</div>
+          <div class="feature-title">Session Continuity</div>
+          <div class="feature-desc">Watcher daemon detects compaction and auto-injects context on next tool call. No manual restore needed.</div>
+          <div class="feature-tag">v2.4+</div>
         </div>
-        <div class="workflow-step">
-          <div class="step-number">4</div>
-          <div class="step-content">
-            <h3>Recall across sessions</h3>
-            <p>Run /compact. Start a new session. Switch projects. Claude remembers — your context is always there.</p>
-          </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x26A1;</div>
+          <div class="feature-title">Proactive Recall</div>
+          <div class="feature-desc">Knowledge matching your project context is automatically surfaced at session start. Claude remembers what's relevant.</div>
+          <div class="feature-tag">v2.5+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F9E0;</div>
+          <div class="feature-title">Skills Architecture</div>
+          <div class="feature-desc">Methodology lives in Claude Skills that load on-demand. Progressive disclosure—complexity when you need it.</div>
+          <div class="feature-tag">v2.6+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F50D;</div>
+          <div class="feature-title">Structural Triggers</div>
+          <div class="feature-desc">70/30 hybrid scoring detects topic drift, convergence, and synthesis moments automatically.</div>
+          <div class="feature-tag">v2.3+</div>
         </div>
       </div>
     </div>
   </section>
 
-  <section class="limitations" id="limitations">
+  <section class="skills" id="skills">
     <div class="container">
-      <div class="section-label" style="color: var(--warning);">Known Limitations</div>
-      <h2>MVP status</h2>
-      <ul class="problem-list" style="margin-bottom: 24px;">
-        <li>
-          <div>
-            <strong>No code patterns</strong>
-            <div style="color: var(--text-secondary); margin-top: 4px;">Tuned for research; doesn't detect refactors or architecture decisions</div>
-          </div>
-        </li>
-        <li>
-          <div>
-            <strong>Research-first scope</strong>
-            <div style="color: var(--text-secondary); margin-top: 4px;">Optimized for web searches, synthesis, exploring options</div>
-          </div>
-        </li>
-      </ul>
-      <div class="problem-footer" style="border-left-color: var(--accent); background: var(--accent-glow);">
-        <strong style="color: var(--accent);">v1.0.0:</strong> Config system, security hardening, 206 tests. Your AI gets a memory. <code style="color: var(--accent);">pip install claude-sage[embeddings]</code>
+      <div class="section-label">Skills</div>
+      <h2>Methodology on demand</h2>
+      <p class="skills-intro">Sage ships methodology as Claude Skills. They load when context matches triggers—no always-on overhead.</p>
+
+      <div class="skill-list">
+        <div class="skill-item">
+          <div class="skill-name">sage-memory</div>
+          <div class="skill-desc">Background Task pattern for non-blocking saves. Triggered by: checkpoint, save knowledge, autosave</div>
+        </div>
+        <div class="skill-item">
+          <div class="skill-name">sage-research</div>
+          <div class="skill-desc">When and how to checkpoint during research. Triggered by: research, synthesis, hypothesis, branch point</div>
+        </div>
+        <div class="skill-item">
+          <div class="skill-name">sage-session</div>
+          <div class="skill-desc">Session start ritual—call sage_health() for context injection. Triggered by: session start, hello, new session</div>
+        </div>
+        <div class="skill-item">
+          <div class="skill-name">sage-knowledge-hygiene</div>
+          <div class="skill-desc">Evaluate and maintain knowledge freshness. Triggered by: stale knowledge, outdated, update knowledge</div>
+        </div>
       </div>
+
+      <p style="color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; margin-top: 24px;">
+        Install with: <code style="color: var(--accent);">sage skills install</code>
+      </p>
     </div>
   </section>
 
-  <section class="built-with">
+  <section class="architecture">
     <div class="container">
-      <div class="section-label success">Architecture</div>
+      <div class="section-label">Architecture</div>
       <h2>Built on Claude Code primitives</h2>
 
-      <div class="trigger-grid" style="margin-top: 32px;">
-        <div class="trigger-card">
-          <div class="trigger-title" style="margin-bottom: 12px;">MCP Server</div>
-          <div class="trigger-desc">
-            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">Model Context Protocol</div>
-            <code style="color: var(--accent); font-size: 0.8rem;">8 tools</code>
-            <div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.6;">
-              save_checkpoint, load_checkpoint, list_checkpoints, autosave_check, save_knowledge, recall_knowledge, list_knowledge, remove_knowledge
-            </div>
+      <div class="arch-grid">
+        <div class="arch-card">
+          <div class="arch-title">MCP Server</div>
+          <div class="arch-subtitle">Model Context Protocol</div>
+          <div class="arch-detail">
+            <code>20+ tools</code> for checkpoints, knowledge, todos, config, and debugging. Always available to Claude.
           </div>
         </div>
-        <div class="trigger-card">
-          <div class="trigger-title" style="margin-bottom: 12px;">Hooks</div>
-          <div class="trigger-desc">
-            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">Claude Code lifecycle events</div>
-            <div style="font-size: 0.8rem; line-height: 1.8;">
-              <div><code style="color: var(--accent);">stop</code> — semantic detector</div>
-              <div><code style="color: var(--accent);">stop</code> — context threshold (70%)</div>
-              <div><code style="color: var(--accent);">pre-compact</code> — checkpoint before /compact</div>
-            </div>
+        <div class="arch-card">
+          <div class="arch-title">Hooks</div>
+          <div class="arch-subtitle">Lifecycle events</div>
+          <div class="arch-detail">
+            Semantic detector, context threshold (70%), pre-compact checkpoint. Automatic trigger detection.
           </div>
         </div>
-        <div class="trigger-card">
-          <div class="trigger-title" style="margin-bottom: 12px;">Local Storage</div>
-          <div class="trigger-desc">
-            <div style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 8px;">No cloud, fully local</div>
-            <code style="color: var(--accent); font-size: 0.8rem;">~/.sage/</code>
-            <div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.6;">
-              checkpoints, knowledge, cooldown markers — all on your machine
-            </div>
+        <div class="arch-card">
+          <div class="arch-title">Skills</div>
+          <div class="arch-subtitle">On-demand methodology</div>
+          <div class="arch-detail">
+            <code>~/.claude/skills/sage/</code> — loaded when context matches triggers, not always present.
           </div>
+        </div>
+        <div class="arch-card">
+          <div class="arch-title">Local Storage</div>
+          <div class="arch-subtitle">No cloud, fully local</div>
+          <div class="arch-detail">
+            <code>~/.sage/</code> — checkpoints, knowledge, config. Obsidian-compatible markdown format.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div>
+          <div class="stat-value">932</div>
+          <div class="stat-label">Tests</div>
+        </div>
+        <div>
+          <div class="stat-value">20+</div>
+          <div class="stat-label">MCP Tools</div>
+        </div>
+        <div>
+          <div class="stat-value">4</div>
+          <div class="stat-label">Skills</div>
+        </div>
+        <div>
+          <div class="stat-value">v2.6</div>
+          <div class="stat-label">Current</div>
         </div>
       </div>
     </div>
@@ -1004,12 +903,11 @@
             <span class="install-method-badge">Recommended</span>
           </div>
           <div class="install-method-body">
-            <p class="install-method-desc">Primary method for Claude Code users. Installs everything automatically.</p>
+            <p class="install-method-desc">Primary method for Claude Code users. Installs MCP server and hooks automatically.</p>
             <div class="install-method-commands">
-              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">plugin marketplace add b17z/sage</span></div>
-              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">plugin install sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">install-plugin b17z/sage</span></div>
             </div>
-            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + hooks (auto-checkpointing)</p>
+            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + hooks + skills</p>
           </div>
         </div>
 
@@ -1019,12 +917,13 @@
             <span class="install-method-title">PyPI</span>
           </div>
           <div class="install-method-body">
-            <p class="install-method-desc">For standalone CLI usage outside Claude Code.</p>
+            <p class="install-method-desc">For standalone CLI usage or manual setup.</p>
             <div class="install-method-commands">
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install && sage hooks install</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage skills install</span></div>
             </div>
-            <p class="install-method-gets"><strong>Gets you:</strong> sage CLI commands (<code style="color: var(--accent);">sage list</code>, <code style="color: var(--accent);">sage ask &lt;skill&gt; "query"</code>, etc.)</p>
-            <p class="install-method-note">Want MCP/hooks in Claude Code? Also run: <code style="color: var(--accent);">sage mcp install && sage hooks install</code></p>
+            <p class="install-method-gets"><strong>Gets you:</strong> Full control over components</p>
           </div>
         </div>
 
@@ -1039,7 +938,7 @@
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">git clone https://github.com/b17z/sage</span></div>
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">cd sage && pip install -e ".[dev]"</span></div>
             </div>
-            <p class="install-method-note">Then optionally: <code style="color: var(--accent);">sage mcp install && sage hooks install</code></p>
+            <p class="install-method-note">Then: <code style="color: var(--accent);">sage mcp install && sage hooks install && sage skills install</code></p>
           </div>
         </div>
       </div>
@@ -1049,7 +948,7 @@
   <footer>
     <div class="container">
       <div class="footer-content">
-        <div class="footer-logo">v1.0.0</div>
+        <div class="footer-logo">sage v2.6.0</div>
         <div class="footer-links">
           <a href="https://github.com/b17z/sage">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -1062,6 +961,12 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
             </svg>
             PyPI
+          </a>
+          <a href="https://github.com/b17z/sage/blob/main/docs/FEATURES.md">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+            </svg>
+            Docs
           </a>
         </div>
       </div>
