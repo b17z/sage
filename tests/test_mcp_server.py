@@ -4,6 +4,7 @@ Note: These tests run with async_enabled=False (sync fallback mode) for simplici
 Async-specific behavior is tested in test_mcp_async.py.
 """
 
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -66,8 +67,7 @@ class TestSaveCheckpoint:
             confidence=0.8,
         )
 
-        assert "✓ Checkpoint saved:" in result
-        assert "Path:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_save_checkpoint_rejects_invalid_confidence_low(self, isolated_project):
         """Rejects confidence below 0."""
@@ -100,7 +100,7 @@ class TestSaveCheckpoint:
             thesis="Thesis",
             confidence=0.0,
         )
-        assert "✓ Checkpoint saved:" in result
+        assert "📍 Checkpoint queued:" in result
 
         # Test 1.0
         result = await sage_save_checkpoint(
@@ -108,7 +108,7 @@ class TestSaveCheckpoint:
             thesis="Thesis two",
             confidence=1.0,
         )
-        assert "✓ Checkpoint saved:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_save_checkpoint_with_all_optional_fields(self, isolated_project):
         """Can save checkpoint with all optional fields."""
@@ -127,7 +127,7 @@ class TestSaveCheckpoint:
             reasoning_trace="Started with sessions, but JWT better for microservices.",
         )
 
-        assert "✓ Checkpoint saved:" in result
+        assert "📍 Checkpoint queued:" in result
 
 
 class TestListCheckpoints:
@@ -148,6 +148,9 @@ class TestListCheckpoints:
             confidence=0.7,
         )
 
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
+
         result = sage_list_checkpoints()
 
         assert "Found 1 checkpoint" in result
@@ -164,6 +167,9 @@ class TestListCheckpoints:
                 confidence=0.5,
             )
 
+        # Wait for fire-and-forget saves to complete
+        time.sleep(1.0)
+
         result = sage_list_checkpoints(limit=3)
 
         # Should only show 3 (each checkpoint has **id** so count of "**" = 6)
@@ -177,6 +183,9 @@ class TestListCheckpoints:
             thesis=long_thesis,
             confidence=0.5,
         )
+
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
 
         result = sage_list_checkpoints()
 
@@ -196,14 +205,19 @@ class TestLoadCheckpoint:
     async def test_load_returns_formatted_context(self, isolated_project):
         """Returns formatted checkpoint context."""
         # Save checkpoint
-        save_result = await sage_save_checkpoint(
+        await sage_save_checkpoint(
             core_question="How to cache data?",
             thesis="Redis is best for distributed caching.",
             confidence=0.9,
         )
 
-        # Extract ID from result
-        checkpoint_id = save_result.split("Checkpoint saved: ")[1].split("\n")[0]
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
+
+        # List checkpoints to get the ID
+        list_result = sage_list_checkpoints()
+        # Extract first ID from list (format: "**id**: thesis...")
+        checkpoint_id = list_result.split("**")[1].split("**")[0]
 
         result = sage_load_checkpoint(checkpoint_id)
 
@@ -214,14 +228,18 @@ class TestLoadCheckpoint:
     async def test_load_supports_partial_id(self, isolated_project):
         """Supports partial ID matching."""
         # Save checkpoint
-        save_result = await sage_save_checkpoint(
+        await sage_save_checkpoint(
             core_question="Question",
             thesis="Thesis content here",
             confidence=0.7,
         )
 
-        # Extract ID
-        checkpoint_id = save_result.split("Checkpoint saved: ")[1].split("\n")[0]
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
+
+        # List checkpoints to get the ID
+        list_result = sage_list_checkpoints()
+        checkpoint_id = list_result.split("**")[1].split("**")[0]
         partial_id = checkpoint_id[:8]  # First 8 chars
 
         result = sage_load_checkpoint(partial_id)
@@ -280,7 +298,7 @@ class TestSaveKnowledge:
             keywords=["test", "knowledge"],
         )
 
-        assert "✓ Knowledge saved:" in result
+        assert "📍 Knowledge queued:" in result
         assert "test-knowledge" in result
         assert "global" in result
 
@@ -365,6 +383,9 @@ class TestListKnowledge:
             keywords=["first", "one"],
         )
 
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
+
         result = sage_list_knowledge()
 
         assert "item-one" in result
@@ -397,6 +418,9 @@ class TestRemoveKnowledge:
             content="Content",
             keywords=["remove"],
         )
+
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
 
         result = sage_remove_knowledge("to-remove")
 
@@ -536,8 +560,7 @@ class TestAutosaveCheck:
             token_estimate=3000,
         )
 
-        assert "📍 Autosaved:" in result
-        assert "Checkpoint:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_autosave_includes_depth_metadata(self, isolated_project, monkeypatch):
         """Saved checkpoint includes depth metadata."""
@@ -553,11 +576,15 @@ class TestAutosaveCheck:
             token_estimate=5000,
         )
 
-        # Checkpoint should be saved
-        assert "📍 Autosaved:" in result
+        # Checkpoint should be queued
+        assert "📍 Checkpoint queued:" in result
 
-        # Load and verify metadata
-        checkpoint_id = result.split("Checkpoint: ")[1].strip()
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
+
+        # List to get the checkpoint ID
+        list_result = sage_list_checkpoints()
+        checkpoint_id = list_result.split("**")[1].split("**")[0]
         loaded = sage_load_checkpoint(checkpoint_id)
 
         # Message count and token estimate should be in the checkpoint
@@ -573,7 +600,7 @@ class TestAutosaveCheck:
             confidence=0.0,  # Zero confidence
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_autosave_context_threshold_always_saves(self, isolated_project):
         """context_threshold trigger always saves (0 threshold)."""
@@ -584,7 +611,7 @@ class TestAutosaveCheck:
             confidence=0.1,  # Very low but should still save
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
 
 class TestAutosaveCheckDuplication:
@@ -600,6 +627,10 @@ class TestAutosaveCheckDuplication:
             confidence=0.8,
         )
 
+        # Wait for fire-and-forget save to complete before dedup check
+        # Needs longer if embedding model not cached
+        time.sleep(2.0)
+
         # Second save with very similar thesis
         result = await sage_autosave_check(
             trigger_event="manual",
@@ -610,7 +641,7 @@ class TestAutosaveCheckDuplication:
 
         # Should detect duplicate (depends on embeddings being available)
         # Without embeddings, may save anyway
-        assert "📍 Autosaved:" in result or "similar" in result.lower()
+        assert "📍 Checkpoint queued:" in result or "similar" in result.lower()
 
 
 class TestAutosaveCheckWithOptionalFields:
@@ -628,7 +659,7 @@ class TestAutosaveCheckWithOptionalFields:
             ],
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_autosave_with_key_evidence(self, isolated_project):
         """Autosave includes key_evidence in checkpoint."""
@@ -640,7 +671,7 @@ class TestAutosaveCheckWithOptionalFields:
             key_evidence=["Sub-millisecond latency", "Built-in clustering"],
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_autosave_with_reasoning_trace(self, isolated_project):
         """Autosave includes reasoning_trace in checkpoint."""
@@ -652,7 +683,7 @@ class TestAutosaveCheckWithOptionalFields:
             reasoning_trace="Started thinking microservices, but complexity suggests starting simpler.",
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
 
 class TestMCPServerModuleLevel:
