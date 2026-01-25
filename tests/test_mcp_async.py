@@ -76,17 +76,13 @@ def mock_async_enabled(monkeypatch):
 
 
 class TestAsyncCheckpointSave:
-    """Tests for async checkpoint saving."""
+    """Tests for checkpoint saving with fire-and-forget architecture."""
 
-    async def test_checkpoint_returns_queued_when_async_enabled(
-        self, async_test_env, mock_async_enabled, monkeypatch
+    async def test_checkpoint_returns_queued_immediately(
+        self, async_test_env, mock_async_enabled
     ):
-        """sage_save_checkpoint returns 'Queued' immediately when async enabled."""
-        # Reset queue for test
-        from sage import mcp_server
+        """sage_save_checkpoint returns 'Checkpoint queued' immediately (fire-and-forget)."""
         from sage.mcp_server import sage_save_checkpoint
-
-        mcp_server._task_queue = asyncio.Queue()
 
         result = await sage_save_checkpoint(
             core_question="How to implement auth?",
@@ -94,14 +90,13 @@ class TestAsyncCheckpointSave:
             confidence=0.8,
         )
 
-        assert "📋 Checkpoint queued" in result
-        assert "Task:" in result
-        assert "POLL:" in result  # Task polling instructions
+        # Fire-and-forget returns immediately with queued message
+        assert "📍 Checkpoint queued:" in result
 
-    async def test_checkpoint_returns_saved_when_async_disabled(
+    async def test_checkpoint_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
-        """sage_save_checkpoint returns 'Saved' immediately when async disabled."""
+        """sage_save_checkpoint uses fire-and-forget regardless of async config."""
         from sage.mcp_server import sage_save_checkpoint
 
         result = await sage_save_checkpoint(
@@ -110,36 +105,30 @@ class TestAsyncCheckpointSave:
             confidence=0.8,
         )
 
-        assert "✓ Checkpoint saved:" in result
-        assert "Path:" in result
+        assert "📍 Checkpoint queued:" in result
 
-    async def test_checkpoint_queues_task(self, async_test_env, mock_async_enabled, monkeypatch):
-        """sage_save_checkpoint adds task to queue."""
-        from sage import mcp_server
-        from sage.mcp_server import sage_save_checkpoint
+    async def test_checkpoint_saves_in_background(self, async_test_env, mock_async_disabled):
+        """sage_save_checkpoint actually saves the checkpoint in background."""
+        from sage.mcp_server import sage_list_checkpoints, sage_save_checkpoint
 
-        # Reset queue
-        mcp_server._task_queue = asyncio.Queue()
-
-        await sage_save_checkpoint(
+        result = await sage_save_checkpoint(
             core_question="Test question",
             thesis="Test thesis with enough content.",
             confidence=0.7,
         )
 
-        assert mcp_server._task_queue.qsize() == 1
+        assert "📍 Checkpoint queued:" in result
 
-        # Get the queued task
-        task = await mcp_server._task_queue.get()
-        assert task.type == "checkpoint"
-        assert task.data["core_question"] == "Test question"
+        # Wait for fire-and-forget save to complete
+        time.sleep(0.5)
 
-    async def test_checkpoint_validates_before_queue(self, async_test_env, mock_async_enabled):
-        """Invalid checkpoint data rejected before queuing."""
-        from sage import mcp_server
+        # Verify checkpoint was saved
+        list_result = sage_list_checkpoints()
+        assert "Found 1 checkpoint" in list_result
+
+    async def test_checkpoint_validates_before_save(self, async_test_env, mock_async_enabled):
+        """Invalid checkpoint data rejected before fire-and-forget save."""
         from sage.mcp_server import sage_save_checkpoint
-
-        mcp_server._task_queue = asyncio.Queue()
 
         # Invalid confidence
         result = await sage_save_checkpoint(
@@ -149,20 +138,16 @@ class TestAsyncCheckpointSave:
         )
 
         assert "Invalid confidence" in result
-        assert mcp_server._task_queue.qsize() == 0  # Not queued
 
 
 class TestAsyncKnowledgeSave:
-    """Tests for async knowledge saving."""
+    """Tests for knowledge saving with fire-and-forget architecture."""
 
-    async def test_knowledge_returns_queued_when_async_enabled(
+    async def test_knowledge_returns_queued_immediately(
         self, async_test_env, mock_async_enabled
     ):
-        """sage_save_knowledge returns 'Queued' immediately when async enabled."""
-        from sage import mcp_server
+        """sage_save_knowledge returns 'Knowledge queued' immediately (fire-and-forget)."""
         from sage.mcp_server import sage_save_knowledge
-
-        mcp_server._task_queue = asyncio.Queue()
 
         result = await sage_save_knowledge(
             knowledge_id="test-knowledge",
@@ -170,14 +155,13 @@ class TestAsyncKnowledgeSave:
             keywords=["test", "knowledge"],
         )
 
-        assert "📋 Knowledge queued:" in result
-        assert "Task:" in result
-        assert "POLL:" in result  # Task polling instructions
+        # Fire-and-forget returns immediately with queued message
+        assert "📍 Knowledge queued:" in result
 
-    async def test_knowledge_returns_saved_when_async_disabled(
+    async def test_knowledge_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
-        """sage_save_knowledge returns 'Saved' immediately when async disabled."""
+        """sage_save_knowledge uses fire-and-forget regardless of async config."""
         from sage.mcp_server import sage_save_knowledge
 
         result = await sage_save_knowledge(
@@ -186,20 +170,17 @@ class TestAsyncKnowledgeSave:
             keywords=["test", "knowledge"],
         )
 
-        assert "✓ Knowledge saved:" in result
+        assert "📍 Knowledge queued:" in result
 
 
 class TestAsyncAutosaveCheck:
-    """Tests for async autosave check."""
+    """Tests for autosave check with fire-and-forget architecture."""
 
-    async def test_autosave_returns_queued_when_async_enabled(
+    async def test_autosave_returns_queued_immediately(
         self, async_test_env, mock_async_enabled, monkeypatch
     ):
-        """sage_autosave_check returns 'Queued' when async enabled and conditions met."""
-        from sage import mcp_server
+        """sage_autosave_check returns 'Checkpoint queued' immediately (fire-and-forget)."""
         from sage.mcp_server import sage_autosave_check
-
-        mcp_server._task_queue = asyncio.Queue()
 
         # Mock dedup check to allow save
         mock_dedup = MagicMock()
@@ -216,13 +197,13 @@ class TestAsyncAutosaveCheck:
             confidence=0.8,
         )
 
-        assert "📋 Autosave queued:" in result
-        assert "POLL:" in result  # Task polling instructions
+        # Fire-and-forget returns immediately with queued message
+        assert "📍 Checkpoint queued:" in result
 
-    async def test_autosave_returns_saved_when_async_disabled(
+    async def test_autosave_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled, monkeypatch
     ):
-        """sage_autosave_check returns 'Autosaved' when async disabled."""
+        """sage_autosave_check uses fire-and-forget regardless of async config."""
         from sage.mcp_server import sage_autosave_check
 
         # Mock dedup check
@@ -240,7 +221,7 @@ class TestAsyncAutosaveCheck:
             confidence=0.8,
         )
 
-        assert "📍 Autosaved:" in result
+        assert "📍 Checkpoint queued:" in result
 
 
 class TestWorkerProcessing:
@@ -522,8 +503,7 @@ class TestSyncFallback:
         )
 
         # Sync save returns "Checkpoint saved" not "Checkpoint queued"
-        assert "✓ Checkpoint saved:" in result
-        assert "Path:" in result
+        assert "📍 Checkpoint queued:" in result
 
     async def test_knowledge_sync_fallback_works(self, async_test_env, mock_async_disabled):
         """Knowledge saves synchronously when async disabled."""
@@ -535,7 +515,7 @@ class TestSyncFallback:
             keywords=["sync"],
         )
 
-        assert "✓ Knowledge saved:" in result
+        assert "📍 Knowledge queued:" in result
 
 
 class TestQueueManagement:

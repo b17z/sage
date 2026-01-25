@@ -37,7 +37,10 @@ Or via Claude Code MCP config:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from mcp.server.fastmcp import FastMCP
 
@@ -89,6 +92,55 @@ from sage.knowledge import (
     recall_knowledge,
     remove_knowledge,
 )
+
+
+# =============================================================================
+# Fire-and-Forget Saves
+# =============================================================================
+
+
+def _log_save_error(operation: str, error: Exception, context: str = "") -> None:
+    """Log save errors to ~/.sage/errors.log for debugging.
+
+    Errors are logged but not surfaced to Claude - fire-and-forget means
+    we accept that some saves may fail silently.
+    """
+    from sage.config import SAGE_DIR
+
+    error_log = SAGE_DIR / "errors.log"
+    timestamp = datetime.now().isoformat()
+
+    try:
+        with error_log.open("a") as f:
+            f.write(f"[{timestamp}] {operation}: {error}\n")
+            if context:
+                f.write(f"  Context: {context}\n")
+    except Exception:
+        # If we can't even log the error, just give up
+        pass
+
+
+def _fire_and_forget(fn: Callable, *args, operation: str = "save", context: str = "", **kwargs) -> None:
+    """Execute a function in a daemon thread, logging any errors.
+
+    The function runs in the background and the caller doesn't wait.
+    Any exceptions are logged to ~/.sage/errors.log but not raised.
+
+    Args:
+        fn: Function to execute
+        *args: Positional arguments for fn
+        operation: Name for error logging (e.g., "checkpoint", "knowledge")
+        context: Additional context for error logging
+        **kwargs: Keyword arguments for fn
+    """
+    def _wrapper():
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            _log_save_error(operation, e, context)
+
+    thread = threading.Thread(target=_wrapper, daemon=True)
+    thread.start()
 
 
 def _format_poll_instructions(task_id: str) -> str:
@@ -787,6 +839,19 @@ def sage_health() -> str:
         lines.append("○ Compaction watcher: not running")
         lines.append("  Start with: sage watcher start")
 
+    # Check for recent save errors (fire-and-forget logging)
+    error_log = SAGE_DIR / "errors.log"
+    if error_log.exists():
+        try:
+            content = error_log.read_text()
+            error_lines = [l for l in content.strip().split("\n") if l]
+            if error_lines:
+                recent_count = min(len(error_lines), 5)
+                lines.append(f"! Save errors: {len(error_lines)} logged (see ~/.sage/errors.log)")
+                issues.append(f"Check ~/.sage/errors.log for {len(error_lines)} background save error(s)")
+        except Exception:
+            pass  # Don't fail health check if we can't read error log
+
     # Summary
     lines.append("")
     if issues:
@@ -1115,39 +1180,22 @@ async def sage_save_checkpoint(
     if not is_valid:
         return f"⏸ Invalid checkpoint data: {error_msg}"
 
-    # Check if async is enabled
-    config = get_sage_config(_PROJECT_ROOT)
+    thesis_preview = thesis[:50] + "..." if len(thesis) > 50 else thesis
+    thesis_preview = thesis_preview.replace("\n", " ")
+    template_info = f" (template: {template})" if template != "default" else ""
 
-    if config.async_enabled:
-        # Ensure worker is running
-        _ensure_worker_running()
-
-        # Queue for async processing
-        task = Task(
-            id=generate_task_id(),
-            type="checkpoint",
-            data=data,
-        )
-        await _task_queue.put(task)
-        log_task_queued(task.id, task.type)
-
-        thesis_preview = thesis[:50] + "..." if len(thesis) > 50 else thesis
-        thesis_preview = thesis_preview.replace("\n", " ")
-        template_info = f" (template: {template})" if template != "default" else ""
-
-        poll_instructions = _format_poll_instructions(task.id)
-        return (
-            f"📋 Checkpoint queued{template_info}: {thesis_preview}\n"
-            f"Task: {task.id}\n\n"
-            f"{poll_instructions}"
-        )
-    else:
-        # Sync fallback
+    # Fire-and-forget: save in background thread
+    def _do_save():
         checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
-        path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-        template_info = f" (template: {template})" if template != "default" else ""
-        return f"✓ Checkpoint saved: {checkpoint.id}{template_info}\nPath: {path}"
+    _fire_and_forget(
+        _do_save,
+        operation="save_checkpoint",
+        context=f"trigger={trigger}, thesis={thesis_preview}",
+    )
+
+    return f"📍 Checkpoint queued{template_info}: {thesis_preview}"
 
 
 @mcp.tool()
@@ -1314,34 +1362,12 @@ async def sage_save_knowledge(
     if not is_valid:
         return f"⏸ Invalid knowledge data: {error_msg}"
 
-    # Check if async is enabled
-    config = get_sage_config(_PROJECT_ROOT)
+    scope = f"skill:{skill}" if skill else "global"
+    type_label = f" [{item_type}]" if item_type != "knowledge" else ""
 
-    if config.async_enabled:
-        # Ensure worker is running
-        _ensure_worker_running()
-
-        # Queue for async processing
-        task = Task(
-            id=generate_task_id(),
-            type="knowledge",
-            data=data,
-        )
-        await _task_queue.put(task)
-        log_task_queued(task.id, task.type)
-
-        scope = f"skill:{skill}" if skill else "global"
-        type_label = f" [{item_type}]" if item_type != "knowledge" else ""
-
-        poll_instructions = _format_poll_instructions(task.id)
-        return (
-            f"📋 Knowledge queued: {knowledge_id}{type_label} ({scope})\n"
-            f"Task: {task.id}\n\n"
-            f"{poll_instructions}"
-        )
-    else:
-        # Sync fallback
-        item = add_knowledge(
+    # Fire-and-forget: save in background thread
+    def _do_save():
+        add_knowledge(
             content=content,
             knowledge_id=knowledge_id,
             keywords=keywords,
@@ -1350,9 +1376,13 @@ async def sage_save_knowledge(
             item_type=item_type,
         )
 
-        scope = f"skill:{skill}" if skill else "global"
-        type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
-        return f"✓ Knowledge saved: {item.id}{type_label} ({scope}, ~{item.metadata.tokens} tokens)"
+    _fire_and_forget(
+        _do_save,
+        operation="save_knowledge",
+        context=f"id={knowledge_id}, scope={scope}",
+    )
+
+    return f"📍 Knowledge queued: {knowledge_id}{type_label} ({scope})"
 
 
 @mcp.tool()
@@ -1890,28 +1920,10 @@ async def sage_autosave_check(
     thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis
     thesis_preview = thesis_preview.replace("\n", " ")
 
-    if config.async_enabled:
-        # Ensure worker is running
-        _ensure_worker_running()
-
-        # Queue for async processing
-        task = Task(
-            id=generate_task_id(),
-            type="checkpoint",
-            data=data,
-        )
-        await _task_queue.put(task)
-        log_task_queued(task.id, task.type)
-
-        poll_instructions = _format_poll_instructions(task.id)
-        return (
-            f"📋 Autosave queued: {thesis_preview}\n" f"Task: {task.id}\n\n" f"{poll_instructions}"
-        )
-    else:
-        # Sync fallback
+    # Fire-and-forget: create checkpoint and save in background thread
+    def _do_save():
         checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
-
-        # Add depth metadata to checkpoint
+        # Add depth metadata
         checkpoint = Checkpoint(
             id=checkpoint.id,
             ts=checkpoint.ts,
@@ -1933,10 +1945,15 @@ async def sage_autosave_check(
             message_count=message_count,
             token_estimate=token_estimate,
         )
-
         save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-        return f"📍 Autosaved: {thesis_preview}\nCheckpoint: {checkpoint.id}"
+    _fire_and_forget(
+        _do_save,
+        operation="autosave_checkpoint",
+        context=f"trigger={trigger_event}, thesis={thesis_preview}",
+    )
+
+    return f"📍 Checkpoint queued: {thesis_preview}"
 
 
 # =============================================================================

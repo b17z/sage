@@ -356,6 +356,9 @@ class EmbeddingStore:
         """Get embedding by ID."""
         try:
             idx = self.ids.index(item_id)
+            # Check for mismatch between ids and embeddings (can happen with race conditions)
+            if idx >= len(self.embeddings):
+                return None
             return self.embeddings[idx]
         except ValueError:
             return None
