@@ -513,13 +513,9 @@ def _get_continuity_context() -> str | None:
         lines.append(summary)
         lines.append("")
 
-    # Load and inject checkpoint if available
-    # Use checkpoint_id for portable lookup (falls back to checkpoint_path for legacy)
-    checkpoint_id = marker.get("checkpoint_id") or marker.get("checkpoint_path")
+    # Load and inject checkpoint if available (ID-based lookup)
+    checkpoint_id = marker.get("checkpoint_id")
     if checkpoint_id:
-        # If it's a full path (legacy), extract just the stem
-        if "/" in checkpoint_id or "\\" in checkpoint_id:
-            checkpoint_id = Path(checkpoint_id).stem
         checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
         if checkpoint:
             lines.append("**Last Checkpoint:**")

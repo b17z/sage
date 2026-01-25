@@ -2,7 +2,7 @@
 
 Version timeline and planned features.
 
-## Current: v2.5.x (January 2026)
+## Current: v2.6.x (January 2026)
 
 ### What's Shipped
 
@@ -131,7 +131,7 @@ All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2
 
 ---
 
-## v2.5 (Shipping)
+## v2.5 (Shipped)
 
 ### Focus: Proactive Recall + Auto-Injection
 
@@ -144,7 +144,28 @@ All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2
 
 ---
 
-## v2.6 (Planned)
+## v2.6 (Shipping)
+
+### Focus: Skills Architecture
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Sage methodology skills | Done | `sage-memory`, `sage-research`, `sage-session` |
+| Skills install command | Done | `sage skills install/list/update/show` |
+| Lean CLAUDE.md | Done | Moved methodology to skills (335 → 182 lines) |
+| Progressive disclosure | Done | Skills load on-demand when context matches |
+| Path sanitization | Done | Security hardening for skill paths |
+
+**The Split:**
+- CLAUDE.md → Tool reference only (always loaded)
+- Skills → Methodology (load on-demand)
+- MCP → Memory storage (always available)
+
+See [docs/skills.md](skills.md) for architecture details.
+
+---
+
+## v2.7 (Planned)
 
 ### Focus: Token Economics & Observability
 
@@ -156,18 +177,9 @@ All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2
 | MCP savings tool | `sage_session_savings()` - real-time savings for current session |
 | Restore event logging | Track when checkpoints are loaded for analytics |
 
-**Savings calculation:**
-```
-Full transcript replay:     ~100,000 tokens
-Checkpoint restore:         ~2,000 tokens
-Knowledge recalled:         ~1,000 tokens
-─────────────────────────────────────────
-Savings:                    97,000 tokens (~$0.29 at $3/1M)
-```
-
 ---
 
-## v2.7 (Planned)
+## v2.8 (Planned)
 
 ### Focus: Code-Aware Intelligence
 
@@ -256,6 +268,7 @@ Savings:                    97,000 tokens (~$0.29 at $3/1M)
 | v2.3.0 | Jan 2026 | Structural trigger detection, 70/30 hybrid scoring, 780 tests |
 | v2.4.0 | Jan 2026 | Session continuity, compaction watcher daemon, 850 tests |
 | v2.5.0 | Jan 2026 | Proactive recall, auto-injection on first tool call, 884 tests |
+| v2.6.0 | Jan 2026 | Skills architecture, methodology in skills, lean CLAUDE.md, 932 tests |
 
 ---
 
