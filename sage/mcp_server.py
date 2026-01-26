@@ -673,9 +673,17 @@ def _get_proactive_recall() -> str | None:
     Returns:
         Formatted recalled knowledge, or None if nothing relevant found
     """
+    from sage import embeddings
     from sage.knowledge import recall_knowledge
 
     try:
+        # Skip if embedding model not yet loaded (warmup in progress)
+        # This prevents blocking the first tool call while model loads
+        if embeddings.is_available() and embeddings._model is None:
+            # Model not loaded yet - skip proactive recall
+            # User can still explicitly call sage_recall_knowledge
+            return None
+
         context = _get_project_context()
         if not context:
             return None
@@ -1976,9 +1984,62 @@ def _check_for_updates_on_startup() -> None:
         pass  # Never fail startup due to update check
 
 
+def _get_startup_info() -> str:
+    """Build startup info string with project detection."""
+    from sage import __version__
+
+    parts = [f"v{__version__}"]
+
+    # Detect project from cwd
+    cwd = Path.cwd()
+    if (cwd / ".git").exists():
+        parts.append(f"project:{cwd.name}")
+    elif (cwd / "pyproject.toml").exists() or (cwd / "package.json").exists():
+        parts.append(f"project:{cwd.name}")
+
+    # Show if project-local .sage exists
+    if (cwd / ".sage").exists():
+        parts.append("local:.sage")
+
+    return " | ".join(parts)
+
+
+def _warmup_model_sync() -> None:
+    """Pre-load embedding model synchronously at startup.
+
+    This prevents the 30+ second first-load delay from blocking the first tool call.
+    Runs in a background thread to not block MCP initialization.
+    """
+    import threading
+
+    def _load():
+        try:
+            from sage import embeddings
+
+            if embeddings.is_available():
+                import sys
+                print("[Sage MCP] Warming up embedding model...", file=sys.stderr)
+                embeddings.get_model()
+                print("[Sage MCP] Embedding model ready", file=sys.stderr)
+        except Exception as e:
+            import sys
+            print(f"[Sage MCP] Warmup failed (will load on first use): {e}", file=sys.stderr)
+
+    # Start in background thread so MCP can respond to init immediately
+    thread = threading.Thread(target=_load, daemon=True)
+    thread.start()
+
+
 def main():
     """Run the Sage MCP server."""
+    import sys
+    info = _get_startup_info()
+    print(f"[Sage MCP] Starting ({info}) at {datetime.now().strftime('%H:%M:%S')}", file=sys.stderr)
     _check_for_updates_on_startup()
+
+    # Start model warmup in background (non-blocking)
+    _warmup_model_sync()
+
     mcp.run()
 
 
