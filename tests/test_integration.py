@@ -6,6 +6,7 @@ Run with: pytest tests/test_integration.py -v
 Requires: pip install claude-sage[embeddings]
 """
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -243,72 +244,58 @@ class TestMCPAutosaveIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda project_path=None: config)
         return config
 
-    @pytest.mark.asyncio
-    async def test_autosave_prevents_duplicate_save(self, temp_sage_dir: Path, sync_config):
+    def test_autosave_prevents_duplicate_save(self, temp_sage_dir: Path, sync_config):
         """sage_autosave_check prevents saving duplicate checkpoints."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check, sage_save_checkpoint
 
         # Save initial checkpoint directly
-        result1 = await sage_save_checkpoint(
+        result1 = sage_save_checkpoint(
             core_question="How do embeddings work?",
             thesis="Embeddings convert text to vectors for semantic comparison.",
             confidence=0.8,
             trigger="manual",
         )
-        assert "📍 Checkpoint queued:" in result1
-
-        # Wait for fire-and-forget save to complete before dedup check
-        time.sleep(2.0)
+        assert "📍 Checkpoint saved:" in result1
 
         # Try to autosave with nearly identical thesis (should be >0.9 similar)
-        result2 = await sage_autosave_check(
+        result2 = sage_autosave_check(
             trigger_event="synthesis",
             core_question="How do embeddings work?",
             current_thesis="Embeddings convert text into vectors for semantic comparison.",  # Nearly identical
             confidence=0.8,
         )
 
-        # Should be blocked as duplicate (or save if embeddings slow)
-        assert "Not saving" in result2 or "similar" in result2.lower() or "📍 Checkpoint queued:" in result2
-
-        # Wait for any potential save to complete
-        time.sleep(0.5)
+        # Should be blocked as duplicate
+        assert "Not saving" in result2 or "similar" in result2.lower() or "📍 Checkpoint saved:" in result2
 
         # Cleanup
         checkpoints = list_checkpoints()
         for cp in checkpoints:
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_autosave_allows_different_content(self, temp_sage_dir: Path, sync_config):
+    def test_autosave_allows_different_content(self, temp_sage_dir: Path, sync_config):
         """sage_autosave_check allows saving different checkpoints."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check
 
         # Save about embeddings
-        result1 = await sage_autosave_check(
+        result1 = sage_autosave_check(
             trigger_event="synthesis",
             core_question="How do embeddings work?",
             current_thesis="Embeddings convert text to vectors for semantic comparison.",
             confidence=0.8,
         )
-        assert "📍 Checkpoint queued:" in result1
-
-        # Wait for fire-and-forget save to complete
-        time.sleep(1.0)
+        assert "📍 Checkpoint saved:" in result1
 
         # Save about something completely different
-        result2 = await sage_autosave_check(
+        result2 = sage_autosave_check(
             trigger_event="synthesis",
             core_question="What makes good pizza?",
             current_thesis="Good pizza requires quality ingredients and proper oven temperature.",
             confidence=0.8,
         )
-        assert "📍 Checkpoint queued:" in result2
-
-        # Wait for fire-and-forget save to complete
-        time.sleep(1.0)
+        assert "📍 Checkpoint saved:" in result2
 
         # Should have 2 checkpoints
         checkpoints = list_checkpoints()

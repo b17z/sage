@@ -164,7 +164,12 @@ Max 30 attempts. If timeout, return "Sage: task timed out after 60s"."""
 
     agent_type = config.poll_agent_type
     model = config.poll_agent_model
-    return f"POLL: Task(subagent_type='{agent_type}', model='{model}', run_in_background=true, prompt=below)\n```\n{prompt}\n```"
+    # Include allowed_tools for Read and Bash(sleep) so the agent can poll
+    return (
+        f"POLL: Task(subagent_type='{agent_type}', model='{model}', "
+        f"run_in_background=true, allowed_tools=[\"Read\", \"Bash(sleep*)\"], "
+        f"prompt=below)\n```\n{prompt}\n```"
+    )
 
 
 # Initialize MCP server
@@ -673,17 +678,9 @@ def _get_proactive_recall() -> str | None:
     Returns:
         Formatted recalled knowledge, or None if nothing relevant found
     """
-    from sage import embeddings
     from sage.knowledge import recall_knowledge
 
     try:
-        # Skip if embedding model not yet loaded (warmup in progress)
-        # This prevents blocking the first tool call while model loads
-        if embeddings.is_available() and embeddings._model is None:
-            # Model not loaded yet - skip proactive recall
-            # User can still explicitly call sage_recall_knowledge
-            return None
-
         context = _get_project_context()
         if not context:
             return None
@@ -1124,7 +1121,7 @@ def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = Tr
 
 
 @mcp.tool()
-async def sage_save_checkpoint(
+def sage_save_checkpoint(
     core_question: str,
     thesis: str,
     confidence: float,
@@ -1192,18 +1189,11 @@ async def sage_save_checkpoint(
     thesis_preview = thesis_preview.replace("\n", " ")
     template_info = f" (template: {template})" if template != "default" else ""
 
-    # Fire-and-forget: save in background thread
-    def _do_save():
-        checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
-        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+    # Save checkpoint synchronously (caller should wrap in background Task per sage-memory skill)
+    checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
+    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-    _fire_and_forget(
-        _do_save,
-        operation="save_checkpoint",
-        context=f"trigger={trigger}, thesis={thesis_preview}",
-    )
-
-    return f"📍 Checkpoint queued{template_info}: {thesis_preview}"
+    return f"📍 Checkpoint saved{template_info}: {thesis_preview}"
 
 
 @mcp.tool()
@@ -1331,7 +1321,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-async def sage_save_knowledge(
+def sage_save_knowledge(
     knowledge_id: str,
     content: str,
     keywords: list[str],
@@ -1353,44 +1343,22 @@ async def sage_save_knowledge(
         item_type: Type of knowledge (knowledge, preference, todo, reference)
 
     Returns:
-        Confirmation message (queued for async save)
+        Confirmation message
     """
-    # Build task data
-    data = {
-        "knowledge_id": knowledge_id,
-        "content": content,
-        "keywords": keywords,
-        "skill": skill,
-        "source": source,
-        "item_type": item_type,
-    }
-
-    # Validate task data
-    is_valid, error_msg = validate_task_data("knowledge", data)
-    if not is_valid:
-        return f"⏸ Invalid knowledge data: {error_msg}"
-
     scope = f"skill:{skill}" if skill else "global"
     type_label = f" [{item_type}]" if item_type != "knowledge" else ""
 
-    # Fire-and-forget: save in background thread
-    def _do_save():
-        add_knowledge(
-            content=content,
-            knowledge_id=knowledge_id,
-            keywords=keywords,
-            skill=skill,
-            source=source,
-            item_type=item_type,
-        )
-
-    _fire_and_forget(
-        _do_save,
-        operation="save_knowledge",
-        context=f"id={knowledge_id}, scope={scope}",
+    # Save knowledge synchronously (caller should wrap in background Task per sage-memory skill)
+    add_knowledge(
+        content=content,
+        knowledge_id=knowledge_id,
+        keywords=keywords,
+        skill=skill,
+        source=source,
+        item_type=item_type,
     )
 
-    return f"📍 Knowledge queued: {knowledge_id}{type_label} ({scope})"
+    return f"📍 Knowledge saved: {knowledge_id}{type_label} ({scope})"
 
 
 @mcp.tool()
@@ -1811,7 +1779,7 @@ AUTOSAVE_TRIGGERS = {
 
 
 @mcp.tool()
-async def sage_autosave_check(
+def sage_autosave_check(
     trigger_event: str,
     core_question: str,
     current_thesis: str,
@@ -1928,40 +1896,33 @@ async def sage_autosave_check(
     thesis_preview = current_thesis[:50] + "..." if len(current_thesis) > 50 else current_thesis
     thesis_preview = thesis_preview.replace("\n", " ")
 
-    # Fire-and-forget: create checkpoint and save in background thread
-    def _do_save():
-        checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
-        # Add depth metadata
-        checkpoint = Checkpoint(
-            id=checkpoint.id,
-            ts=checkpoint.ts,
-            trigger=checkpoint.trigger,
-            core_question=checkpoint.core_question,
-            thesis=checkpoint.thesis,
-            confidence=checkpoint.confidence,
-            open_questions=checkpoint.open_questions,
-            sources=checkpoint.sources,
-            tensions=checkpoint.tensions,
-            unique_contributions=checkpoint.unique_contributions,
-            key_evidence=checkpoint.key_evidence,
-            reasoning_trace=checkpoint.reasoning_trace,
-            action_goal=checkpoint.action_goal,
-            action_type=checkpoint.action_type,
-            skill=checkpoint.skill,
-            project=checkpoint.project,
-            parent_checkpoint=checkpoint.parent_checkpoint,
-            message_count=message_count,
-            token_estimate=token_estimate,
-        )
-        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
-
-    _fire_and_forget(
-        _do_save,
-        operation="autosave_checkpoint",
-        context=f"trigger={trigger_event}, thesis={thesis_preview}",
+    # Save checkpoint synchronously (caller should wrap in background Task per sage-memory skill)
+    checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
+    # Add depth metadata
+    checkpoint = Checkpoint(
+        id=checkpoint.id,
+        ts=checkpoint.ts,
+        trigger=checkpoint.trigger,
+        core_question=checkpoint.core_question,
+        thesis=checkpoint.thesis,
+        confidence=checkpoint.confidence,
+        open_questions=checkpoint.open_questions,
+        sources=checkpoint.sources,
+        tensions=checkpoint.tensions,
+        unique_contributions=checkpoint.unique_contributions,
+        key_evidence=checkpoint.key_evidence,
+        reasoning_trace=checkpoint.reasoning_trace,
+        action_goal=checkpoint.action_goal,
+        action_type=checkpoint.action_type,
+        skill=checkpoint.skill,
+        project=checkpoint.project,
+        parent_checkpoint=checkpoint.parent_checkpoint,
+        message_count=message_count,
+        token_estimate=token_estimate,
     )
+    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-    return f"📍 Checkpoint queued: {thesis_preview}"
+    return f"📍 Checkpoint saved: {thesis_preview}"
 
 
 # =============================================================================
@@ -2004,42 +1965,12 @@ def _get_startup_info() -> str:
     return " | ".join(parts)
 
 
-def _warmup_model_sync() -> None:
-    """Pre-load embedding model synchronously at startup.
-
-    This prevents the 30+ second first-load delay from blocking the first tool call.
-    Runs in a background thread to not block MCP initialization.
-    """
-    import threading
-
-    def _load():
-        try:
-            from sage import embeddings
-
-            if embeddings.is_available():
-                import sys
-                print("[Sage MCP] Warming up embedding model...", file=sys.stderr)
-                embeddings.get_model()
-                print("[Sage MCP] Embedding model ready", file=sys.stderr)
-        except Exception as e:
-            import sys
-            print(f"[Sage MCP] Warmup failed (will load on first use): {e}", file=sys.stderr)
-
-    # Start in background thread so MCP can respond to init immediately
-    thread = threading.Thread(target=_load, daemon=True)
-    thread.start()
-
-
 def main():
     """Run the Sage MCP server."""
     import sys
     info = _get_startup_info()
     print(f"[Sage MCP] Starting ({info}) at {datetime.now().strftime('%H:%M:%S')}", file=sys.stderr)
     _check_for_updates_on_startup()
-
-    # Start model warmup in background (non-blocking)
-    _warmup_model_sync()
-
     mcp.run()
 
 

@@ -7,13 +7,19 @@ This module provides:
 - Similar item retrieval
 - Query prefix support for models that need it
 - Model mismatch detection for auto-rebuild
+- Thread-safe file operations with locking
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import sys
+import tempfile
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -77,24 +83,68 @@ EMBEDDINGS_DIR = SAGE_DIR / "embeddings"
 # Metadata file for tracking model used
 EMBEDDINGS_META_FILE = EMBEDDINGS_DIR / "meta.json"
 
+# Lock file for serializing embedding store access
+EMBEDDINGS_LOCK_FILE = EMBEDDINGS_DIR / ".embeddings.lock"
+
 # Global model instance (lazy-loaded)
 _model: SentenceTransformer | None = None
 _model_name: str | None = None
 _first_load_warning_shown: bool = False
 
+# Threading lock for model loading (prevents concurrent model initialization)
+_model_lock = threading.Lock()
+
+
+@contextmanager
+def _embedding_file_lock(path: Path, timeout: float = 10.0) -> Generator[None, None, None]:
+    """Acquire an exclusive lock for embedding file operations.
+
+    Uses fcntl.flock for cross-process locking. The lock is held for the
+    duration of the context manager.
+
+    Args:
+        path: Path to the embedding file (lock file derived from this)
+        timeout: Maximum time to wait for lock (not enforced, flock blocks)
+
+    Yields:
+        None when lock is acquired
+
+    Raises:
+        OSError: If lock cannot be acquired
+    """
+    # Use a lock file in the same directory as the embeddings
+    lock_path = path.parent / f".{path.stem}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Open lock file (create if needed)
+    lock_fd = open(lock_path, "w")
+    try:
+        # Acquire exclusive lock (blocks until available)
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            # Release lock
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_fd.close()
+
 
 def clear_model_cache() -> None:
     """Clear the cached embedding model.
+
+    Thread-safe: Uses lock to prevent clearing while another thread is loading.
 
     Call this after changing the embedding_model config to force reload.
     The next call to get_model() will load the new model.
     """
     global _model, _model_name
 
-    if _model is not None:
-        logger.info(f"Clearing cached embedding model: {_model_name}")
-        _model = None
-        _model_name = None
+    with _model_lock:
+        if _model is not None:
+            logger.info(f"Clearing cached embedding model: {_model_name}")
+            _model = None
+            _model_name = None
 
 
 def is_available() -> bool:
@@ -149,6 +199,9 @@ def _show_download_warning(model_name: str) -> None:
 def get_model(model_name: str | None = None) -> Result[SentenceTransformer, SageError]:
     """Get or load the embedding model (lazy initialization).
 
+    Thread-safe: Uses a lock to prevent concurrent model loading, which can
+    cause torch errors when multiple threads try to initialize the model.
+
     Args:
         model_name: HuggingFace model identifier. If None, uses configured model.
 
@@ -164,35 +217,44 @@ def get_model(model_name: str | None = None) -> Result[SentenceTransformer, Sage
         return err(
             SageError(
                 code="embeddings_unavailable",
-                message="sentence-transformers not installed. Install with: pip install claude-sage[embeddings]",
+                message="sentence-transformers not installed. "
+                "Install with: pip install claude-sage[embeddings]",
                 context={},
             )
         )
 
-    # Return cached model if same name
+    # Fast path: return cached model without lock if already loaded
     if _model is not None and _model_name == model_name:
         return ok(_model)
 
-    try:
-        from sentence_transformers import SentenceTransformer
+    # Slow path: acquire lock for model loading
+    with _model_lock:
+        # Double-check after acquiring lock (another thread may have loaded it)
+        if _model is not None and _model_name == model_name:
+            return ok(_model)
 
-        # Show download warning for large models
-        _show_download_warning(model_name)
+        try:
+            from sentence_transformers import SentenceTransformer
 
-        logger.info(f"Loading embedding model: {model_name}")
-        _model = SentenceTransformer(model_name)
-        _model_name = model_name
-        logger.info(f"Model loaded successfully (dim={_model.get_sentence_embedding_dimension()})")
-        return ok(_model)
+            # Show download warning for large models
+            _show_download_warning(model_name)
 
-    except Exception as e:
-        return err(
-            SageError(
-                code="model_load_failed",
-                message=f"Failed to load embedding model: {e}",
-                context={"model_name": model_name},
+            logger.info(f"Loading embedding model: {model_name}")
+            _model = SentenceTransformer(model_name)
+            _model_name = model_name
+            logger.info(
+                f"Model loaded successfully (dim={_model.get_sentence_embedding_dimension()})"
             )
-        )
+            return ok(_model)
+
+        except Exception as e:
+            return err(
+                SageError(
+                    code="model_load_failed",
+                    message=f"Failed to load embedding model: {e}",
+                    context={"model_name": model_name},
+                )
+            )
 
 
 def get_embedding(text: str, model_name: str | None = None) -> Result[np.ndarray, SageError]:
@@ -446,6 +508,8 @@ def load_embeddings(path: Path) -> Result[EmbeddingStore, SageError]:
     If the model has changed since embeddings were saved, returns empty store
     to trigger rebuild.
 
+    Thread-safe: Uses file locking to prevent race conditions with concurrent saves.
+
     Args:
         path: Path to .npy embeddings file
 
@@ -469,30 +533,47 @@ def load_embeddings(path: Path) -> Result[EmbeddingStore, SageError]:
         return ok(EmbeddingStore.empty(dim=info["dim"]))
 
     try:
-        # Load embeddings without pickle (security)
-        embeddings = np.load(path, allow_pickle=False)
+        with _embedding_file_lock(path):
+            # Load embeddings without pickle (security)
+            embeddings = np.load(path, allow_pickle=False)
 
-        # Load IDs from JSON
-        if ids_path.exists():
-            with open(ids_path) as f:
-                ids = json.load(f)
-        else:
-            ids = []
+            # Load IDs from JSON
+            if ids_path.exists():
+                with open(ids_path) as f:
+                    ids = json.load(f)
+            else:
+                ids = []
 
-        # Check dimension mismatch (catches cases without metadata file)
-        if embeddings.size > 0:
-            current_model = get_configured_model()
-            expected_dim = get_model_info(current_model)["dim"]
-            actual_dim = embeddings.shape[1] if len(embeddings.shape) > 1 else 0
+            # Check dimension mismatch (catches cases without metadata file)
+            if embeddings.size > 0:
+                current_model = get_configured_model()
+                expected_dim = get_model_info(current_model)["dim"]
+                actual_dim = embeddings.shape[1] if len(embeddings.shape) > 1 else 0
 
-            if actual_dim != expected_dim:
+                if actual_dim != expected_dim:
+                    logger.warning(
+                        f"Embedding dimension mismatch ({actual_dim} != {expected_dim}). "
+                        "Embeddings will be rebuilt."
+                    )
+                    return ok(EmbeddingStore.empty(dim=expected_dim))
+
+            # Check for ID/embedding count mismatch (race condition recovery)
+            num_ids = len(ids)
+            num_embeddings = embeddings.shape[0] if embeddings.size > 0 else 0
+
+            if num_ids != num_embeddings:
                 logger.warning(
-                    f"Embedding dimension mismatch ({actual_dim} != {expected_dim}). "
-                    "Embeddings will be rebuilt."
+                    f"ID/embedding count mismatch ({num_ids} IDs vs {num_embeddings} embeddings). "
+                    "Truncating to smaller count for consistency."
                 )
-                return ok(EmbeddingStore.empty(dim=expected_dim))
+                min_count = min(num_ids, num_embeddings)
+                ids = ids[:min_count]
+                if min_count > 0:
+                    embeddings = embeddings[:min_count]
+                else:
+                    return ok(EmbeddingStore.empty())
 
-        return ok(EmbeddingStore(ids=ids, embeddings=embeddings))
+            return ok(EmbeddingStore(ids=ids, embeddings=embeddings))
     except Exception as e:
         return err(
             SageError(
@@ -511,6 +592,10 @@ def save_embeddings(path: Path, store: EmbeddingStore) -> Result[None, SageError
 
     Also saves metadata about the model used for mismatch detection.
 
+    Thread-safe: Uses file locking to prevent race conditions with concurrent
+    saves. Both files are written atomically (temp file + rename) to ensure
+    consistency.
+
     Args:
         path: Path to .npy embeddings file
         store: EmbeddingStore to save
@@ -519,24 +604,64 @@ def save_embeddings(path: Path, store: EmbeddingStore) -> Result[None, SageError
         Result with None on success or an error
     """
     ids_path = path.with_suffix(".json")
+    temp_npy_path: Path | None = None
+    temp_json_path: Path | None = None
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save embeddings without pickle (security)
-        np.save(path, store.embeddings)
-        # Restrict permissions - embeddings may reveal model behavior
-        path.chmod(0o600)
+        with _embedding_file_lock(path):
+            import os
 
-        # Save IDs as JSON (safe, no code execution)
-        with open(ids_path, "w") as f:
-            json.dump(store.ids, f)
-        ids_path.chmod(0o600)
+            # Create temp files for atomic write
+            # Using tempfile in same directory ensures atomic rename works
+            # Note: np.save auto-appends .npy, so we use .npy suffix to match
+            fd_npy, temp_npy = tempfile.mkstemp(
+                dir=path.parent,
+                prefix=f".{path.stem}_",
+                suffix=".npy",
+            )
+            temp_npy_path = Path(temp_npy)
 
-        # Save model metadata for mismatch detection
-        _save_embeddings_metadata(get_configured_model())
+            fd_json, temp_json = tempfile.mkstemp(
+                dir=path.parent,
+                prefix=f".{path.stem}_",
+                suffix=".json",
+            )
+            temp_json_path = Path(temp_json)
 
-        return ok(None)
+            try:
+                # Save embeddings to temp file
+                os.close(fd_npy)  # np.save needs to open the file itself
+                np.save(temp_npy_path, store.embeddings)
+                temp_npy_path.chmod(0o600)
+
+                # Save IDs to temp file
+                with os.fdopen(fd_json, "w") as f:
+                    json.dump(store.ids, f)
+                temp_json_path.chmod(0o600)
+
+                # Atomic rename both files (order matters: embeddings first)
+                # If we crash between renames, load will detect mismatch and recover
+                temp_npy_path.rename(path)
+                temp_npy_path = None  # Renamed successfully
+
+                temp_json_path.rename(ids_path)
+                temp_json_path = None  # Renamed successfully
+
+                # Save model metadata for mismatch detection
+                _save_embeddings_metadata(get_configured_model())
+
+                return ok(None)
+
+            except Exception:
+                # Clean up temp files on error
+                if temp_npy_path and temp_npy_path.exists():
+                    temp_npy_path.unlink()
+                if temp_json_path and temp_json_path.exists():
+                    temp_json_path.unlink()
+                raise
+
     except Exception as e:
         return err(
             SageError(

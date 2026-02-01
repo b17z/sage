@@ -224,6 +224,125 @@ class TestSaveLoadEmbeddings:
         assert result.is_ok()
         assert len(result.unwrap()) == 0
 
+    def test_load_recovers_from_id_embedding_mismatch(self, mock_embeddings_dir: Path, monkeypatch):
+        """Load truncates data when IDs and embeddings count don't match (race condition recovery)."""
+        import json
+
+        # Mock get_model_info to return matching dimension for test embeddings
+        monkeypatch.setattr(
+            "sage.embeddings.get_model_info",
+            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0},
+        )
+
+        # Create mismatched files directly (simulating race condition corruption)
+        npy_path = mock_embeddings_dir / "corrupted.npy"
+        json_path = mock_embeddings_dir / "corrupted.json"
+
+        # Save 2 embeddings
+        embeddings = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        np.save(npy_path, embeddings)
+
+        # But 3 IDs (mismatch!)
+        with open(json_path, "w") as f:
+            json.dump(["item1", "item2", "item3"], f)
+
+        # Load should recover by truncating to smaller count
+        result = load_embeddings(npy_path)
+
+        assert result.is_ok()
+        loaded = result.unwrap()
+        assert len(loaded) == 2  # Truncated to match embeddings count
+        assert loaded.ids == ["item1", "item2"]
+
+    def test_load_recovers_when_embeddings_exceed_ids(self, mock_embeddings_dir: Path, monkeypatch):
+        """Load truncates when embeddings count exceeds IDs count."""
+        import json
+
+        monkeypatch.setattr(
+            "sage.embeddings.get_model_info",
+            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0},
+        )
+
+        npy_path = mock_embeddings_dir / "corrupted2.npy"
+        json_path = mock_embeddings_dir / "corrupted2.json"
+
+        # Save 3 embeddings
+        embeddings = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        np.save(npy_path, embeddings)
+
+        # But only 2 IDs
+        with open(json_path, "w") as f:
+            json.dump(["item1", "item2"], f)
+
+        result = load_embeddings(npy_path)
+
+        assert result.is_ok()
+        loaded = result.unwrap()
+        assert len(loaded) == 2  # Truncated to match IDs count
+        assert loaded.embeddings.shape[0] == 2
+
+    def test_concurrent_saves_maintain_consistency(self, mock_embeddings_dir: Path, monkeypatch):
+        """Concurrent saves don't corrupt the embedding store (file locking test)."""
+        import concurrent.futures
+        import threading
+
+        monkeypatch.setattr(
+            "sage.embeddings.get_model_info",
+            lambda model_name: {"dim": 3, "query_prefix": "", "size_mb": 0},
+        )
+
+        path = mock_embeddings_dir / "concurrent.npy"
+        results = []
+        errors = []
+
+        def save_item(item_id: int):
+            """Save an item to the store."""
+            try:
+                # Load current store
+                load_result = load_embeddings(path)
+                if load_result.is_err():
+                    errors.append(f"Load failed: {load_result.unwrap_err()}")
+                    return
+
+                store = load_result.unwrap()
+
+                # Add new item
+                embedding = np.array([float(item_id), 0.0, 0.0])
+                store = store.add(f"item{item_id}", embedding)
+
+                # Save updated store
+                save_result = save_embeddings(path, store)
+                if save_result.is_err():
+                    errors.append(f"Save failed: {save_result.unwrap_err()}")
+                    return
+
+                results.append(item_id)
+            except Exception as e:
+                errors.append(str(e))
+
+        # Run 10 concurrent saves
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(save_item, i) for i in range(10)]
+            concurrent.futures.wait(futures)
+
+        # Check no errors occurred
+        assert not errors, f"Errors during concurrent saves: {errors}"
+
+        # Load final store and verify consistency
+        final_result = load_embeddings(path)
+        assert final_result.is_ok()
+
+        final_store = final_result.unwrap()
+
+        # Due to file locking, all saves should have succeeded
+        # but some may have been overwritten - the key is consistency
+        assert len(final_store.ids) == len(final_store.embeddings)
+
+        # Verify each stored item has matching embedding
+        for item_id in final_store.ids:
+            embedding = final_store.get(item_id)
+            assert embedding is not None, f"Missing embedding for {item_id}"
+
 
 class TestFindSimilar:
     """Tests for similarity search."""
