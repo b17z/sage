@@ -945,13 +945,23 @@ def sage_health() -> str:
     else:
         lines.append("○ Tasks directory: not created yet")
 
-    # Check watcher status
+    # Check watcher status - auto-restart if enabled and not running
     watcher_status = get_watcher_status()
     if watcher_status["running"]:
         lines.append(f"✓ Compaction watcher: running (PID {watcher_status['pid']})")
     else:
-        lines.append("○ Compaction watcher: not running")
-        lines.append("  Start with: sage watcher start")
+        # Try to auto-start if enabled
+        if config.watcher_auto_start:
+            from sage.watcher import start_daemon
+            if start_daemon():
+                new_status = get_watcher_status()
+                lines.append(f"✓ Compaction watcher: auto-restarted (PID {new_status.get('pid', '?')})")
+            else:
+                lines.append("○ Compaction watcher: not running (auto-start failed)")
+                issues.append("Watcher auto-start failed - check logs")
+        else:
+            lines.append("○ Compaction watcher: not running")
+            lines.append("  Start with: sage watcher start")
 
     # Check for recent save errors (fire-and-forget logging)
     error_log = SAGE_DIR / "errors.log"
