@@ -17,14 +17,14 @@ Architecture:
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 import yaml
 
-from sage.config import SAGE_DIR, detect_project_root
+from sage.config import SAGE_DIR
 from sage.salience import (
     extract_decisions,
     extract_open_threads,

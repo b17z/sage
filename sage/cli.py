@@ -1823,10 +1823,7 @@ def admin_rebuild_embeddings(force):
 
     from sage import embeddings
     from sage.checkpoint import list_checkpoints
-    from sage.config import get_sage_config
     from sage.knowledge import list_knowledge
-
-    config = get_sage_config()
 
     # Check for model mismatch
     is_mismatch, stored_model, current_model = embeddings.check_model_mismatch()

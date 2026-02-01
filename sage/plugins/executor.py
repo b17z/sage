@@ -10,7 +10,6 @@ Security:
 - Fire-and-forget uses daemon threads for non-blocking execution
 """
 
-import json
 import logging
 import threading
 from datetime import UTC, datetime

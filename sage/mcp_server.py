@@ -431,7 +431,7 @@ def _sync_save_checkpoint(task: Task) -> TaskResult:
                 token_estimate=data.get("token_estimate", 0),
             )
 
-        path = save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
         template = data.get("template", "default")
         template_info = f" (template: {template})" if template != "default" else ""
@@ -968,9 +968,8 @@ def sage_health() -> str:
     if error_log.exists():
         try:
             content = error_log.read_text()
-            error_lines = [l for l in content.strip().split("\n") if l]
+            error_lines = [line for line in content.strip().split("\n") if line]
             if error_lines:
-                recent_count = min(len(error_lines), 5)
                 lines.append(f"! Save errors: {len(error_lines)} logged (see ~/.sage/errors.log)")
                 issues.append(f"Check ~/.sage/errors.log for {len(error_lines)} background save error(s)")
         except Exception:
@@ -2081,7 +2080,7 @@ def _check_code_deps() -> str | None:
     Returns error message if not available, None if ok.
     """
     try:
-        from sage.codebase import is_lancedb_available, is_treesitter_available
+        from sage.codebase import is_lancedb_available
 
         if not is_lancedb_available():
             return "LanceDB not available. Install with: pip install claude-sage[code]"

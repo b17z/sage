@@ -92,13 +92,6 @@ def _get_default_skills_cached() -> list[DefaultSkill]:
     return _default_skills_cache
 
 
-# For backward compatibility - these are now computed properties
-@property
-def DEFAULT_SKILLS() -> list[DefaultSkill]:
-    """All default skills."""
-    return _get_default_skills_cached()
-
-
 def get_skill_path(skill_name: str) -> Path:
     """Get the path where a Sage skill should be installed.
 

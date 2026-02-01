@@ -5,10 +5,6 @@ Result types force explicit handling of both success and failure cases.
 """
 
 from dataclasses import dataclass
-from typing import TypeVar
-
-T = TypeVar("T")
-E = TypeVar("E")
 
 
 @dataclass(frozen=True)

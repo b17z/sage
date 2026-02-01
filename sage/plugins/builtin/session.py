@@ -9,7 +9,7 @@ The plugin:
 3. On CompactionDetected: Ends session (compaction = context reset)
 """
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from sage.plugins.base import BasePlugin, PluginAction, PluginResult
 from sage.plugins.events import CompactionDetected, DaemonStarted, DaemonStopping, WatcherEvent
