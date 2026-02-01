@@ -188,6 +188,11 @@ class SageConfig:
     continuity_enabled: bool = True  # Inject context after compaction
     watcher_auto_start: bool = False  # Auto-start watcher on MCP init (opt-in)
 
+    # Recovery checkpoint settings (v2.7)
+    recovery_enabled: bool = True  # Generate recovery checkpoints on compaction
+    recovery_use_claude: bool = False  # Use headless Claude for extraction (opt-in)
+    recovery_salience_threshold: float = 0.5  # Min salience to save observation
+
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         import logging

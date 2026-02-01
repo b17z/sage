@@ -19,18 +19,16 @@ from dataclasses import dataclass
 
 from sage.config import get_sage_config
 
+from .linguistic import detect_linguistic_trigger
+from .structural import StructuralDetector
 from .types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
-    TriggerResult,
-    Confidence,
+    DEFAULT_TRIGGER_THRESHOLD,
     EMBEDDING_WEIGHT,
     KEYWORD_WEIGHT,
-    DEFAULT_TRIGGER_THRESHOLD,
+    Confidence,
+    Trigger,
+    TriggerResult,
 )
-from .structural import StructuralDetector
-from .linguistic import detect_linguistic_trigger
 
 
 def combine_signals(

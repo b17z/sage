@@ -81,7 +81,7 @@ def health():
         issues.append("Run 'sage init' to create directory")
 
     # Check config
-    config = get_sage_config()
+    _ = get_sage_config()  # Validates config loads correctly
     if CONFIG_PATH.exists():
         console.print(f"[green]✓[/green] Config loaded: {CONFIG_PATH}")
     else:
@@ -1998,6 +1998,7 @@ def watcher_status():
     from sage.watcher import get_watcher_status
 
     status = get_watcher_status()
+    config = get_sage_config()
 
     console.print("[bold]Compaction Watcher Status[/bold]")
     console.print("─" * 40)
@@ -2006,6 +2007,13 @@ def watcher_status():
         console.print(f"[green]✓[/green] Running (PID {status['pid']})")
     else:
         console.print("[dim]○[/dim] Not running")
+
+    # Show autostart status
+    if config.watcher_auto_start:
+        console.print("[green]✓[/green] Autostart enabled")
+    else:
+        console.print("[dim]○[/dim] Autostart disabled")
+        console.print("  [dim]Enable: sage watcher autostart enable[/dim]")
 
     if status.get("transcript"):
         console.print(f"  Transcript: {status['transcript']}")
@@ -2024,6 +2032,48 @@ def watcher_status():
         lines = log_path.read_text().strip().split("\n")[-5:]
         for line in lines:
             console.print(f"  [dim]{line}[/dim]")
+
+
+@watcher.command("autostart")
+@click.argument("action", type=click.Choice(["enable", "disable", "status"]))
+def watcher_autostart(action):
+    """Enable or disable watcher autostart.
+
+    When autostart is enabled, the watcher daemon will automatically
+    start on the first MCP tool call of each session.
+
+    Examples:
+        sage watcher autostart enable
+        sage watcher autostart disable
+        sage watcher autostart status
+    """
+    config = get_sage_config()
+
+    if action == "status":
+        if config.watcher_auto_start:
+            console.print("[green]✓[/green] Watcher autostart is enabled")
+            console.print("  [dim]Watcher will start on first MCP tool call[/dim]")
+        else:
+            console.print("[dim]○[/dim] Watcher autostart is disabled")
+            console.print("  [dim]Enable with: sage watcher autostart enable[/dim]")
+        return
+
+    if action == "enable":
+        # Update config
+        current_dict = config.to_dict()
+        current_dict["watcher_auto_start"] = True
+        new_config = SageConfig(**current_dict)
+        new_config.save(SAGE_DIR)
+        console.print("[green]✓[/green] Watcher autostart enabled")
+        console.print("  [dim]Watcher will start on first MCP tool call[/dim]")
+
+    elif action == "disable":
+        # Update config
+        current_dict = config.to_dict()
+        current_dict["watcher_auto_start"] = False
+        new_config = SageConfig(**current_dict)
+        new_config.save(SAGE_DIR)
+        console.print("[green]✓[/green] Watcher autostart disabled")
 
 
 # ============================================================================
@@ -2195,9 +2245,9 @@ def skills_install(force):
 def skills_list():
     """List installed Sage methodology skills."""
     from sage.default_skills import (
-        DEFAULT_SKILLS,
         SAGE_SKILLS_DIR,
         check_skill_version,
+        get_default_skills,
         get_installed_sage_skills,
     )
 
@@ -2216,7 +2266,7 @@ def skills_list():
     table.add_column("VERSION")
     table.add_column("STATUS")
 
-    available_names = [s.name for s in DEFAULT_SKILLS]
+    available_names = [s.name for s in get_default_skills()]
 
     for skill_name in installed:
         installed_ver, available_ver = check_skill_version(skill_name)

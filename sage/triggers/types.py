@@ -4,9 +4,10 @@ Immutable dataclasses representing triggers and message state.
 Following functional patterns: frozen dataclasses, typed enums.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import NewType
+
 import numpy as np
 
 

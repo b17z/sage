@@ -9,20 +9,19 @@ but uses immutable operations internally.
 """
 
 from dataclasses import dataclass, field
+
 import numpy as np
 
-from sage.embeddings import get_embedding, cosine_similarity
 from sage.config import get_sage_config
-from sage.errors import SageError
+from sage.embeddings import cosine_similarity, get_embedding
 
 from .types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
-    MessageBuffer,
     Confidence,
+    MessageBuffer,
+    Trigger,
+    TriggerSource,
+    TriggerType,
 )
-
 
 # Buffer bounds to prevent memory exhaustion
 MAX_BUFFER_SIZE = 50

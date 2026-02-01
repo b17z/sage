@@ -645,9 +645,9 @@ def _validate_checkpoint_schema(data: dict) -> str | None:
 
     # Required fields
     required = ["id", "ts", "trigger", "core_question", "thesis", "confidence"]
-    for field in required:
-        if field not in cp:
-            return f"Missing required field: {field}"
+    for field_name in required:
+        if field_name not in cp:
+            return f"Missing required field: {field_name}"
 
     # Type validation for critical fields
     if not isinstance(cp.get("confidence"), (int, float)):
@@ -788,7 +788,7 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
     parts = [
         "# Research Context (Restored from Checkpoint)\n",
         f"*Checkpoint: {checkpoint.id}*\n",
-        f"*Saved: {checkpoint.ts[:16].replace('T', ' ')} | Confidence: {checkpoint.confidence:.0%}*\n\n",
+        f"*Saved: {checkpoint.ts[:16].replace('T', ' ')} | Confidence: {checkpoint.confidence:.0%}*\n\n",  # noqa: E501
         "## Core Question\n",
         f"{checkpoint.core_question}\n\n",
         "## Current Thesis\n",

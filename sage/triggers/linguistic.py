@@ -11,12 +11,11 @@ import re
 from dataclasses import dataclass
 
 from .types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
     Confidence,
+    Trigger,
+    TriggerSource,
+    TriggerType,
 )
-
 
 # =============================================================================
 # Pattern Definitions

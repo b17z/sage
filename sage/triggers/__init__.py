@@ -28,31 +28,31 @@ Configurable thresholds in sage config:
 - convergence_question_drop: Question ratio drop for synthesis (default 0.20)
 """
 
-from .types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
-    TriggerResult,
-    MessageBuffer,
-    Confidence,
-    EMBEDDING_WEIGHT,
-    KEYWORD_WEIGHT,
-    DEFAULT_TRIGGER_THRESHOLD,
-)
-from .structural import (
-    StructuralDetector,
-    detect_topic_drift,
-    detect_convergence,
+from .combiner import (
+    TriggerDetector,
+    analyze_for_trigger,
+    combine_signals,
+    should_checkpoint,
 )
 from .linguistic import (
     detect_linguistic_trigger,
     get_all_patterns,
 )
-from .combiner import (
-    TriggerDetector,
-    combine_signals,
-    should_checkpoint,
-    analyze_for_trigger,
+from .structural import (
+    StructuralDetector,
+    detect_convergence,
+    detect_topic_drift,
+)
+from .types import (
+    DEFAULT_TRIGGER_THRESHOLD,
+    EMBEDDING_WEIGHT,
+    KEYWORD_WEIGHT,
+    Confidence,
+    MessageBuffer,
+    Trigger,
+    TriggerResult,
+    TriggerSource,
+    TriggerType,
 )
 
 __all__ = [
