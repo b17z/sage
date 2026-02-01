@@ -38,9 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
 
@@ -54,14 +55,12 @@ from sage.logging import (
     get_logger,
     log_task_completed,
     log_task_failed,
-    log_task_queued,
     log_task_started,
 )
 from sage.tasks import (
     Task,
     TaskResult,
     clear_pending_tasks,
-    generate_task_id,
     get_task_paths,
     load_pending_tasks,
     save_pending_tasks,
@@ -92,7 +91,6 @@ from sage.knowledge import (
     recall_knowledge,
     remove_knowledge,
 )
-
 
 # =============================================================================
 # Fire-and-Forget Saves
@@ -193,7 +191,7 @@ def _reset_session_state() -> None:
 
 
 def _get_session_start_context() -> str | None:
-    """Get session start context (continuity + proactive recall) on first call only.
+    """Get session start context (continuity + proactive recall + watcher) on first call only.
 
     Returns context string on first call of the session, None on subsequent calls.
     This enables automatic context injection without requiring explicit sage_health() call.
@@ -204,6 +202,11 @@ def _get_session_start_context() -> str | None:
     _session_context_injected = True
 
     parts = []
+
+    # Check watcher autostart
+    watcher_msg = _check_watcher_autostart()
+    if watcher_msg:
+        parts.append(watcher_msg)
 
     # Get continuity context (from compaction)
     continuity = _get_continuity_context()
@@ -227,6 +230,55 @@ def _inject_session_context(response: str) -> str:
     if context:
         return context + "\n\n" + response
     return response
+
+
+# =============================================================================
+# Watcher Autostart
+# =============================================================================
+
+# Track whether we've checked autostart this session
+_watcher_autostart_checked = False
+
+
+def _check_watcher_autostart() -> str | None:
+    """Check if watcher should be auto-started based on config.
+
+    Returns a message string if watcher was started or needs user decision,
+    None if no action needed.
+
+    Flow:
+    1. If watcher already running: return None
+    2. If watcher_auto_start config is True: start watcher, return status
+    3. If watcher_auto_start config is False: return None (user declined)
+    """
+    global _watcher_autostart_checked
+
+    if _watcher_autostart_checked:
+        return None
+    _watcher_autostart_checked = True
+
+    from sage.watcher import is_running, start_daemon
+
+    # Already running - nothing to do
+    if is_running():
+        return None
+
+    # Check config
+    config = get_sage_config(_PROJECT_ROOT)
+    if not config.watcher_auto_start:
+        return None  # User hasn't enabled autostart
+
+    # Try to start the watcher
+    if start_daemon():
+        return "🔭 Watcher auto-started for session continuity."
+    else:
+        return None  # Failed to start, don't notify
+
+
+def _reset_watcher_state() -> None:
+    """Reset watcher autostart state for testing."""
+    global _watcher_autostart_checked
+    _watcher_autostart_checked = False
 
 
 # =============================================================================
@@ -541,27 +593,32 @@ def _get_continuity_context() -> str | None:
     """Get pending continuity context for injection.
 
     Checks if there's a continuity marker from a previous compaction.
+    Also checks the session queue for pending checkpoints.
     If found, loads and formats the context, then clears the marker.
 
     Returns:
         Formatted context string, or None if no pending continuity.
     """
-    if not has_pending_continuity():
-        return None
-
-    marker = get_continuity_marker()
-    if not marker:
-        return None
-
     config = get_sage_config(_PROJECT_ROOT)
     if not config.continuity_enabled:
         clear_continuity()
         return None
 
+    # Check for pending continuity marker (from compaction)
+    has_marker = has_pending_continuity()
+    marker = get_continuity_marker() if has_marker else None
+
+    # Check for session queue entries
+    queued_checkpoints = _get_queued_checkpoints()
+
+    # If nothing pending, return None
+    if not marker and not queued_checkpoints:
+        return None
+
     lines = ["═══ SESSION CONTINUITY ═══", ""]
 
     # Include compaction summary if present
-    if marker.get("compaction_summary"):
+    if marker and marker.get("compaction_summary"):
         summary = marker["compaction_summary"]
         # Truncate very long summaries
         if len(summary) > 2000:
@@ -570,25 +627,78 @@ def _get_continuity_context() -> str | None:
         lines.append(summary)
         lines.append("")
 
-    # Load and inject checkpoint if available (ID-based lookup)
-    checkpoint_id = marker.get("checkpoint_id")
+    # Load and inject checkpoint from marker if available (ID-based lookup)
+    checkpoint_id = marker.get("checkpoint_id") if marker else None
+    injected_ids = []
+
     if checkpoint_id:
         checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
         if checkpoint:
             lines.append("**Last Checkpoint:**")
             lines.append(format_checkpoint_for_context(checkpoint))
+            injected_ids.append(checkpoint_id)
         else:
             lines.append(f"*Checkpoint not found: {checkpoint_id}*")
-    else:
+    elif not queued_checkpoints:
         lines.append("*No checkpoint was saved before compaction.*")
+
+    # Inject queued checkpoints (up to 3, most recent first)
+    if queued_checkpoints:
+        lines.append("")
+        lines.append("**Session Checkpoints:**")
+        for entry in queued_checkpoints[:3]:
+            if entry.checkpoint_id in injected_ids:
+                continue  # Already injected from marker
+            checkpoint = load_checkpoint(entry.checkpoint_id, project_path=_PROJECT_ROOT)
+            if checkpoint:
+                lines.append(f"*[{entry.checkpoint_type}]*")
+                lines.append(format_checkpoint_for_context(checkpoint))
+                injected_ids.append(entry.checkpoint_id)
 
     lines.append("")
     lines.append("═══════════════════════════")
 
     # Clear the marker
-    clear_continuity()
+    if marker:
+        clear_continuity()
+
+    # Clear injected checkpoints from queue
+    if injected_ids:
+        _clear_injected_checkpoints(injected_ids)
 
     return "\n".join(lines)
+
+
+def _get_queued_checkpoints():
+    """Get pending checkpoints from the session queue.
+
+    Returns:
+        List of QueueEntry objects, or empty list
+    """
+    try:
+        from sage.session import get_pending_injections
+
+        return get_pending_injections()
+    except ImportError:
+        return []
+    except Exception:
+        return []
+
+
+def _clear_injected_checkpoints(checkpoint_ids: list[str]) -> None:
+    """Clear checkpoints from the queue after injection.
+
+    Args:
+        checkpoint_ids: List of checkpoint IDs to clear
+    """
+    try:
+        from sage.session import clear_injected
+
+        clear_injected(checkpoint_ids)
+    except ImportError:
+        pass
+    except Exception:
+        pass
 
 
 def _get_project_context() -> str | None:
@@ -604,7 +714,6 @@ def _get_project_context() -> str | None:
     """
     import json
     import subprocess
-    from pathlib import Path
 
     signals = []
 
@@ -778,7 +887,7 @@ def sage_health() -> str:
     update_available, latest = check_for_updates()
     if update_available and latest:
         lines.append(f"⚠️ Update available: v{__version__} → v{latest}")
-        issues.append(f"Run: pip install --upgrade claude-sage")
+        issues.append("Run: pip install --upgrade claude-sage")
     else:
         lines.append(f"✓ Version: v{__version__} (latest)")
 
@@ -879,7 +988,8 @@ def sage_continuity_status() -> str:
     Call this at the start of a new session to:
     1. Check if context was compacted
     2. Inject any pending continuity context from checkpoints
-    3. Get watcher daemon status
+    3. Inject core file context if available
+    4. Get watcher daemon status
 
     This is the primary entry point for session continuity after compaction.
 
@@ -888,11 +998,25 @@ def sage_continuity_status() -> str:
     """
     from sage.watcher import get_watcher_status
 
+    parts = []
+
     # Check for and inject continuity context
     continuity_context = _get_continuity_context()
-
     if continuity_context:
-        return continuity_context
+        parts.append(continuity_context)
+
+    # Check for core file context
+    try:
+        from sage.codebase.core_files import get_core_context
+
+        core_context = get_core_context(_PROJECT_ROOT)
+        if core_context:
+            parts.append(core_context)
+    except ImportError:
+        pass  # Codebase module not installed
+
+    if parts:
+        return "\n\n".join(parts)
 
     # No pending continuity - return status info
     config = get_sage_config(_PROJECT_ROOT)
@@ -915,6 +1039,17 @@ def sage_continuity_status() -> str:
     else:
         lines.append("○ Watcher not running")
         lines.append("  Start with: sage watcher start")
+
+    # Show core files status
+    try:
+        from sage.codebase import list_core
+
+        core_files = list_core(_PROJECT_ROOT)
+        if core_files:
+            lines.append("")
+            lines.append(f"📁 Core files: {len(core_files)} marked")
+    except ImportError:
+        pass
 
     return "\n".join(lines)
 
@@ -994,9 +1129,9 @@ def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = Tr
     from sage.config import get_sage_config
     from sage.knowledge import (
         _get_all_embedding_similarities,
+        get_type_threshold,
         load_index,
         score_item_combined,
-        get_type_threshold,
     )
 
     cfg = get_sage_config()
@@ -1489,7 +1624,7 @@ def sage_update_knowledge(
     if status is not None:
         updates.append(f"status={status}")
     if source is not None:
-        updates.append(f"source")
+        updates.append("source")
 
     return f"✓ Updated {knowledge_id}: {', '.join(updates)}"
 
@@ -1923,6 +2058,353 @@ def sage_autosave_check(
     save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     return f"📍 Checkpoint saved: {thesis_preview}"
+
+
+# =============================================================================
+# Codebase Tools
+# =============================================================================
+
+
+def _check_code_deps() -> str | None:
+    """Check if code dependencies are available.
+
+    Returns error message if not available, None if ok.
+    """
+    try:
+        from sage.codebase import is_lancedb_available, is_treesitter_available
+
+        if not is_lancedb_available():
+            return "LanceDB not available. Install with: pip install claude-sage[code]"
+        return None
+    except ImportError:
+        return "Codebase module not available. Install with: pip install claude-sage[code]"
+
+
+@mcp.tool()
+def sage_index_code(
+    path: str = ".",
+    project: str | None = None,
+    incremental: bool = True,
+) -> str:
+    """Index a directory for code search.
+
+    Creates vector embeddings and compiled metadata for semantic code search.
+    Uses AST-aware chunking for Python, TypeScript, JavaScript, Go, Rust, Solidity.
+
+    Args:
+        path: Directory to index (default: current directory)
+        project: Project identifier (auto-detected if not provided)
+        incremental: Only re-index changed files (default: True)
+
+    Returns:
+        Indexing statistics
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import index_directory
+
+    path_obj = Path(path).resolve()
+    if not path_obj.exists():
+        return f"Path not found: {path}"
+
+    if not path_obj.is_dir():
+        return f"Not a directory: {path}"
+
+    try:
+        stats = index_directory(path_obj, project=project, incremental=incremental)
+
+        lines = [
+            f"Indexed {stats.project}",
+            f"  Files: {stats.files_indexed}",
+            f"  Chunks: {stats.chunks_created}",
+            f"  Functions: {stats.functions_compiled}",
+            f"  Classes: {stats.classes_compiled}",
+            f"  Constants: {stats.constants_compiled}",
+            f"  Languages: {', '.join(stats.languages) if stats.languages else 'none'}",
+            f"  Duration: {stats.duration_ms}ms",
+        ]
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Indexing failed: {e}"
+
+
+@mcp.tool()
+def sage_search_code(
+    query: str,
+    project: str | None = None,
+    limit: int = 10,
+    language: str | None = None,
+) -> str:
+    """Semantic search over indexed code.
+
+    Finds code relevant to your query using vector similarity.
+    Use for questions like "how does authentication work" or "where are errors handled".
+
+    Args:
+        query: Natural language query
+        project: Optional project filter
+        limit: Maximum results (default: 10)
+        language: Optional language filter (e.g., "python", "typescript")
+
+    Returns:
+        Ranked code search results
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import search_code
+
+    try:
+        results = search_code(query, project=project, limit=limit, language=language)
+
+        if not results:
+            return "No results found. Make sure the codebase is indexed with sage_index_code()."
+
+        lines = [f"Found {len(results)} result(s) for \"{query}\":\n"]
+
+        for i, r in enumerate(results, 1):
+            chunk = r.chunk
+            lines.append(f"{i}. **{chunk.name}** ({chunk.chunk_type.value})")
+            lines.append(f"   {chunk.file}:{chunk.line_start}")
+            lines.append(f"   Score: {r.score:.2f}")
+            if chunk.signature:
+                lines.append(f"   `{chunk.signature}`")
+            if r.highlights:
+                lines.append(f"   → {r.highlights[0][:80]}...")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Search failed: {e}"
+
+
+@mcp.tool()
+def sage_grep_symbol(
+    name: str,
+    project_path: str | None = None,
+) -> str:
+    """Fast exact symbol lookup (no vector search).
+
+    Finds functions, classes, or constants by exact name match.
+    Much faster than semantic search for known symbol names.
+
+    Args:
+        name: Symbol name to find (e.g., "get_embedding", "Config")
+        project_path: Project root (default: current directory)
+
+    Returns:
+        Symbol details if found
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import grep_symbol
+
+    path = Path(project_path).resolve() if project_path else _PROJECT_ROOT or Path.cwd()
+
+    try:
+        result = grep_symbol(name, path)
+
+        if result is None:
+            return f"Symbol not found: {name}\n\nMake sure the codebase is indexed with sage_index_code()."
+
+        # Format based on type
+        from sage.codebase import CompiledClass, CompiledConstant, CompiledFunction
+
+        if isinstance(result, CompiledFunction):
+            lines = [
+                f"**Function: {result.name}**",
+                f"File: {result.file}:{result.line}",
+                f"Signature: `{result.signature}`",
+            ]
+            if result.is_method:
+                lines.append(f"Method of: {result.parent_class}")
+            if result.docstring:
+                lines.append(f"\nDocstring:\n{result.docstring[:200]}...")
+
+        elif isinstance(result, CompiledClass):
+            lines = [
+                f"**Class: {result.name}**",
+                f"File: {result.file}:{result.line}",
+            ]
+            if result.methods:
+                lines.append(f"Methods: {', '.join(result.methods[:10])}")
+                if len(result.methods) > 10:
+                    lines.append(f"  ... and {len(result.methods) - 10} more")
+            if result.docstring:
+                lines.append(f"\nDocstring:\n{result.docstring[:200]}...")
+
+        elif isinstance(result, CompiledConstant):
+            lines = [
+                f"**Constant: {result.name}**",
+                f"File: {result.file}:{result.line}",
+                f"Value: `{result.value[:100]}`",
+            ]
+        else:
+            lines = [f"Found: {name} at {getattr(result, 'file', 'unknown')}"]
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Lookup failed: {e}"
+
+
+@mcp.tool()
+def sage_analyze_function(
+    name: str,
+    project_path: str | None = None,
+) -> str:
+    """Get full function source code with context.
+
+    Retrieves the complete implementation of a function by name.
+    Use after grep_symbol to get the full source.
+
+    Args:
+        name: Function name
+        project_path: Project root (default: current directory)
+
+    Returns:
+        Function source code with metadata
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import analyze_function
+
+    path = Path(project_path).resolve() if project_path else _PROJECT_ROOT or Path.cwd()
+
+    try:
+        result = analyze_function(name, path)
+
+        if result is None:
+            return f"Function not found: {name}\n\nMake sure the codebase is indexed with sage_index_code()."
+
+        lines = [
+            f"**{result['name']}**",
+            f"File: {result['file']}:{result['line']}",
+            f"Signature: `{result['signature']}`",
+        ]
+
+        if result.get("is_method"):
+            lines.append(f"Method of: {result['parent_class']}")
+
+        if result.get("docstring"):
+            lines.append(f"\nDocstring:\n{result['docstring']}")
+
+        if result.get("source"):
+            lines.append("\n```python")
+            lines.append(result["source"])
+            lines.append("```")
+        else:
+            lines.append("\n*(Source code not available)*")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Analysis failed: {e}"
+
+
+@mcp.tool()
+def sage_mark_core(
+    path: str,
+    summary: str = "",
+) -> str:
+    """Mark a file for session-start context injection.
+
+    Core files are automatically included in context when starting a new session,
+    providing immediate codebase awareness.
+
+    Args:
+        path: File path to mark (relative to project root)
+        summary: Brief description of what this file does
+
+    Returns:
+        Confirmation message
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import mark_core
+
+    try:
+        core_file = mark_core(path, _PROJECT_ROOT, summary)
+        return f"Marked core file: {core_file.path}\nSummary: {summary or '(none)'}"
+
+    except Exception as e:
+        return f"Failed to mark file: {e}"
+
+
+@mcp.tool()
+def sage_list_core(
+    project: str | None = None,
+) -> str:
+    """List all marked core files.
+
+    Args:
+        project: Optional project filter
+
+    Returns:
+        List of core files with summaries
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import list_core
+
+    try:
+        files = list_core(_PROJECT_ROOT, project)
+
+        if not files:
+            return "No core files marked.\n\nUse sage_mark_core(path, summary) to mark important files."
+
+        lines = [f"Core files ({len(files)}):\n"]
+        for f in files:
+            lines.append(f"- **{f.path}**")
+            if f.summary:
+                lines.append(f"  {f.summary}")
+            lines.append(f"  _Marked: {f.marked_at[:10]}_")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Failed to list core files: {e}"
+
+
+@mcp.tool()
+def sage_unmark_core(
+    path: str,
+) -> str:
+    """Remove a file's core marking.
+
+    Args:
+        path: File path to unmark
+
+    Returns:
+        Confirmation message
+    """
+    deps_error = _check_code_deps()
+    if deps_error:
+        return deps_error
+
+    from sage.codebase import unmark_core
+
+    try:
+        if unmark_core(path, _PROJECT_ROOT):
+            return f"Unmarked core file: {path}"
+        return f"File not marked as core: {path}"
+
+    except Exception as e:
+        return f"Failed to unmark file: {e}"
 
 
 # =============================================================================

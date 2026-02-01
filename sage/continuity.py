@@ -21,7 +21,6 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from sage.config import SAGE_DIR, detect_project_root
 from sage.errors import Result, SageError, err, ok
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 CONTINUITY_FILE = SAGE_DIR / "continuity.json"
 
 
-def _get_checkpoints_dir(project_path: Optional[Path] = None) -> Path:
+def _get_checkpoints_dir(project_path: Path | None = None) -> Path:
     """Get checkpoints directory, preferring project-local."""
     if project_path:
         local_dir = project_path / ".sage" / "checkpoints"
@@ -41,7 +40,7 @@ def _get_checkpoints_dir(project_path: Optional[Path] = None) -> Path:
     return SAGE_DIR / "checkpoints"
 
 
-def get_most_recent_checkpoint(project_path: Optional[Path] = None) -> Optional[Path]:
+def get_most_recent_checkpoint(project_path: Path | None = None) -> Path | None:
     """Find the most recently modified checkpoint file.
 
     Args:
@@ -70,10 +69,10 @@ def get_most_recent_checkpoint(project_path: Optional[Path] = None) -> Optional[
 
 
 def mark_for_continuity(
-    checkpoint_path: Optional[Path] = None,
+    checkpoint_path: Path | None = None,
     reason: str = "post_compaction",
-    compaction_summary: Optional[str] = None,
-    project_dir: Optional[Path] = None,
+    compaction_summary: str | None = None,
+    project_dir: Path | None = None,
 ) -> Result[Path, SageError]:
     """Mark for continuity injection on next sage tool call.
 
@@ -99,7 +98,7 @@ def mark_for_continuity(
 
     # Extract checkpoint ID (filename stem) for portable lookup
     # ID-based lookup is safe - no path traversal concerns
-    checkpoint_id: Optional[str] = None
+    checkpoint_id: str | None = None
     if checkpoint_path is not None:
         checkpoint_path = Path(checkpoint_path).resolve()
         checkpoint_id = checkpoint_path.stem  # Just the filename without extension
@@ -129,7 +128,7 @@ def mark_for_continuity(
         return err(SageError(code="CONTINUITY_WRITE_FAILED", message=f"Failed to write marker: {e}"))
 
 
-def get_continuity_marker() -> Optional[dict]:
+def get_continuity_marker() -> dict | None:
     """Get pending continuity marker, if any.
 
     Returns:
