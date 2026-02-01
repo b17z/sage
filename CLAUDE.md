@@ -2,14 +2,14 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.7.0 (recovery checkpoints)
+**Current version:** v3.0.0 (plugin architecture)
 **Test count:** 1309 tests (maintain or increase)
 
 ---
 
 ## Skills: Methodology in Skills, Not Here
 
-Sage v2.6 moves methodology to **Claude Skills** for progressive disclosure:
+Sage uses **Claude Skills** for progressive disclosure:
 
 ```bash
 sage skills install   # Install Sage methodology skills
