@@ -574,32 +574,6 @@
       border-top: 1px solid var(--border);
     }
 
-    /* Stats */
-    .stats {
-      padding: 60px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 32px;
-      text-align: center;
-    }
-
-    .stat-value {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 8px;
-    }
-
-    .stat-label {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-    }
-
     /* Footer */
     footer {
       padding: 60px 0;
@@ -705,9 +679,9 @@
 
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">v2.6 — Skills Architecture</div>
+      <div class="hero-badge">v3.0 — Plugin Architecture</div>
       <h1>Claude that <span>remembers</span><br>across sessions</h1>
-      <p class="hero-sub">Semantic memory for Claude Code. Checkpoints capture research state, knowledge persists across sessions, context survives compaction automatically.</p>
+      <p class="hero-sub">Semantic memory for Claude Code. Watcher daemon detects compaction, checkpoints capture research state, knowledge persists across sessions.</p>
       <div class="cta-group">
         <a href="#install" class="btn btn-primary">Get Started</a>
         <a href="https://github.com/b17z/sage" class="btn btn-secondary">View Source</a>
@@ -729,15 +703,13 @@
          │    ┌────────────────────────────┘
          │    │
          │    ▼     <span class="dim">~/.sage/checkpoints/</span>
-         │    │
-         │    │     thesis + confidence + sources
-         │    │     + tensions + open questions
+         │    │     <span class="dim">watcher queues for session</span>
          │    │
          │    └────────────────────────────┐
          │                                 │
          ▼                                 ▼
      <span class="highlight">Continue</span>  ◄──────  <span class="highlight">Inject</span>  ◄──────  <span class="highlight">Compaction</span>
-    seamlessly        context          detected
+    seamlessly       from queue         detected
         </pre>
       </div>
 
@@ -794,6 +766,13 @@
           <div class="feature-desc">70/30 hybrid scoring detects topic drift, convergence, and synthesis moments automatically.</div>
           <div class="feature-tag">v2.3+</div>
         </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x2699;</div>
+          <div class="feature-title">Plugin Architecture</div>
+          <div class="feature-desc">Watcher daemon with event-driven plugins. Session tracking, checkpoint queueing, TTL-based injection.</div>
+          <div class="feature-tag">v3.0+</div>
+        </div>
       </div>
     </div>
   </section>
@@ -816,6 +795,10 @@
         <div class="skill-item">
           <div class="skill-name">sage-session</div>
           <div class="skill-desc">Session start ritual—call sage_health() for context injection. Triggered by: session start, hello, new session</div>
+        </div>
+        <div class="skill-item">
+          <div class="skill-name">sage-knowledge</div>
+          <div class="skill-desc">Recall and save insights using sage_recall_knowledge and sage_save_knowledge. Triggered by: recall, remember, knowledge, save insight</div>
         </div>
         <div class="skill-item">
           <div class="skill-name">sage-knowledge-hygiene</div>
@@ -863,28 +846,13 @@
             <code>~/.sage/</code> — checkpoints, knowledge, config. Obsidian-compatible markdown format.
           </div>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <section class="stats">
-    <div class="container">
-      <div class="stats-grid">
-        <div>
-          <div class="stat-value">932</div>
-          <div class="stat-label">Tests</div>
-        </div>
-        <div>
-          <div class="stat-value">20+</div>
-          <div class="stat-label">MCP Tools</div>
-        </div>
-        <div>
-          <div class="stat-value">4</div>
-          <div class="stat-label">Skills</div>
-        </div>
-        <div>
-          <div class="stat-value">v2.6</div>
-          <div class="stat-label">Current</div>
+        <div class="arch-card">
+          <div class="arch-title">Watcher Daemon</div>
+          <div class="arch-subtitle">Event-driven plugins</div>
+          <div class="arch-detail">
+            <code>sage watcher start</code> — session tracking, checkpoint queueing, compaction detection.
+          </div>
         </div>
       </div>
     </div>
@@ -948,7 +916,7 @@
   <footer>
     <div class="container">
       <div class="footer-content">
-        <div class="footer-logo">sage v2.6.0</div>
+        <div class="footer-logo">sage v3.0.0</div>
         <div class="footer-links">
           <a href="https://github.com/b17z/sage">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">

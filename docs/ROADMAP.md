@@ -33,7 +33,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 884 tests covering all modules
+- 1025 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -144,7 +144,7 @@ All planned v2.0 features shipped. Debug functionality now in `sage debug` (v2.2
 
 ---
 
-## v2.6 (Shipping)
+## v2.6 (Shipped)
 
 ### Focus: Skills Architecture
 
@@ -165,7 +165,27 @@ See [docs/skills.md](skills.md) for architecture details.
 
 ---
 
-## v2.7 (Planned)
+## v2.7 (Shipping)
+
+### Focus: Skills Refactor
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Skills from source directory | Done | Skills read from `skills/` directory, not hardcoded |
+| 5 default skills | Done | Added `sage-knowledge`, `sage-knowledge-hygiene` |
+| Single source of truth | Done | `skills/` dir is authoritative, `sage skills install` copies |
+| Removed hardcoded content | Done | ~400 lines of embedded skill strings removed |
+
+**Skills:**
+- `sage-memory` — Background Task pattern for saves
+- `sage-research` — Checkpoint methodology (merged from old checkpoint skill)
+- `sage-session` — Session start ritual
+- `sage-knowledge` — Knowledge recall and save patterns
+- `sage-knowledge-hygiene` — Knowledge maintenance
+
+---
+
+## v2.8 (Planned)
 
 ### Focus: Token Economics & Observability
 
@@ -179,7 +199,7 @@ See [docs/skills.md](skills.md) for architecture details.
 
 ---
 
-## v2.8 (Planned)
+## v2.9 (Planned)
 
 ### Focus: Code-Aware Intelligence
 
@@ -269,6 +289,7 @@ See [docs/skills.md](skills.md) for architecture details.
 | v2.4.0 | Jan 2026 | Session continuity, compaction watcher daemon, 850 tests |
 | v2.5.0 | Jan 2026 | Proactive recall, auto-injection on first tool call, 884 tests |
 | v2.6.0 | Jan 2026 | Skills architecture, methodology in skills, lean CLAUDE.md, 932 tests |
+| v2.7.0 | Jan 2026 | Skills refactor, 5 skills from source dir, removed hardcoded content, 1025 tests |
 
 ---
 

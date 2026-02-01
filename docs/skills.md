@@ -14,7 +14,7 @@ Sage uses Claude Skills to teach Claude **how** to use Sage effectively, while k
 
 ## Default Sage Skills
 
-Sage ships three methodology skills, installed via `sage skills install`:
+Sage ships five methodology skills, installed via `sage skills install`:
 
 ### sage-memory
 
@@ -52,6 +52,27 @@ Teaches Claude the session start ritual:
 2. Review pending todos with `sage_list_todos()`
 3. Load relevant checkpoint if continuing work
 
+### sage-knowledge
+
+**Triggers:** recall, remember, what do we know, knowledge, save insight
+
+Teaches Claude knowledge management patterns:
+
+- How to use `sage_recall_knowledge()` for retrieval
+- When to save insights with `sage_save_knowledge()`
+- Knowledge item structure and keyword triggers
+
+### sage-knowledge-hygiene
+
+**Triggers:** stale knowledge, outdated, update knowledge, knowledge cleanup
+
+Teaches Claude to maintain knowledge freshness:
+
+- Evaluating knowledge for staleness
+- Using `sage_update_knowledge()` to refresh content
+- Using `sage_deprecate_knowledge()` for outdated items
+- Using `sage_archive_knowledge()` to hide from recall
+
 ## Installation
 
 ```bash
@@ -62,7 +83,9 @@ sage skills install
 # ~/.claude/skills/sage/
 # ├── sage-memory/SKILL.md
 # ├── sage-research/SKILL.md
-# └── sage-session/SKILL.md
+# ├── sage-session/SKILL.md
+# ├── sage-knowledge/SKILL.md
+# └── sage-knowledge-hygiene/SKILL.md
 ```
 
 ## How It Works
@@ -87,6 +110,9 @@ sage skills install
 │  - sage-memory          │────▶│  - sage_save_checkpoint     │
 │  - sage-research        │     │  - sage_recall_knowledge    │
 │  - sage-session         │     │  - sage_autosave_check      │
+│  - sage-knowledge       │     │  - sage_save_knowledge      │
+│  - sage-knowledge-      │     │  - sage_update_knowledge    │
+│      hygiene            │     │                             │
 │                         │     │  - ...                      │
 └─────────────────────────┘     └─────────────────────────────┘
 ```
@@ -97,9 +123,11 @@ Skills follow the same cascade as config:
 
 ```
 ~/.claude/skills/sage/           # Installed via `sage skills install`
-├── sage-memory/SKILL.md         # Default patterns
-├── sage-research/SKILL.md
-└── sage-session/SKILL.md
+├── sage-memory/SKILL.md         # Background save patterns
+├── sage-research/SKILL.md       # Checkpoint methodology
+├── sage-session/SKILL.md        # Session start ritual
+├── sage-knowledge/SKILL.md      # Knowledge management
+└── sage-knowledge-hygiene/SKILL.md  # Knowledge maintenance
 
 <project>/.claude/skills/sage/   # Project overrides (optional)
 └── sage-research/SKILL.md       # Custom checkpoint triggers for this project
@@ -171,7 +199,7 @@ After (Skills load on-demand):
 Sage has two types of skills:
 
 1. **Methodology skills** (this document): Teach how to use Sage
-   - `sage-memory`, `sage-research`, `sage-session`
+   - `sage-memory`, `sage-research`, `sage-session`, `sage-knowledge`, `sage-knowledge-hygiene`
    - Installed via `sage skills install`
 
 2. **Research skills**: Domain expertise personas

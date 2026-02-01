@@ -731,6 +731,146 @@ Claude: [calls sage_health()]
 
 ---
 
+## Plugin Architecture (v3.0)
+
+The watcher daemon uses an event-driven plugin system for extensibility.
+
+### Design Principles
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  DETERMINISTIC LAYER (Daemon)                                   │
+│  Watch → Detect → Save → Inject candidates                      │
+│  No inference, no heuristics, just orchestration                │
+├─────────────────────────────────────────────────────────────────┤
+│  STOCHASTIC LAYER (LLM)                                         │
+│  Claude decides what's relevant from candidates                 │
+│  Filtering is the LLM's job, not the daemon's                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The daemon stays dumb. The LLM handles relevance.
+
+### Event Flow
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Watcher    │────▶│    Event     │────▶│   Plugin     │
+│  (file poll) │     │  (frozen)    │     │  (handler)   │
+└──────────────┘     └──────────────┘     └──────┬───────┘
+                                                  │
+                                                  ▼
+                     ┌──────────────┐     ┌──────────────┐
+                     │   Executor   │◀────│   Actions    │
+                     │ (fire+forget)│     │  (whitelist) │
+                     └──────────────┘     └──────────────┘
+```
+
+### Event Types
+
+| Event | Trigger | Data |
+|-------|---------|------|
+| `DaemonStarted` | Watcher starts | pid, transcript_path |
+| `DaemonStopping` | Watcher stops | reason |
+| `CompactionDetected` | `isCompactSummary: true` in transcript | summary, transcript_path |
+| `CheckpointCreated` | New checkpoint via MCP | checkpoint_id, checkpoint_type |
+| `CheckpointFileCreated` | New file in checkpoints dir | file_path, checkpoint_id |
+
+### Action Types (Whitelist)
+
+Only these actions are allowed—no arbitrary code execution:
+
+| Action | Purpose |
+|--------|---------|
+| `log` | Write to watcher log |
+| `save_recovery` | Create recovery checkpoint from transcript |
+| `write_marker` | Write continuity marker for injection |
+| `queue_for_injection` | Add checkpoint to session queue |
+| `start_session` | Start a new watcher session |
+| `end_session` | End the current session |
+
+### Built-in Plugins
+
+| Plugin | Subscribes To | Actions |
+|--------|---------------|---------|
+| `session` | DaemonStarted, DaemonStopping, CompactionDetected | start_session, end_session |
+| `recovery` | CompactionDetected | save_recovery, write_marker, log |
+| `checkpoint-queue` | DaemonStarted, CheckpointFileCreated | queue_for_injection, log |
+
+### Session Tracking
+
+Sessions scope checkpoints to prevent old research from polluting new work:
+
+```
+Session 1 (8am-10am)
+├── checkpoint-a  ─┐
+├── checkpoint-b   ├─► Queued with session_id = "abc123"
+└── checkpoint-c  ─┘
+
+[watcher stops, user takes break]
+
+Session 2 (2pm-4pm)
+├── checkpoint-d  ─┐
+└── checkpoint-e   ├─► Queued with session_id = "def456"
+                   ─┘
+```
+
+On injection, only current session checkpoints (+ recent others within TTL) are injected.
+
+### TTL-Based Injection
+
+```python
+# Injection priority:
+1. Current session checkpoints (always)
+2. Other session checkpoints < 4 hours old (backfill)
+3. Entries > 24 hours are garbage collected
+```
+
+The 4-hour TTL balances:
+- **Continuity** — restart 5 minutes later, get your context back
+- **Freshness** — yesterday's research doesn't pollute today's work
+
+### Plugin Configuration
+
+```yaml
+# ~/.sage/plugins.yaml
+plugins:
+  recovery:
+    enabled: true
+    priority: 100
+    settings:
+      salience_threshold: 0.5
+
+  checkpoint-queue:
+    enabled: true
+    priority: 50  # Lower = runs first
+
+  session:
+    enabled: true
+    priority: 10
+```
+
+### Fire-and-Forget Execution
+
+Actions execute in background threads (non-blocking):
+
+```python
+# Blocking mode (tests)
+execute_actions(result, blocking=True)
+
+# Fire-and-forget mode (production)
+execute_actions(result, blocking=False)  # Returns immediately
+```
+
+### Security
+
+- **No arbitrary code** — Only built-in plugins, no user-defined
+- **Whitelisted actions** — Unknown action types rejected
+- **YAML safe_load** — No code execution in config
+- **Path validation** — Symlinks outside expected dirs skipped
+
+---
+
 ## Proactive Recall (v2.5)
 
 Sage automatically injects relevant knowledge at session start based on project context.
@@ -824,6 +964,8 @@ Sage ships methodology as Claude Skills for progressive disclosure—skills load
 | `sage-memory` | checkpoint, save knowledge, autosave | Background Task pattern for non-blocking saves |
 | `sage-research` | research, synthesis, hypothesis | When and how to checkpoint during research |
 | `sage-session` | session start, hello, new session | Session start ritual (call `sage_health()`) |
+| `sage-knowledge` | recall, remember, knowledge, save insight | Knowledge recall and save patterns |
+| `sage-knowledge-hygiene` | stale knowledge, outdated, update knowledge | Knowledge maintenance and freshness |
 
 ### Installation
 

@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v2.6.0 (skills architecture)
-**Test count:** 932 tests (maintain or increase)
+**Current version:** v2.7.0 (recovery checkpoints)
+**Test count:** 1309 tests (maintain or increase)
 
 ---
 
@@ -20,6 +20,8 @@ This installs:
 - **sage-memory** — Background Task pattern for saves
 - **sage-research** — Checkpoint methodology (when/how to checkpoint)
 - **sage-session** — Session start ritual
+- **sage-knowledge** — Knowledge recall and save patterns
+- **sage-knowledge-hygiene** — Detect and fix stale knowledge
 
 Skills load **on-demand** when context matches, keeping this file lean.
 
@@ -93,10 +95,19 @@ sage watcher status          # Check watcher status
 ├── checkpoints/             # Global checkpoints
 └── knowledge/               # Global knowledge
 
-~/.claude/skills/sage/       # Sage methodology skills
+~/.claude/skills/sage/       # Sage methodology skills (installed)
 ├── sage-memory/SKILL.md
 ├── sage-research/SKILL.md
-└── sage-session/SKILL.md
+├── sage-session/SKILL.md
+├── sage-knowledge/SKILL.md
+└── sage-knowledge-hygiene/SKILL.md
+
+skills/                      # Skill source files (edit here)
+├── sage-memory/SKILL.md
+├── sage-research/SKILL.md
+├── sage-session/SKILL.md
+├── sage-knowledge/SKILL.md
+└── sage-knowledge-hygiene/SKILL.md
 
 <project>/.sage/             # Project-level (shareable via git)
 ├── checkpoints/             # Research checkpoints (team context)
@@ -117,6 +128,7 @@ sage watcher status          # Check watcher status
 | `sage/skill.py` | Research skill management |
 | `sage/continuity.py` | Session continuity markers |
 | `sage/watcher.py` | Compaction watcher daemon |
+| `sage/plugins/` | Watcher plugin system |
 | `sage/config.py` | Config management |
 | `sage/cli.py` | Click CLI |
 | `sage/errors.py` | Result types (`Ok`/`Err`) |

@@ -1,9 +1,8 @@
 {
   "mcpServers": {
-    "sage": {
-      "command": "python",
-      "args": ["-m", "sage.mcp_server"],
-      "env": {}
+    "gateway": {
+      "command": "mcpmon",
+      "args": ["--config", "/Users/be.nvy/.mcpmon.yaml"]
     }
   }
 }

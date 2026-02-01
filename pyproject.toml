@@ -32,6 +32,10 @@ dev = [
 mcp = [
     "mcp>=1.2.0",
 ]
+code = [
+    "lancedb>=0.4.0",
+    "tree-sitter-languages>=1.10.0",
+]
 
 [project.scripts]
 sage = "sage.cli:main"
