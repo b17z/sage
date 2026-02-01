@@ -7,33 +7,38 @@ from unittest.mock import patch
 import pytest
 
 from sage.default_skills import (
-    DEFAULT_SKILLS,
-    SAGE_MEMORY_SKILL,
-    SAGE_RESEARCH_SKILL,
-    SAGE_SESSION_SKILL,
+    DEFAULT_SKILL_NAMES,
     DefaultSkill,
     _sanitize_skill_name,
     check_skill_version,
+    get_default_skills,
     get_installed_sage_skills,
+    get_skill_by_name,
     get_skill_path,
     install_all_skills,
     install_skill,
 )
 
 
+@pytest.fixture
+def default_skills():
+    """Load default skills for testing."""
+    return get_default_skills()
+
+
 class TestDefaultSkillDefinitions:
     """Tests for skill definitions."""
 
-    def test_all_skills_have_required_fields(self):
+    def test_all_skills_have_required_fields(self, default_skills):
         """All default skills have name and content."""
-        for skill in DEFAULT_SKILLS:
-            assert skill.name, f"Skill missing name"
+        for skill in default_skills:
+            assert skill.name, "Skill missing name"
             assert skill.content, f"Skill {skill.name} missing content"
             assert isinstance(skill, DefaultSkill)
 
-    def test_skill_content_has_frontmatter(self):
+    def test_skill_content_has_frontmatter(self, default_skills):
         """All skills have YAML frontmatter."""
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             assert skill.content.startswith("---"), f"{skill.name} missing frontmatter"
             # Find closing ---
             lines = skill.content.split("\n")
@@ -44,37 +49,87 @@ class TestDefaultSkillDefinitions:
                     break
             assert closing_index is not None, f"{skill.name} missing closing ---"
 
-    def test_skill_frontmatter_has_name(self):
+    def test_skill_frontmatter_has_name(self, default_skills):
         """All skills have name in frontmatter."""
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             assert f"name: {skill.name}" in skill.content, f"{skill.name} missing name in frontmatter"
 
-    def test_skill_frontmatter_has_triggers(self):
+    def test_skill_frontmatter_has_triggers(self, default_skills):
         """All skills have triggers in frontmatter."""
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             assert "triggers:" in skill.content, f"{skill.name} missing triggers"
 
-    def test_skill_frontmatter_has_version(self):
+    def test_skill_frontmatter_has_version(self, default_skills):
         """All skills have version in frontmatter."""
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             assert "version:" in skill.content, f"{skill.name} missing version"
 
     def test_sage_memory_skill_content(self):
         """sage-memory skill has expected content."""
-        assert "Background" in SAGE_MEMORY_SKILL.content
-        assert "Task" in SAGE_MEMORY_SKILL.content
-        assert "sage_save_checkpoint" in SAGE_MEMORY_SKILL.content
+        skill = get_skill_by_name("sage-memory")
+        assert skill is not None
+        assert "Background" in skill.content
+        assert "Task" in skill.content
+        assert "sage_save_checkpoint" in skill.content
 
     def test_sage_research_skill_content(self):
         """sage-research skill has expected content."""
-        assert "synthesis" in SAGE_RESEARCH_SKILL.content
-        assert "checkpoint" in SAGE_RESEARCH_SKILL.content.lower()
-        assert "sage_autosave_check" in SAGE_RESEARCH_SKILL.content
+        skill = get_skill_by_name("sage-research")
+        assert skill is not None
+        assert "synthesis" in skill.content
+        assert "checkpoint" in skill.content.lower()
+        assert "sage_autosave_check" in skill.content
 
     def test_sage_session_skill_content(self):
         """sage-session skill has expected content."""
-        assert "sage_health" in SAGE_SESSION_SKILL.content
-        assert "session" in SAGE_SESSION_SKILL.content.lower()
+        skill = get_skill_by_name("sage-session")
+        assert skill is not None
+        assert "sage_health" in skill.content
+        assert "session" in skill.content.lower()
+
+    def test_sage_knowledge_skill_content(self):
+        """sage-knowledge skill has expected content."""
+        skill = get_skill_by_name("sage-knowledge")
+        assert skill is not None
+        assert "sage_recall_knowledge" in skill.content
+        assert "sage_save_knowledge" in skill.content
+
+    def test_sage_knowledge_hygiene_skill_content(self):
+        """sage-knowledge-hygiene skill has expected content."""
+        skill = get_skill_by_name("sage-knowledge-hygiene")
+        assert skill is not None
+        assert "stale" in skill.content.lower() or "Stale" in skill.content
+        assert "sage_update_knowledge" in skill.content
+
+
+class TestGetDefaultSkills:
+    """Tests for get_default_skills function."""
+
+    def test_returns_all_skills(self):
+        """Returns all expected default skills."""
+        skills = get_default_skills()
+        assert len(skills) == len(DEFAULT_SKILL_NAMES)
+
+    def test_skill_names_match_expected(self):
+        """Skill names match the expected list."""
+        skills = get_default_skills()
+        skill_names = [s.name for s in skills]
+        assert set(skill_names) == set(DEFAULT_SKILL_NAMES)
+
+
+class TestGetSkillByName:
+    """Tests for get_skill_by_name function."""
+
+    def test_returns_skill_when_found(self):
+        """Returns skill when name matches."""
+        skill = get_skill_by_name("sage-memory")
+        assert skill is not None
+        assert skill.name == "sage-memory"
+
+    def test_returns_none_when_not_found(self):
+        """Returns None when skill not found."""
+        skill = get_skill_by_name("nonexistent-skill")
+        assert skill is None
 
 
 class TestGetSkillPath:
@@ -164,12 +219,12 @@ class TestInstallSkill:
 class TestInstallAllSkills:
     """Tests for install_all_skills function."""
 
-    def test_installs_all_default_skills(self, tmp_path):
+    def test_installs_all_default_skills(self, tmp_path, default_skills):
         """Installs all default skills."""
         with patch("sage.default_skills.SAGE_SKILLS_DIR", tmp_path / "skills" / "sage"):
             results = install_all_skills()
 
-        assert len(results) == len(DEFAULT_SKILLS)
+        assert len(results) == len(default_skills)
         for skill_name, success, message in results:
             assert success, f"Failed to install {skill_name}: {message}"
 
@@ -244,7 +299,7 @@ class TestCheckSkillVersion:
             installed, available = check_skill_version("sage-memory")
 
         assert installed is None
-        assert available == "1.0.0"  # From DEFAULT_SKILLS
+        assert available == "1.0.0"  # From skills/ source
 
     def test_returns_installed_version(self, tmp_path):
         """Returns installed version from SKILL.md."""
@@ -333,25 +388,28 @@ class TestSkillContentQuality:
 
     def test_sage_memory_mentions_mcp_tools(self):
         """sage-memory mentions the MCP tools it applies to."""
-        content = SAGE_MEMORY_SKILL.content
-        assert "sage_save_checkpoint" in content
-        assert "sage_save_knowledge" in content
-        assert "sage_autosave_check" in content
+        skill = get_skill_by_name("sage-memory")
+        assert skill is not None
+        assert "sage_save_checkpoint" in skill.content
+        assert "sage_save_knowledge" in skill.content
+        assert "sage_autosave_check" in skill.content
 
     def test_sage_research_mentions_triggers(self):
         """sage-research mentions checkpoint triggers."""
-        content = SAGE_RESEARCH_SKILL.content
-        assert "synthesis" in content
-        assert "topic_shift" in content or "topic shift" in content.lower()
+        skill = get_skill_by_name("sage-research")
+        assert skill is not None
+        assert "synthesis" in skill.content
+        assert "topic_shift" in skill.content or "topic shift" in skill.content.lower()
 
     def test_sage_session_mentions_health(self):
         """sage-session mentions sage_health for session start."""
-        content = SAGE_SESSION_SKILL.content
-        assert "sage_health" in content
+        skill = get_skill_by_name("sage-session")
+        assert skill is not None
+        assert "sage_health" in skill.content
 
-    def test_all_skills_have_meaningful_triggers(self):
+    def test_all_skills_have_meaningful_triggers(self, default_skills):
         """All skills have at least 3 trigger keywords."""
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             match = re.search(r"triggers:\s*\[([^\]]+)\]", skill.content)
             assert match, f"{skill.name} has no triggers"
             triggers = match.group(1).split(",")
