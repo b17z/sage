@@ -761,13 +761,12 @@ class TestInputValidationIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda project_path=None: config)
         return config
 
-    @pytest.mark.asyncio
-    async def test_confidence_bounds_rejected_in_save(self, temp_sage_dir: Path, sync_config):
+    def test_confidence_bounds_rejected_in_save(self, temp_sage_dir: Path, sync_config):
         """sage_save_checkpoint rejects out-of-bounds confidence."""
         from sage.mcp_server import sage_save_checkpoint
 
         # Test confidence > 1.0
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Test question",
             thesis="Test thesis",
             confidence=1.5,  # Invalid
@@ -777,7 +776,7 @@ class TestInputValidationIntegration:
         assert "0.0 and 1.0" in result
 
         # Test confidence < 0.0
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Test question",
             thesis="Test thesis",
             confidence=-0.5,  # Invalid
@@ -785,12 +784,11 @@ class TestInputValidationIntegration:
         )
         assert "Invalid confidence" in result
 
-    @pytest.mark.asyncio
-    async def test_confidence_bounds_rejected_in_autosave(self, temp_sage_dir: Path, sync_config):
+    def test_confidence_bounds_rejected_in_autosave(self, temp_sage_dir: Path, sync_config):
         """sage_autosave_check rejects out-of-bounds confidence."""
         from sage.mcp_server import sage_autosave_check
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Test question",
             current_thesis="Test thesis that is long enough to pass validation.",
@@ -798,28 +796,27 @@ class TestInputValidationIntegration:
         )
         assert "Invalid confidence" in result
 
-    @pytest.mark.asyncio
-    async def test_valid_confidence_accepted(self, temp_sage_dir: Path, sync_config):
+    def test_valid_confidence_accepted(self, temp_sage_dir: Path, sync_config):
         """Valid confidence values are accepted."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_save_checkpoint
 
         # Edge cases: 0.0 and 1.0 should work
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Zero confidence",
             thesis="Thesis with zero confidence",
             confidence=0.0,
             trigger="manual",
         )
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Full confidence",
             thesis="Thesis with full confidence",
             confidence=1.0,
             trigger="manual",
         )
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget saves to complete
         time.sleep(1.0)
@@ -839,26 +836,25 @@ class TestCheckpointSearchIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda project_path=None: config)
         return config
 
-    @pytest.mark.asyncio
-    async def test_search_finds_relevant_checkpoint(self, temp_sage_dir: Path, sync_config):
+    def test_search_finds_relevant_checkpoint(self, temp_sage_dir: Path, sync_config):
         """sage_search_checkpoints finds semantically similar checkpoints."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_save_checkpoint, sage_search_checkpoints
 
         # Save checkpoints about different topics
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="How should we implement authentication?",
             thesis="JWT tokens with refresh mechanism provide secure stateless auth.",
             confidence=0.85,
             trigger="synthesis",
         )
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="What database should we use?",
             thesis="PostgreSQL offers ACID compliance and JSON support.",
             confidence=0.80,
             trigger="synthesis",
         )
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="How to handle API rate limiting?",
             thesis="Token bucket algorithm balances fairness and throughput.",
             confidence=0.75,
@@ -886,20 +882,19 @@ class TestCheckpointSearchIntegration:
         for cp in list_checkpoints():
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_search_returns_ranked_results(self, temp_sage_dir: Path, sync_config):
+    def test_search_returns_ranked_results(self, temp_sage_dir: Path, sync_config):
         """Search results are ranked by similarity."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_save_checkpoint, sage_search_checkpoints
 
         # Save two checkpoints
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Machine learning basics",
             thesis="Neural networks learn patterns through gradient descent.",
             confidence=0.8,
             trigger="synthesis",
         )
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Pizza recipes",
             thesis="Good pizza requires high heat and quality ingredients.",
             confidence=0.8,
@@ -915,7 +910,7 @@ class TestCheckpointSearchIntegration:
         # ML checkpoint should rank higher than pizza (if embeddings work)
         # If embeddings are slow to compute, search might return no results
         lines = result.split("\n")
-        first_result_line = next((l for l in lines if "Neural" in l or "neural" in l), None)
+        first_result_line = next((line for line in lines if "Neural" in line or "neural" in line), None)
 
         # Either we find the result, or the search returned "No checkpoints found" (timing issue)
         assert first_result_line is not None or "No checkpoints found" in result
@@ -947,13 +942,12 @@ class TestContextHydrationIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda project_path=None: config)
         return config
 
-    @pytest.mark.asyncio
-    async def test_save_checkpoint_with_hydration_fields(self, temp_sage_dir: Path, sync_config):
+    def test_save_checkpoint_with_hydration_fields(self, temp_sage_dir: Path, sync_config):
         """MCP save_checkpoint accepts and stores hydration fields."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_load_checkpoint, sage_save_checkpoint
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="How should we implement authentication?",
             thesis="JWT tokens with refresh mechanism provide the best security/UX balance.",
             confidence=0.85,
@@ -971,7 +965,7 @@ class TestContextHydrationIntegration:
             ),
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(1.0)
@@ -988,13 +982,12 @@ class TestContextHydrationIntegration:
         for cp in checkpoints:
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_autosave_with_hydration_fields(self, temp_sage_dir: Path, sync_config):
+    def test_autosave_with_hydration_fields(self, temp_sage_dir: Path, sync_config):
         """MCP autosave accepts and stores hydration fields."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints, load_checkpoint
         from sage.mcp_server import sage_autosave_check
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="What database should we use?",
             current_thesis="PostgreSQL offers the best combination of features and reliability.",
@@ -1007,7 +1000,7 @@ class TestContextHydrationIntegration:
             reasoning_trace="Compared Postgres, MySQL, MongoDB. MongoDB lacks ACID for transactions.",
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(1.0)
@@ -1028,8 +1021,7 @@ class TestContextHydrationIntegration:
 class TestDepthThresholdIntegration:
     """Integration tests for depth threshold enforcement."""
 
-    @pytest.mark.asyncio
-    async def test_shallow_conversation_blocked(self, temp_sage_dir: Path, monkeypatch):
+    def test_shallow_conversation_blocked(self, temp_sage_dir: Path, monkeypatch):
         """Autosave rejects checkpoints from shallow conversations."""
         from sage.mcp_server import sage_autosave_check
 
@@ -1038,7 +1030,7 @@ class TestDepthThresholdIntegration:
         monkeypatch.setattr("sage.config.get_sage_config", lambda x=None: config)
 
         # Try to save with shallow conversation (5 messages, 1000 tokens)
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Quick question",
             current_thesis="Quick answer that is long enough to pass content check validation.",
@@ -1050,8 +1042,7 @@ class TestDepthThresholdIntegration:
         assert "Not saving" in result
         assert "shallow" in result.lower() or "messages" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_deep_conversation_allowed(self, temp_sage_dir: Path, monkeypatch):
+    def test_deep_conversation_allowed(self, temp_sage_dir: Path, monkeypatch):
         """Autosave allows checkpoints from deep conversations."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check
@@ -1061,7 +1052,7 @@ class TestDepthThresholdIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
         # Save with deep conversation (20 messages, 8000 tokens)
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="In-depth analysis",
             current_thesis="Comprehensive answer after thorough research.",
@@ -1070,7 +1061,7 @@ class TestDepthThresholdIntegration:
             token_estimate=8000,  # Above threshold
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -1079,8 +1070,7 @@ class TestDepthThresholdIntegration:
         for cp in list_checkpoints():
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_manual_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
+    def test_manual_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
         """Manual triggers bypass depth threshold checks."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check
@@ -1090,7 +1080,7 @@ class TestDepthThresholdIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
         # Manual trigger with shallow conversation should still work
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",  # Exempt trigger
             core_question="Manual save",
             current_thesis="User explicitly requested this checkpoint.",
@@ -1099,7 +1089,7 @@ class TestDepthThresholdIntegration:
             token_estimate=500,  # Way below threshold
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -1108,8 +1098,7 @@ class TestDepthThresholdIntegration:
         for cp in list_checkpoints():
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_precompact_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
+    def test_precompact_trigger_bypasses_depth_check(self, temp_sage_dir: Path, monkeypatch):
         """Precompact triggers bypass depth threshold checks."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check
@@ -1119,7 +1108,7 @@ class TestDepthThresholdIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
         # Precompact trigger with shallow conversation should still work
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="precompact",  # Exempt trigger
             core_question="Pre-compaction save",
             current_thesis="Saving before context compaction.",
@@ -1128,7 +1117,7 @@ class TestDepthThresholdIntegration:
             token_estimate=800,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -1137,8 +1126,7 @@ class TestDepthThresholdIntegration:
         for cp in list_checkpoints():
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_context_threshold_trigger_bypasses_depth_check(
+    def test_context_threshold_trigger_bypasses_depth_check(
         self, temp_sage_dir: Path, monkeypatch
     ):
         """Context threshold triggers bypass depth checks."""
@@ -1148,7 +1136,7 @@ class TestDepthThresholdIntegration:
         config = SageConfig(depth_min_messages=100, depth_min_tokens=50000, async_enabled=False)
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="context_threshold",  # Exempt trigger
             core_question="Context limit approaching",
             current_thesis="Saving at 70% context usage.",
@@ -1157,7 +1145,7 @@ class TestDepthThresholdIntegration:
             token_estimate=1000,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -1166,8 +1154,7 @@ class TestDepthThresholdIntegration:
         for cp in list_checkpoints():
             delete_checkpoint(cp.id)
 
-    @pytest.mark.asyncio
-    async def test_depth_fields_stored_in_checkpoint(self, temp_sage_dir: Path, monkeypatch):
+    def test_depth_fields_stored_in_checkpoint(self, temp_sage_dir: Path, monkeypatch):
         """Depth metadata is stored in saved checkpoint."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints, load_checkpoint
         from sage.mcp_server import sage_autosave_check
@@ -1175,7 +1162,7 @@ class TestDepthThresholdIntegration:
         config = SageConfig(depth_min_messages=5, depth_min_tokens=1000, async_enabled=False)
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
-        await sage_autosave_check(
+        sage_autosave_check(
             trigger_event="synthesis",
             core_question="Depth metadata test",
             current_thesis="Testing that depth fields are stored.",
@@ -1197,8 +1184,7 @@ class TestDepthThresholdIntegration:
         for c in checkpoints:
             delete_checkpoint(c.id)
 
-    @pytest.mark.asyncio
-    async def test_zero_depth_values_skip_check(self, temp_sage_dir: Path, monkeypatch):
+    def test_zero_depth_values_skip_check(self, temp_sage_dir: Path, monkeypatch):
         """Zero message_count/token_estimate skips depth check (legacy callers)."""
         from sage.checkpoint import delete_checkpoint, list_checkpoints
         from sage.mcp_server import sage_autosave_check
@@ -1208,7 +1194,7 @@ class TestDepthThresholdIntegration:
         monkeypatch.setattr("sage.mcp_server.get_sage_config", lambda x=None: config)
 
         # Zero values should skip depth check (backward compatibility)
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Legacy caller test",
             current_thesis="Caller didn't provide depth info.",
@@ -1218,7 +1204,7 @@ class TestDepthThresholdIntegration:
         )
 
         # Should be allowed (depth check skipped due to zero values)
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)

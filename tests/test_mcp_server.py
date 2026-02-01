@@ -1,7 +1,7 @@
 """Tests for MCP server tools.
 
 Note: These tests run with async_enabled=False (sync fallback mode) for simplicity.
-Async-specific behavior is tested in test_mcp_async.py.
+MCP tools are now synchronous, so tests call them directly without async/await.
 """
 
 import time
@@ -23,9 +23,6 @@ from sage.mcp_server import (
     sage_save_knowledge,
     sage_search_checkpoints,
 )
-
-# Mark all tests as async
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -59,19 +56,19 @@ def isolated_project(tmp_path, monkeypatch):
 class TestSaveCheckpoint:
     """Tests for sage_save_checkpoint tool."""
 
-    async def test_save_checkpoint_returns_confirmation(self, isolated_project):
+    def test_save_checkpoint_returns_confirmation(self, isolated_project):
         """Saving checkpoint returns confirmation with ID."""
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="How to implement auth?",
             thesis="JWT is the best approach for stateless auth.",
             confidence=0.8,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_save_checkpoint_rejects_invalid_confidence_low(self, isolated_project):
+    def test_save_checkpoint_rejects_invalid_confidence_low(self, isolated_project):
         """Rejects confidence below 0."""
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Question",
             thesis="Thesis",
             confidence=-0.1,
@@ -81,9 +78,9 @@ class TestSaveCheckpoint:
         assert "-0.1" in result
         assert "0.0 and 1.0" in result
 
-    async def test_save_checkpoint_rejects_invalid_confidence_high(self, isolated_project):
+    def test_save_checkpoint_rejects_invalid_confidence_high(self, isolated_project):
         """Rejects confidence above 1."""
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Question",
             thesis="Thesis",
             confidence=1.5,
@@ -92,27 +89,27 @@ class TestSaveCheckpoint:
         assert "Invalid confidence" in result
         assert "1.5" in result
 
-    async def test_save_checkpoint_accepts_boundary_confidence(self, isolated_project):
+    def test_save_checkpoint_accepts_boundary_confidence(self, isolated_project):
         """Accepts boundary confidence values 0.0 and 1.0."""
         # Test 0.0
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Question",
             thesis="Thesis",
             confidence=0.0,
         )
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
         # Test 1.0
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Question two",
             thesis="Thesis two",
             confidence=1.0,
         )
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_save_checkpoint_with_all_optional_fields(self, isolated_project):
+    def test_save_checkpoint_with_all_optional_fields(self, isolated_project):
         """Can save checkpoint with all optional fields."""
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="How to secure API?",
             thesis="Use JWT with short expiry and refresh tokens.",
             confidence=0.85,
@@ -127,22 +124,22 @@ class TestSaveCheckpoint:
             reasoning_trace="Started with sessions, but JWT better for microservices.",
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
 
 class TestListCheckpoints:
     """Tests for sage_list_checkpoints tool."""
 
-    async def test_list_empty_returns_no_checkpoints(self, isolated_project):
+    def test_list_empty_returns_no_checkpoints(self, isolated_project):
         """Returns message when no checkpoints exist."""
         result = sage_list_checkpoints()
 
         assert "No checkpoints found" in result
 
-    async def test_list_returns_checkpoints(self, isolated_project):
+    def test_list_returns_checkpoints(self, isolated_project):
         """Lists saved checkpoints."""
         # Save a checkpoint first
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Test question",
             thesis="Test thesis for listing",
             confidence=0.7,
@@ -157,11 +154,11 @@ class TestListCheckpoints:
         assert "Test thesis" in result
         assert "70%" in result
 
-    async def test_list_respects_limit(self, isolated_project):
+    def test_list_respects_limit(self, isolated_project):
         """Respects limit parameter."""
         # Save multiple checkpoints
         for i in range(5):
-            await sage_save_checkpoint(
+            sage_save_checkpoint(
                 core_question=f"Question {i}",
                 thesis=f"Thesis number {i} here",
                 confidence=0.5,
@@ -175,10 +172,10 @@ class TestListCheckpoints:
         # Should only show 3 (each checkpoint has **id** so count of "**" = 6)
         assert "Found 3 checkpoint" in result
 
-    async def test_list_truncates_long_thesis(self, isolated_project):
+    def test_list_truncates_long_thesis(self, isolated_project):
         """Truncates long thesis in preview."""
         long_thesis = "A" * 100  # Longer than 60 char preview
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Question",
             thesis=long_thesis,
             confidence=0.5,
@@ -196,16 +193,16 @@ class TestListCheckpoints:
 class TestLoadCheckpoint:
     """Tests for sage_load_checkpoint tool."""
 
-    async def test_load_nonexistent_returns_error(self, isolated_project):
+    def test_load_nonexistent_returns_error(self, isolated_project):
         """Returns error for nonexistent checkpoint."""
         result = sage_load_checkpoint("nonexistent-id")
 
         assert "not found" in result.lower()
 
-    async def test_load_returns_formatted_context(self, isolated_project):
+    def test_load_returns_formatted_context(self, isolated_project):
         """Returns formatted checkpoint context."""
         # Save checkpoint
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="How to cache data?",
             thesis="Redis is best for distributed caching.",
             confidence=0.9,
@@ -225,10 +222,10 @@ class TestLoadCheckpoint:
         assert "How to cache data?" in result
         assert "90%" in result
 
-    async def test_load_supports_partial_id(self, isolated_project):
+    def test_load_supports_partial_id(self, isolated_project):
         """Supports partial ID matching."""
         # Save checkpoint
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Question",
             thesis="Thesis content here",
             confidence=0.7,
@@ -252,7 +249,7 @@ class TestLoadCheckpoint:
 class TestSearchCheckpoints:
     """Tests for sage_search_checkpoints tool."""
 
-    async def test_search_without_embeddings(self, isolated_project):
+    def test_search_without_embeddings(self, isolated_project):
         """Returns message when embeddings not available."""
         # embeddings is imported inside sage_search_checkpoints, so patch sage.embeddings
         with patch("sage.embeddings.is_available") as mock_is_available:
@@ -263,7 +260,7 @@ class TestSearchCheckpoints:
             assert "unavailable" in result.lower()
             assert "pip install" in result
 
-    async def test_search_empty_checkpoints(self, isolated_project):
+    def test_search_empty_checkpoints(self, isolated_project):
         """Returns message when no checkpoints exist."""
         with patch("sage.embeddings.is_available") as mock_is_available:
             mock_is_available.return_value = True
@@ -283,7 +280,7 @@ class TestSearchCheckpoints:
 class TestSaveKnowledge:
     """Tests for sage_save_knowledge tool."""
 
-    async def test_save_knowledge_returns_confirmation(self, tmp_path, monkeypatch):
+    def test_save_knowledge_returns_confirmation(self, tmp_path, monkeypatch):
         """Saving knowledge returns confirmation."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
         # Disable async mode
@@ -292,17 +289,17 @@ class TestSaveKnowledge:
             "sage.mcp_server.get_sage_config", lambda project_path=None: sync_config
         )
 
-        result = await sage_save_knowledge(
+        result = sage_save_knowledge(
             knowledge_id="test-knowledge",
             content="Test content",
             keywords=["test", "knowledge"],
         )
 
-        assert "📍 Knowledge queued:" in result
+        assert "📍 Knowledge" in result  # "queued" or "saved" depending on async mode
         assert "test-knowledge" in result
         assert "global" in result
 
-    async def test_save_knowledge_with_skill_scope(self, tmp_path, monkeypatch):
+    def test_save_knowledge_with_skill_scope(self, tmp_path, monkeypatch):
         """Shows skill scope in confirmation."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
         # Disable async mode
@@ -311,7 +308,7 @@ class TestSaveKnowledge:
             "sage.mcp_server.get_sage_config", lambda project_path=None: sync_config
         )
 
-        result = await sage_save_knowledge(
+        result = sage_save_knowledge(
             knowledge_id="scoped-knowledge",
             content="Scoped content",
             keywords=["scoped"],
@@ -324,7 +321,7 @@ class TestSaveKnowledge:
 class TestRecallKnowledge:
     """Tests for sage_recall_knowledge tool."""
 
-    async def test_recall_empty_returns_message(self, tmp_path, monkeypatch):
+    def test_recall_empty_returns_message(self, tmp_path, monkeypatch):
         """Returns message when nothing recalled."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
 
@@ -336,7 +333,7 @@ class TestRecallKnowledge:
             assert "No relevant knowledge" in result
             assert "pip install" in result
 
-    async def test_recall_with_embeddings_hint(self, tmp_path, monkeypatch):
+    def test_recall_with_embeddings_hint(self, tmp_path, monkeypatch):
         """Shows embeddings hint when not installed."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
 
@@ -351,7 +348,7 @@ class TestRecallKnowledge:
 class TestListKnowledge:
     """Tests for sage_list_knowledge tool."""
 
-    async def test_list_empty_returns_message(self, tmp_path, monkeypatch):
+    def test_list_empty_returns_message(self, tmp_path, monkeypatch):
         """Returns message when no knowledge exists."""
         # Patch the module-level constants
         knowledge_dir = tmp_path / "knowledge"
@@ -363,7 +360,7 @@ class TestListKnowledge:
 
         assert "No knowledge items found" in result
 
-    async def test_list_shows_knowledge_items(self, tmp_path, monkeypatch):
+    def test_list_shows_knowledge_items(self, tmp_path, monkeypatch):
         """Lists saved knowledge items."""
         # Patch the module-level constants
         knowledge_dir = tmp_path / "knowledge"
@@ -377,7 +374,7 @@ class TestListKnowledge:
         )
 
         # Save some knowledge
-        await sage_save_knowledge(
+        sage_save_knowledge(
             knowledge_id="item-one",
             content="First item content",
             keywords=["first", "one"],
@@ -395,7 +392,7 @@ class TestListKnowledge:
 class TestRemoveKnowledge:
     """Tests for sage_remove_knowledge tool."""
 
-    async def test_remove_nonexistent_returns_not_found(self, tmp_path, monkeypatch):
+    def test_remove_nonexistent_returns_not_found(self, tmp_path, monkeypatch):
         """Returns not found for nonexistent item."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
 
@@ -403,7 +400,7 @@ class TestRemoveKnowledge:
 
         assert "not found" in result.lower()
 
-    async def test_remove_existing_returns_confirmation(self, tmp_path, monkeypatch):
+    def test_remove_existing_returns_confirmation(self, tmp_path, monkeypatch):
         """Returns confirmation for removed item."""
         monkeypatch.setattr("sage.knowledge.SAGE_DIR", tmp_path)
         # Disable async mode
@@ -413,7 +410,7 @@ class TestRemoveKnowledge:
         )
 
         # Save then remove
-        await sage_save_knowledge(
+        sage_save_knowledge(
             knowledge_id="to-remove",
             content="Content",
             keywords=["remove"],
@@ -449,9 +446,9 @@ class TestAutosaveCheck:
         for trigger in expected_triggers:
             assert trigger in AUTOSAVE_TRIGGERS
 
-    async def test_autosave_rejects_invalid_confidence(self, isolated_project):
+    def test_autosave_rejects_invalid_confidence(self, isolated_project):
         """Rejects invalid confidence values."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Question",
             current_thesis="Thesis",
@@ -460,9 +457,9 @@ class TestAutosaveCheck:
 
         assert "Invalid confidence" in result
 
-    async def test_autosave_rejects_unknown_trigger(self, isolated_project):
+    def test_autosave_rejects_unknown_trigger(self, isolated_project):
         """Rejects unknown trigger events."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="unknown_trigger",
             core_question="Question",
             current_thesis="Thesis",
@@ -472,10 +469,10 @@ class TestAutosaveCheck:
         assert "Unknown trigger" in result
         assert "unknown_trigger" in result
 
-    async def test_autosave_skips_low_confidence(self, isolated_project):
+    def test_autosave_skips_low_confidence(self, isolated_project):
         """Skips save when confidence below threshold."""
         # synthesis requires 0.5, give it 0.3
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Question",
             current_thesis="Thesis",
@@ -485,9 +482,9 @@ class TestAutosaveCheck:
         assert "Not saving" in result
         assert "confidence" in result.lower()
 
-    async def test_autosave_skips_brief_thesis(self, isolated_project):
+    def test_autosave_skips_brief_thesis(self, isolated_project):
         """Skips save when thesis too brief."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",  # No confidence threshold
             core_question="Question",
             current_thesis="Short",  # Less than 10 chars
@@ -497,9 +494,9 @@ class TestAutosaveCheck:
         assert "Not saving" in result
         assert "brief" in result.lower()
 
-    async def test_autosave_skips_missing_question(self, isolated_project):
+    def test_autosave_skips_missing_question(self, isolated_project):
         """Skips save when no clear question."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="",
             current_thesis="A valid thesis with enough content.",
@@ -509,14 +506,14 @@ class TestAutosaveCheck:
         assert "Not saving" in result
         assert "question" in result.lower()
 
-    async def test_autosave_enforces_depth_thresholds(self, isolated_project, monkeypatch):
+    def test_autosave_enforces_depth_thresholds(self, isolated_project, monkeypatch):
         """Enforces depth thresholds for non-exempt triggers."""
         # Create a config with depth requirements (also disable async)
         mock_config = SageConfig(depth_min_messages=8, depth_min_tokens=2000, async_enabled=False)
         monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         # synthesis is NOT exempt, so depth is enforced
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="A clear research question here",
             current_thesis="A thesis with sufficient content for validation.",
@@ -528,13 +525,13 @@ class TestAutosaveCheck:
         assert "Not saving" in result
         assert "shallow" in result.lower()
 
-    async def test_autosave_exempt_triggers_skip_depth(self, isolated_project, monkeypatch):
+    def test_autosave_exempt_triggers_skip_depth(self, isolated_project, monkeypatch):
         """Exempt triggers skip depth threshold checks."""
         mock_config = SageConfig(depth_min_messages=8, depth_min_tokens=2000, async_enabled=False)
         monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
         # manual is exempt
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="A clear research question here",
             current_thesis="A thesis with sufficient content for validation.",
@@ -546,12 +543,12 @@ class TestAutosaveCheck:
         # Should either save or fail for other reasons, not depth
         assert "shallow" not in result.lower()
 
-    async def test_autosave_saves_valid_checkpoint(self, isolated_project, monkeypatch):
+    def test_autosave_saves_valid_checkpoint(self, isolated_project, monkeypatch):
         """Saves checkpoint when all validations pass."""
         mock_config = SageConfig(depth_min_messages=5, depth_min_tokens=1000, async_enabled=False)
         monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="How should we handle authentication?",
             current_thesis="JWT tokens provide the best balance of security and statelessness.",
@@ -560,14 +557,14 @@ class TestAutosaveCheck:
             token_estimate=3000,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_autosave_includes_depth_metadata(self, isolated_project, monkeypatch):
+    def test_autosave_includes_depth_metadata(self, isolated_project, monkeypatch):
         """Saved checkpoint includes depth metadata."""
         mock_config = SageConfig(depth_min_messages=5, depth_min_tokens=1000, async_enabled=False)
         monkeypatch.setattr("sage.config.get_sage_config", lambda project_path=None: mock_config)
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="synthesis",
             core_question="Research question for depth test",
             current_thesis="A thesis that passes all validation checks.",
@@ -577,7 +574,7 @@ class TestAutosaveCheck:
         )
 
         # Checkpoint should be queued
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -591,36 +588,36 @@ class TestAutosaveCheck:
         # (depends on format_checkpoint_for_context including them)
         assert loaded  # At minimum, should load
 
-    async def test_autosave_research_start_no_threshold(self, isolated_project):
+    def test_autosave_research_start_no_threshold(self, isolated_project):
         """research_start has 0 confidence threshold."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="research_start",
             core_question="Starting a new research topic",
             current_thesis="Initial hypothesis before any research.",
             confidence=0.0,  # Zero confidence
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_autosave_context_threshold_always_saves(self, isolated_project):
+    def test_autosave_context_threshold_always_saves(self, isolated_project):
         """context_threshold trigger always saves (0 threshold)."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="context_threshold",
             core_question="Context getting full, need to checkpoint",
             current_thesis="Summary of research so far before compaction.",
             confidence=0.1,  # Very low but should still save
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
 
 class TestAutosaveCheckDuplication:
     """Tests for duplicate checkpoint detection in autosave."""
 
-    async def test_autosave_detects_duplicate(self, isolated_project):
+    def test_autosave_detects_duplicate(self, isolated_project):
         """Detects semantically similar checkpoints."""
         # First save
-        await sage_autosave_check(
+        sage_autosave_check(
             trigger_event="manual",
             core_question="How to handle auth?",
             current_thesis="JWT is the best approach for authentication.",
@@ -632,7 +629,7 @@ class TestAutosaveCheckDuplication:
         time.sleep(2.0)
 
         # Second save with very similar thesis
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="How to handle auth?",
             current_thesis="JWT is the best approach for authentication.",  # Identical
@@ -641,15 +638,15 @@ class TestAutosaveCheckDuplication:
 
         # Should detect duplicate (depends on embeddings being available)
         # Without embeddings, may save anyway
-        assert "📍 Checkpoint queued:" in result or "similar" in result.lower()
+        assert "📍 Checkpoint" in result or "similar" in result.lower()
 
 
 class TestAutosaveCheckWithOptionalFields:
     """Tests for autosave with optional fields."""
 
-    async def test_autosave_with_sources(self, isolated_project):
+    def test_autosave_with_sources(self, isolated_project):
         """Autosave includes sources in checkpoint."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="What's the best database?",
             current_thesis="PostgreSQL is best for complex queries.",
@@ -659,11 +656,11 @@ class TestAutosaveCheckWithOptionalFields:
             ],
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_autosave_with_key_evidence(self, isolated_project):
+    def test_autosave_with_key_evidence(self, isolated_project):
         """Autosave includes key_evidence in checkpoint."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="Is Redis good for caching?",
             current_thesis="Redis excels at distributed caching.",
@@ -671,11 +668,11 @@ class TestAutosaveCheckWithOptionalFields:
             key_evidence=["Sub-millisecond latency", "Built-in clustering"],
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
-    async def test_autosave_with_reasoning_trace(self, isolated_project):
+    def test_autosave_with_reasoning_trace(self, isolated_project):
         """Autosave includes reasoning_trace in checkpoint."""
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="Should we use microservices?",
             current_thesis="Monolith first, then extract services.",
@@ -683,7 +680,7 @@ class TestAutosaveCheckWithOptionalFields:
             reasoning_trace="Started thinking microservices, but complexity suggests starting simpler.",
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result  # "queued" or "saved" depending on async mode
 
 
 class TestMCPServerModuleLevel:

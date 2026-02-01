@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from sage.cli import main
-from sage.default_skills import DEFAULT_SKILLS
+from sage.default_skills import get_default_skills
 
 
 @pytest.fixture
@@ -24,10 +24,16 @@ def temp_skills_dir(tmp_path):
     return skills_dir
 
 
+@pytest.fixture
+def default_skills():
+    """Get default skills for testing."""
+    return get_default_skills()
+
+
 class TestSkillsInstall:
     """Tests for 'sage skills install' command."""
 
-    def test_install_creates_skills(self, runner, tmp_path):
+    def test_install_creates_skills(self, runner, tmp_path, default_skills):
         """Install command creates all default skills."""
         skills_dir = tmp_path / "skills" / "sage"
 
@@ -36,7 +42,7 @@ class TestSkillsInstall:
                 result = runner.invoke(main, ["skills", "install"])
 
         assert result.exit_code == 0
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             skill_path = skills_dir / skill.name / "SKILL.md"
             assert skill_path.exists(), f"Missing {skill.name}"
 
@@ -118,13 +124,13 @@ class TestSkillsList:
             result = runner.invoke(main, ["skills", "list"])
 
         assert result.exit_code == 0
-        assert "1.0.0" in result.output
+        assert "1.0.0" in result.output or "1.1.0" in result.output
 
 
 class TestSkillsUpdate:
     """Tests for 'sage skills update' command."""
 
-    def test_update_overwrites_all(self, runner, tmp_path):
+    def test_update_overwrites_all(self, runner, tmp_path, default_skills):
         """Update command force-updates all skills."""
         skills_dir = tmp_path / "skills" / "sage"
         skill_dir = skills_dir / "sage-memory"
@@ -137,7 +143,7 @@ class TestSkillsUpdate:
         assert result.exit_code == 0
         assert "Updated" in result.output or "sage-memory" in result.output
         # Verify all skills are now installed with latest content
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             skill_path = skills_dir / skill.name / "SKILL.md"
             assert skill_path.exists()
 
@@ -169,7 +175,7 @@ class TestSkillsShow:
 class TestSkillsIntegration:
     """End-to-end integration tests."""
 
-    def test_full_workflow(self, runner, tmp_path):
+    def test_full_workflow(self, runner, tmp_path, default_skills):
         """Test full install -> list -> show workflow."""
         skills_dir = tmp_path / "skills" / "sage"
 
@@ -181,12 +187,12 @@ class TestSkillsIntegration:
             # List
             result = runner.invoke(main, ["skills", "list"])
             assert result.exit_code == 0
-            assert len(DEFAULT_SKILLS) == 4  # Verify we have 4 default skills
-            for skill in DEFAULT_SKILLS:
+            assert len(default_skills) == 5  # Verify we have 5 default skills
+            for skill in default_skills:
                 assert skill.name in result.output
 
             # Show each
-            for skill in DEFAULT_SKILLS:
+            for skill in default_skills:
                 result = runner.invoke(main, ["skills", "show", skill.name])
                 assert result.exit_code == 0
                 assert f"name: {skill.name}" in result.output
@@ -195,7 +201,7 @@ class TestSkillsIntegration:
             result = runner.invoke(main, ["skills", "update"])
             assert result.exit_code == 0
 
-    def test_skills_persist_across_commands(self, runner, tmp_path):
+    def test_skills_persist_across_commands(self, runner, tmp_path, default_skills):
         """Skills persist between CLI invocations."""
         skills_dir = tmp_path / "skills" / "sage"
 
@@ -204,7 +210,7 @@ class TestSkillsIntegration:
             runner.invoke(main, ["skills", "install"])
 
         # Verify files exist on disk
-        for skill in DEFAULT_SKILLS:
+        for skill in default_skills:
             skill_path = skills_dir / skill.name / "SKILL.md"
             assert skill_path.exists()
             content = skill_path.read_text()

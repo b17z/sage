@@ -48,7 +48,9 @@ class TestGetContinuityContext:
 
         from sage.mcp_server import _get_continuity_context
 
-        result = _get_continuity_context()
+        # Mock session queue to return empty list (no checkpoints queued)
+        with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+            result = _get_continuity_context()
         assert result is None
 
     def test_returns_context_when_marker_present(self, cleanup_continuity):
@@ -154,10 +156,12 @@ class TestSageContinuityStatus:
         # Mock watcher status - need to patch in sage.watcher module
         mock_watcher = {"running": False, "pid": None, "transcript": None}
 
+        # Mock session queue to return empty list (no checkpoints queued)
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
-            from sage.mcp_server import sage_continuity_status
+            with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+                from sage.mcp_server import sage_continuity_status
 
-            result = sage_continuity_status()
+                result = sage_continuity_status()
 
         assert "Continuity Status" in result
         assert "No pending continuity" in result
@@ -171,10 +175,12 @@ class TestSageContinuityStatus:
 
         mock_watcher = {"running": True, "pid": 12345, "transcript": "/path/to/transcript.jsonl"}
 
+        # Mock session queue to return empty list (no checkpoints queued)
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
-            from sage.mcp_server import sage_continuity_status
+            with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+                from sage.mcp_server import sage_continuity_status
 
-            result = sage_continuity_status()
+                result = sage_continuity_status()
 
         assert "12345" in result
         assert "running" in result.lower()

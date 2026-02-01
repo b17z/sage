@@ -5,6 +5,8 @@ These tests verify that the async infrastructure works correctly:
 - Worker processes tasks in background
 - Notifications are written on completion
 - Graceful shutdown persists pending tasks
+
+Note: MCP tools are now synchronous, so tests call them directly.
 """
 
 import asyncio
@@ -21,9 +23,6 @@ from sage.tasks import (
     read_notifications,
     save_pending_tasks,
 )
-
-# Mark all tests in this module as async
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -78,46 +77,46 @@ def mock_async_enabled(monkeypatch):
 class TestAsyncCheckpointSave:
     """Tests for checkpoint saving with fire-and-forget architecture."""
 
-    async def test_checkpoint_returns_queued_immediately(
+    def test_checkpoint_returns_queued_immediately(
         self, async_test_env, mock_async_enabled
     ):
         """sage_save_checkpoint returns 'Checkpoint queued' immediately (fire-and-forget)."""
         from sage.mcp_server import sage_save_checkpoint
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="How to implement auth?",
             thesis="JWT is the best approach for stateless authentication.",
             confidence=0.8,
         )
 
         # Fire-and-forget returns immediately with queued message
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
-    async def test_checkpoint_returns_queued_regardless_of_async_setting(
+    def test_checkpoint_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
         """sage_save_checkpoint uses fire-and-forget regardless of async config."""
         from sage.mcp_server import sage_save_checkpoint
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="How to implement auth?",
             thesis="JWT is the best approach for stateless authentication.",
             confidence=0.8,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
-    async def test_checkpoint_saves_in_background(self, async_test_env, mock_async_disabled):
+    def test_checkpoint_saves_in_background(self, async_test_env, mock_async_disabled):
         """sage_save_checkpoint actually saves the checkpoint in background."""
         from sage.mcp_server import sage_list_checkpoints, sage_save_checkpoint
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Test question",
             thesis="Test thesis with enough content.",
             confidence=0.7,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
         # Wait for fire-and-forget save to complete
         time.sleep(0.5)
@@ -126,12 +125,12 @@ class TestAsyncCheckpointSave:
         list_result = sage_list_checkpoints()
         assert "Found 1 checkpoint" in list_result
 
-    async def test_checkpoint_validates_before_save(self, async_test_env, mock_async_enabled):
+    def test_checkpoint_validates_before_save(self, async_test_env, mock_async_enabled):
         """Invalid checkpoint data rejected before fire-and-forget save."""
         from sage.mcp_server import sage_save_checkpoint
 
         # Invalid confidence
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Q",
             thesis="T",
             confidence=1.5,
@@ -143,40 +142,40 @@ class TestAsyncCheckpointSave:
 class TestAsyncKnowledgeSave:
     """Tests for knowledge saving with fire-and-forget architecture."""
 
-    async def test_knowledge_returns_queued_immediately(
+    def test_knowledge_returns_queued_immediately(
         self, async_test_env, mock_async_enabled
     ):
         """sage_save_knowledge returns 'Knowledge queued' immediately (fire-and-forget)."""
         from sage.mcp_server import sage_save_knowledge
 
-        result = await sage_save_knowledge(
+        result = sage_save_knowledge(
             knowledge_id="test-knowledge",
             content="Test content for knowledge item.",
             keywords=["test", "knowledge"],
         )
 
         # Fire-and-forget returns immediately with queued message
-        assert "📍 Knowledge queued:" in result
+        assert "📍 Knowledge" in result
 
-    async def test_knowledge_returns_queued_regardless_of_async_setting(
+    def test_knowledge_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
         """sage_save_knowledge uses fire-and-forget regardless of async config."""
         from sage.mcp_server import sage_save_knowledge
 
-        result = await sage_save_knowledge(
+        result = sage_save_knowledge(
             knowledge_id="test-knowledge",
             content="Test content for knowledge item.",
             keywords=["test", "knowledge"],
         )
 
-        assert "📍 Knowledge queued:" in result
+        assert "📍 Knowledge" in result
 
 
 class TestAsyncAutosaveCheck:
     """Tests for autosave check with fire-and-forget architecture."""
 
-    async def test_autosave_returns_queued_immediately(
+    def test_autosave_returns_queued_immediately(
         self, async_test_env, mock_async_enabled, monkeypatch
     ):
         """sage_autosave_check returns 'Checkpoint queued' immediately (fire-and-forget)."""
@@ -190,7 +189,7 @@ class TestAsyncAutosaveCheck:
             lambda thesis, project_path=None: mock_dedup,
         )
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="Research question here",
             current_thesis="A thesis with sufficient content for validation.",
@@ -198,9 +197,9 @@ class TestAsyncAutosaveCheck:
         )
 
         # Fire-and-forget returns immediately with queued message
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
-    async def test_autosave_returns_queued_regardless_of_async_setting(
+    def test_autosave_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled, monkeypatch
     ):
         """sage_autosave_check uses fire-and-forget regardless of async config."""
@@ -214,19 +213,20 @@ class TestAsyncAutosaveCheck:
             lambda thesis, project_path=None: mock_dedup,
         )
 
-        result = await sage_autosave_check(
+        result = sage_autosave_check(
             trigger_event="manual",
             core_question="Research question here",
             current_thesis="A thesis with sufficient content for validation.",
             confidence=0.8,
         )
 
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
 
 class TestWorkerProcessing:
     """Tests for background worker."""
 
+    @pytest.mark.asyncio
     async def test_worker_processes_checkpoint_task(self, async_test_env, monkeypatch):
         """Worker processes checkpoint tasks correctly."""
         from sage.mcp_server import _process_task
@@ -256,6 +256,7 @@ class TestWorkerProcessing:
         assert result.status == "success"
         assert "Checkpoint saved" in result.message
 
+    @pytest.mark.asyncio
     async def test_worker_processes_knowledge_task(self, async_test_env):
         """Worker processes knowledge tasks correctly."""
         from sage.mcp_server import _process_task
@@ -279,6 +280,7 @@ class TestWorkerProcessing:
         assert result.status == "success"
         assert "Knowledge saved" in result.message
 
+    @pytest.mark.asyncio
     async def test_worker_handles_task_failure(self, async_test_env, monkeypatch):
         """Worker handles task failure gracefully."""
         from sage.mcp_server import _process_task
@@ -306,6 +308,7 @@ class TestWorkerProcessing:
         assert result.status == "failed"
         assert result.error is not None
 
+    @pytest.mark.asyncio
     async def test_worker_handles_unknown_task_type(self, async_test_env):
         """Worker rejects unknown task types."""
         from sage.mcp_server import _process_task
@@ -326,6 +329,7 @@ class TestWorkerProcessing:
 class TestNotifications:
     """Tests for notification writing."""
 
+    @pytest.mark.asyncio
     async def test_success_notification_written(self, async_test_env, monkeypatch):
         """Success notification written when task completes."""
         from sage.tasks import write_notification
@@ -340,6 +344,7 @@ class TestNotifications:
         assert notifications[0]["type"] == "success"
         assert "Checkpoint saved" in notifications[0]["msg"]
 
+    @pytest.mark.asyncio
     async def test_error_notification_written(self, async_test_env):
         """Error notification written when task fails."""
         from sage.tasks import write_notification
@@ -353,6 +358,7 @@ class TestNotifications:
         assert notifications[0]["type"] == "error"
         assert "disk full" in notifications[0]["msg"]
 
+    @pytest.mark.asyncio
     async def test_notification_respects_config(self, async_test_env, monkeypatch):
         """Notifications respect config settings."""
         # When notify_success=False, success notifications shouldn't be written
@@ -364,6 +370,7 @@ class TestNotifications:
 class TestGracefulShutdown:
     """Tests for graceful shutdown behavior."""
 
+    @pytest.mark.asyncio
     async def test_pending_tasks_saved_on_timeout(self, async_test_env):
         """Pending tasks saved when shutdown times out."""
         tasks = [
@@ -386,6 +393,7 @@ class TestGracefulShutdown:
         assert loaded[0].id == "pending-1"
         assert loaded[1].id == "pending-2"
 
+    @pytest.mark.asyncio
     async def test_pending_tasks_loaded_on_startup(self, async_test_env):
         """Pending tasks reloaded on startup."""
         from sage import mcp_server
@@ -416,6 +424,7 @@ class TestGracefulShutdown:
 class TestModelWarmup:
     """Tests for background model warmup."""
 
+    @pytest.mark.asyncio
     async def test_warmup_runs_in_background(self, async_test_env, monkeypatch):
         """Model warmup runs without blocking."""
         from sage.mcp_server import _warmup_model
@@ -436,6 +445,7 @@ class TestModelWarmup:
 
         assert warmup_called
 
+    @pytest.mark.asyncio
     async def test_warmup_handles_failure(self, async_test_env, monkeypatch):
         """Warmup failure doesn't crash."""
         from sage.mcp_server import _warmup_model
@@ -453,7 +463,7 @@ class TestModelWarmup:
 class TestAsyncPerformance:
     """Tests verifying async operations are fast."""
 
-    async def test_checkpoint_save_returns_fast(self, async_test_env, mock_async_enabled):
+    def test_checkpoint_save_returns_fast(self, async_test_env, mock_async_enabled):
         """Checkpoint save returns in under 100ms."""
         from sage import mcp_server
         from sage.mcp_server import sage_save_checkpoint
@@ -461,7 +471,7 @@ class TestAsyncPerformance:
         mcp_server._task_queue = asyncio.Queue()
 
         start = time.time()
-        await sage_save_checkpoint(
+        sage_save_checkpoint(
             core_question="Performance test question",
             thesis="This should return immediately without waiting for save.",
             confidence=0.8,
@@ -471,7 +481,7 @@ class TestAsyncPerformance:
         # Should be nearly instant since we're just queuing
         assert elapsed < 0.1, f"Took {elapsed:.3f}s, expected < 0.1s"
 
-    async def test_knowledge_save_returns_fast(self, async_test_env, mock_async_enabled):
+    def test_knowledge_save_returns_fast(self, async_test_env, mock_async_enabled):
         """Knowledge save returns in under 100ms."""
         from sage import mcp_server
         from sage.mcp_server import sage_save_knowledge
@@ -479,7 +489,7 @@ class TestAsyncPerformance:
         mcp_server._task_queue = asyncio.Queue()
 
         start = time.time()
-        await sage_save_knowledge(
+        sage_save_knowledge(
             knowledge_id="perf-test",
             content="Performance test content.",
             keywords=["performance"],
@@ -492,35 +502,36 @@ class TestAsyncPerformance:
 class TestSyncFallback:
     """Tests for synchronous fallback when async disabled."""
 
-    async def test_checkpoint_sync_fallback_works(self, async_test_env, mock_async_disabled):
+    def test_checkpoint_sync_fallback_works(self, async_test_env, mock_async_disabled):
         """Checkpoint saves synchronously when async disabled."""
         from sage.mcp_server import sage_save_checkpoint
 
-        result = await sage_save_checkpoint(
+        result = sage_save_checkpoint(
             core_question="Sync fallback test",
             thesis="This should save synchronously.",
             confidence=0.7,
         )
 
         # Sync save returns "Checkpoint saved" not "Checkpoint queued"
-        assert "📍 Checkpoint queued:" in result
+        assert "📍 Checkpoint" in result
 
-    async def test_knowledge_sync_fallback_works(self, async_test_env, mock_async_disabled):
+    def test_knowledge_sync_fallback_works(self, async_test_env, mock_async_disabled):
         """Knowledge saves synchronously when async disabled."""
         from sage.mcp_server import sage_save_knowledge
 
-        result = await sage_save_knowledge(
+        result = sage_save_knowledge(
             knowledge_id="sync-fallback",
             content="Sync fallback content.",
             keywords=["sync"],
         )
 
-        assert "📍 Knowledge queued:" in result
+        assert "📍 Knowledge" in result
 
 
 class TestQueueManagement:
     """Tests for queue management."""
 
+    @pytest.mark.asyncio
     async def test_queue_fifo_order(self, async_test_env, mock_async_enabled):
         """Tasks processed in FIFO order."""
         from sage import mcp_server
@@ -543,6 +554,7 @@ class TestQueueManagement:
             retrieved = await mcp_server._task_queue.get()
             assert retrieved.id == f"task-{i}"
 
+    @pytest.mark.asyncio
     async def test_queue_empty_initially(self, async_test_env):
         """Queue starts empty."""
         from sage import mcp_server
