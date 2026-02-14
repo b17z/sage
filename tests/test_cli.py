@@ -19,6 +19,8 @@ def isolated_sage(tmp_path, monkeypatch):
     sage_dir.mkdir()
     (sage_dir / "skills").mkdir()
     (sage_dir / "knowledge").mkdir()
+    (sage_dir / "knowledge" / "global").mkdir()
+    (sage_dir / "knowledge" / "skills").mkdir()
 
     skills_dir = tmp_path / ".claude" / "skills"
     skills_dir.mkdir(parents=True)
@@ -27,6 +29,9 @@ def isolated_sage(tmp_path, monkeypatch):
     monkeypatch.setattr("sage.config.SKILLS_DIR", skills_dir)
     monkeypatch.setattr("sage.config.CONFIG_PATH", sage_dir / "config.yaml")
     monkeypatch.setattr("sage.skill.SKILLS_DIR", skills_dir)
+    # Prevent project root detection from using wrong directories
+    monkeypatch.setattr("sage.config.detect_project_root", lambda: None)
+    monkeypatch.setattr("sage.knowledge.detect_project_root", lambda: None)
 
     return tmp_path
 

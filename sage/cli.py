@@ -8,7 +8,14 @@ from rich.table import Table
 
 from sage import __version__
 from sage.client import Message, create_client, send_message
-from sage.config import SAGE_DIR, Config, SageConfig, ensure_directories, get_sage_config
+from sage.config import (
+    SAGE_DIR,
+    Config,
+    SageConfig,
+    detect_project_root,
+    ensure_directories,
+    get_sage_config,
+)
 from sage.errors import format_error
 from sage.history import append_entry, calculate_usage, create_entry, read_history
 from sage.init import run_init
@@ -63,10 +70,12 @@ def health():
     """Check Sage system health and diagnostics."""
 
     from sage.checkpoint import CHECKPOINTS_DIR, list_checkpoints
-    from sage.config import CONFIG_PATH, SAGE_DIR, get_sage_config
+    from sage.config import CONFIG_PATH, SAGE_DIR, detect_project_root, get_sage_config
     from sage.embeddings import check_model_mismatch, get_configured_model, is_available
     from sage.knowledge import KNOWLEDGE_DIR, list_knowledge
     from sage.tasks import TASKS_DIR, load_pending_tasks
+
+    project_root = detect_project_root()
 
     console.print("[bold]Sage Health Check[/bold]")
     console.print("─" * 40)
@@ -101,7 +110,7 @@ def health():
 
     # Check checkpoints
     if CHECKPOINTS_DIR.exists():
-        checkpoints = list_checkpoints()
+        checkpoints = list_checkpoints(project_path=project_root)
         total_size = sum(f.stat().st_size for f in CHECKPOINTS_DIR.glob("*.md"))
         size_str = f"{total_size / 1024:.1f}KB" if total_size < 1024 * 1024 else f"{total_size / 1024 / 1024:.1f}MB"
         console.print(f"[green]✓[/green] Checkpoints: {len(checkpoints)} saved ({size_str})")
@@ -165,7 +174,7 @@ def debug(query, skill, knowledge_only, checkpoints_only):
     """
     from sage import embeddings
     from sage.checkpoint import _get_checkpoint_embedding_store, list_checkpoints
-    from sage.config import get_sage_config
+    from sage.config import detect_project_root, get_sage_config
     from sage.knowledge import (
         _get_all_embedding_similarities,
         get_type_threshold,
@@ -173,6 +182,7 @@ def debug(query, skill, knowledge_only, checkpoints_only):
         score_item_combined,
     )
 
+    project_root = detect_project_root()
     config = get_sage_config()
     show_knowledge = not checkpoints_only
     show_checkpoints = not knowledge_only
@@ -250,7 +260,7 @@ def debug(query, skill, knowledge_only, checkpoints_only):
         if not embeddings.is_available():
             console.print("[yellow]Embeddings not available for checkpoint search.[/yellow]")
         else:
-            checkpoints = list_checkpoints(limit=50)
+            checkpoints = list_checkpoints(project_path=project_root, limit=50)
             if not checkpoints:
                 console.print("[yellow]No checkpoints found.[/yellow]")
             else:
@@ -934,6 +944,7 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
     """Add a knowledge item from a file."""
     from pathlib import Path
 
+    project_root = detect_project_root()
     content = Path(file).read_text()
     keyword_list = [k.strip() for k in keywords.split(",")]
 
@@ -943,6 +954,7 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
         keywords=keyword_list,
         skill=skill,
         source=source or "",
+        project_path=project_root,
     )
 
     scope = f"skill:{skill}" if skill else "global"
@@ -958,7 +970,8 @@ def knowledge_add(file, knowledge_id, keywords, skill, source):
 )
 def knowledge_list(skill, item_type):
     """List knowledge items."""
-    items = list_knowledge(skill)
+    project_root = detect_project_root()
+    items = list_knowledge(skill, project_path=project_root)
 
     # Filter by type if specified
     if item_type:
@@ -1003,12 +1016,13 @@ def knowledge_list(skill, item_type):
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 def knowledge_rm(knowledge_id, force):
     """Remove a knowledge item."""
+    project_root = detect_project_root()
     if not force:
         if not click.confirm(f"Remove knowledge '{knowledge_id}'?"):
             console.print("Cancelled.")
             return
 
-    if remove_knowledge(knowledge_id):
+    if remove_knowledge(knowledge_id, project_path=project_root):
         console.print(f"[green]✓[/green] Removed: {knowledge_id}")
     else:
         console.print(f"[red]Knowledge '{knowledge_id}' not found[/red]")
@@ -1019,7 +1033,8 @@ def knowledge_rm(knowledge_id, force):
 @click.option("--skill", "-s", default="test", help="Skill context for matching")
 def knowledge_match(query, skill):
     """Test what knowledge would be recalled for a query."""
-    result = recall_knowledge(query, skill)
+    project_root = detect_project_root()
+    result = recall_knowledge(query, skill, project_path=project_root)
 
     if result.count == 0:
         console.print("[yellow]No knowledge matched this query.[/yellow]")
@@ -1070,12 +1085,14 @@ def knowledge_edit(knowledge_id, content, content_file, keywords, source, status
         console.print("[red]Provide at least one field to update (--content, --keywords, --source, or --status)[/red]")
         sys.exit(1)
 
+    project_root = detect_project_root()
     result = update_knowledge(
         knowledge_id=knowledge_id,
         content=content,
         keywords=kw_list,
         source=source,
         status=status,
+        project_path=project_root,
     )
 
     if result is None:
@@ -1109,10 +1126,12 @@ def knowledge_deprecate(knowledge_id, reason, replacement):
     """
     from sage.knowledge import deprecate_knowledge
 
+    project_root = detect_project_root()
     result = deprecate_knowledge(
         knowledge_id=knowledge_id,
         reason=reason,
         replacement_id=replacement,
+        project_path=project_root,
     )
 
     if result is None:
@@ -1138,8 +1157,10 @@ def knowledge_archive(knowledge_id, force):
     """
     from sage.knowledge import archive_knowledge, list_knowledge
 
+    project_root = detect_project_root()
+
     # Find item first
-    items = list_knowledge()
+    items = list_knowledge(project_path=project_root)
     item = next((i for i in items if i.id == knowledge_id), None)
 
     if item is None:
@@ -1152,7 +1173,7 @@ def knowledge_archive(knowledge_id, force):
             abort=True,
         )
 
-    result = archive_knowledge(knowledge_id)
+    result = archive_knowledge(knowledge_id, project_path=project_root)
 
     if result is None:
         console.print(f"[red]Failed to archive: {knowledge_id}[/red]")
@@ -1177,10 +1198,11 @@ def todo():
 @click.option("--all", "show_all", is_flag=True, help="Show all todos (including done)")
 def todo_list(show_all):
     """List pending todos."""
+    project_root = detect_project_root()
     if show_all:
-        todos = list_todos()
+        todos = list_todos(project_path=project_root)
     else:
-        todos = list_todos(status="pending")
+        todos = list_todos(status="pending", project_path=project_root)
 
     if not todos:
         status_msg = "" if show_all else "pending "
@@ -1214,7 +1236,8 @@ def todo_list(show_all):
 @click.argument("todo_id")
 def todo_done(todo_id):
     """Mark a todo as done."""
-    if mark_todo_done(todo_id):
+    project_root = detect_project_root()
+    if mark_todo_done(todo_id, project_path=project_root):
         console.print(f"[green]✓[/green] Marked as done: {todo_id}")
     else:
         console.print(f"[red]Todo '{todo_id}' not found[/red]")
@@ -1223,7 +1246,8 @@ def todo_done(todo_id):
 @todo.command("pending")
 def todo_pending():
     """Show pending todos (for session start)."""
-    todos = get_pending_todos()
+    project_root = detect_project_root()
+    todos = get_pending_todos(project_path=project_root)
 
     if not todos:
         console.print("[dim]No pending todos.[/dim]")
@@ -1253,8 +1277,10 @@ def checkpoint():
 def checkpoint_list(skill, limit):
     """List saved checkpoints."""
     from sage.checkpoint import list_checkpoints
+    from sage.config import detect_project_root
 
-    checkpoints = list_checkpoints(skill=skill, limit=limit)
+    project_root = detect_project_root()
+    checkpoints = list_checkpoints(project_path=project_root, skill=skill, limit=limit)
 
     if not checkpoints:
         console.print("[yellow]No checkpoints found.[/yellow]")
@@ -1270,7 +1296,11 @@ def checkpoint_list(skill, limit):
 
     for cp in checkpoints:
         thesis = cp.thesis[:40] + "..." if len(cp.thesis) > 40 else cp.thesis
-        ts = cp.ts[:16].replace("T", " ")
+        # Handle both datetime objects and ISO strings
+        if hasattr(cp.ts, "strftime"):
+            ts = cp.ts.strftime("%Y-%m-%d %H:%M")
+        else:
+            ts = str(cp.ts)[:16].replace("T", " ")
 
         table.add_row(
             cp.id[:30] + "..." if len(cp.id) > 30 else cp.id,
@@ -1288,8 +1318,10 @@ def checkpoint_list(skill, limit):
 def checkpoint_show(checkpoint_id):
     """Show details of a checkpoint."""
     from sage.checkpoint import format_checkpoint_for_context, load_checkpoint
+    from sage.config import detect_project_root
 
-    cp = load_checkpoint(checkpoint_id)
+    project_root = detect_project_root()
+    cp = load_checkpoint(checkpoint_id, project_path=project_root)
 
     if not cp:
         console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
@@ -1304,8 +1336,10 @@ def checkpoint_show(checkpoint_id):
 def checkpoint_restore(checkpoint_id, skill):
     """Restore a checkpoint and start a query with its context."""
     from sage.checkpoint import format_checkpoint_for_context, load_checkpoint
+    from sage.config import detect_project_root
 
-    cp = load_checkpoint(checkpoint_id)
+    project_root = detect_project_root()
+    cp = load_checkpoint(checkpoint_id, project_path=project_root)
 
     if not cp:
         console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
@@ -1349,6 +1383,62 @@ def checkpoint_rm(checkpoint_id, force):
         console.print(f"[green]✓[/green] Deleted: {checkpoint_id}")
     else:
         console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
+
+
+@checkpoint.command("emergency")
+@click.option("--project", "-p", type=click.Path(exists=True), help="Project directory")
+def checkpoint_emergency(project):
+    """Save emergency checkpoint before compaction.
+
+    Called automatically by PreCompact hook. Extracts context from the
+    current session transcript to preserve before compaction.
+
+    This uses the same recovery checkpoint system as the watcher daemon,
+    extracting topic, decisions, open threads, and files touched.
+    """
+    import sys
+    from pathlib import Path
+
+    from sage.config import detect_project_root
+    from sage.watcher import find_active_transcript
+
+    project_path = Path(project) if project else detect_project_root()
+
+    # Find the current transcript
+    transcript_path = find_active_transcript(project_path)
+    if not transcript_path or not transcript_path.exists():
+        print("No transcript found, skipping emergency checkpoint", file=sys.stderr)
+        return
+
+    try:
+        from sage.recovery import (
+            extract_recovery_checkpoint,
+            save_recovery_checkpoint,
+        )
+        from sage.transcript import read_full_transcript
+
+        # Read transcript for full context
+        window = read_full_transcript(transcript_path, max_entries=500)
+
+        if window.is_empty:
+            print("Empty transcript, skipping emergency checkpoint", file=sys.stderr)
+            return
+
+        # Extract recovery checkpoint
+        checkpoint = extract_recovery_checkpoint(
+            window=window,
+            trigger="precompact",
+            use_claude=False,  # Fast local extraction
+        )
+
+        # Save to project-local
+        save_recovery_checkpoint(checkpoint, project_path=project_path)
+        print(f"Emergency checkpoint saved: {checkpoint.id}", file=sys.stderr)
+
+    except ImportError as e:
+        print(f"Recovery modules not available: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Failed to save emergency checkpoint: {e}", file=sys.stderr)
 
 
 @main.group()
@@ -1396,8 +1486,8 @@ def hooks_install(force):
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
-        "post-response-sage-notify.sh",
         "pre-compact.sh",
+        "session-start-sage.sh",
     ]
 
     copied = []
@@ -1428,36 +1518,45 @@ def hooks_install(force):
         except json.JSONDecodeError:
             console.print("[yellow]Warning: Could not parse existing settings.json[/yellow]")
 
-    # Build hook configuration with absolute paths
-    hook_config = {
-        "Stop": [
+    # Build hook configuration - only include hooks that were copied or already exist
+    def hook_exists(name: str) -> bool:
+        return (hooks_dest / name).exists()
+
+    hook_config: dict = {}
+
+    # SessionStart hooks
+    if hook_exists("session-start-sage.sh"):
+        hook_config["SessionStart"] = [
             {
                 "matcher": "",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": str(hooks_dest / "post-response-context-check.sh"),
-                    },
-                    {
-                        "type": "command",
-                        "command": str(hooks_dest / "post-response-semantic-detector.sh"),
-                    },
-                    {
-                        "type": "command",
-                        "command": str(hooks_dest / "post-response-sage-notify.sh"),
+                        "command": str(hooks_dest / "session-start-sage.sh"),
                     },
                 ],
             }
-        ],
-        "PreCompact": [
+        ]
+
+    # Stop hooks (only add ones that exist)
+    stop_hooks = []
+    for hook_name in ["post-response-context-check.sh", "post-response-semantic-detector.sh"]:
+        if hook_exists(hook_name):
+            stop_hooks.append({"type": "command", "command": str(hooks_dest / hook_name)})
+
+    if stop_hooks:
+        hook_config["Stop"] = [{"matcher": "", "hooks": stop_hooks}]
+
+    # PreCompact hooks
+    if hook_exists("pre-compact.sh"):
+        hook_config["PreCompact"] = [
             {
                 "matcher": "",
                 "hooks": [
                     {"type": "command", "command": str(hooks_dest / "pre-compact.sh")},
                 ],
             }
-        ],
-    }
+        ]
 
     # Merge with existing hooks (don't overwrite other hooks)
     if "hooks" not in settings:
@@ -1823,7 +1922,10 @@ def admin_rebuild_embeddings(force):
 
     from sage import embeddings
     from sage.checkpoint import list_checkpoints
+    from sage.config import detect_project_root
     from sage.knowledge import list_knowledge
+
+    project_root = detect_project_root()
 
     # Check for model mismatch
     is_mismatch, stored_model, current_model = embeddings.check_model_mismatch()
@@ -1868,7 +1970,7 @@ def admin_rebuild_embeddings(force):
     console.print()
 
     # Rebuild checkpoint embeddings
-    checkpoints = list_checkpoints(limit=100)
+    checkpoints = list_checkpoints(project_path=project_root, limit=100)
     if checkpoints:
         console.print(f"Rebuilding {len(checkpoints)} checkpoint embeddings...")
 
@@ -1937,7 +2039,9 @@ def watcher():
 
 
 @watcher.command("start")
-def watcher_start():
+@click.option("--project", "-p", type=click.Path(exists=True), help="Project path to scope watcher")
+@click.option("--force", "-f", is_flag=True, help="Force restart if already running")
+def watcher_start(project, force):
     """Start the compaction watcher daemon.
 
     Runs in the background and watches Claude Code transcripts for
@@ -1947,19 +2051,29 @@ def watcher_start():
     1. Finds the most recent checkpoint
     2. Writes a continuity marker
     3. Next sage tool call injects the checkpoint context
+
+    Use --project to scope the watcher to a specific project's transcripts.
+    Use --force to restart the watcher (e.g., when switching projects).
     """
+    from pathlib import Path
+
     from sage.watcher import find_active_transcript, start_daemon
 
+    project_path = Path(project) if project else None
+
     # Check for transcript first
-    transcript = find_active_transcript()
+    transcript = find_active_transcript(project_path)
     if not transcript:
-        console.print("[red]No Claude Code transcript found[/red]")
+        if project_path:
+            console.print(f"[red]No transcript found for project: {project_path}[/red]")
+        else:
+            console.print("[red]No Claude Code transcript found[/red]")
         console.print("[dim]Start a Claude Code session first[/dim]")
         sys.exit(1)
 
     console.print(f"[dim]Found transcript: {transcript}[/dim]")
 
-    if start_daemon():
+    if start_daemon(project_path=project_path, force_restart=force):
         from sage.watcher import get_watcher_status
 
         status = get_watcher_status()
@@ -1971,7 +2085,7 @@ def watcher_start():
 
         if is_running():
             console.print("[yellow]Watcher already running[/yellow]")
-            console.print("[dim]Use 'sage watcher status' for details[/dim]")
+            console.print("[dim]Use --force to restart, or 'sage watcher status' for details[/dim]")
         else:
             console.print("[red]Failed to start watcher[/red]")
             console.print("[dim]Check ~/.sage/logs/watcher.log for details[/dim]")
@@ -2091,7 +2205,7 @@ def continuity():
 @continuity.command("status")
 def continuity_status():
     """Show current continuity status."""
-    from sage.config import get_sage_config
+    from sage.config import detect_project_root, get_sage_config
     from sage.continuity import (
         get_continuity_marker,
         get_most_recent_checkpoint,
@@ -2100,6 +2214,7 @@ def continuity_status():
     from sage.watcher import get_watcher_status
 
     config = get_sage_config()
+    project_root = detect_project_root()
 
     console.print("[bold]Session Continuity Status[/bold]")
     console.print("─" * 40)
@@ -2121,8 +2236,8 @@ def continuity_status():
 
     # Pending marker
     console.print()
-    if has_pending_continuity():
-        marker = get_continuity_marker()
+    if has_pending_continuity(project_root):
+        marker = get_continuity_marker(project_root)
         console.print("[yellow]⚡[/yellow] Pending continuity marker!")
         if marker:
             console.print(f"  Reason: {marker.get('reason', 'unknown')}")
@@ -2139,7 +2254,7 @@ def continuity_status():
 
     # Most recent checkpoint
     console.print()
-    recent_cp = get_most_recent_checkpoint()
+    recent_cp = get_most_recent_checkpoint(project_root)
     if recent_cp:
         console.print(f"[dim]Most recent checkpoint: {recent_cp.name}[/dim]")
     else:
@@ -2153,9 +2268,12 @@ def continuity_clear(force):
 
     Use this if you want to skip automatic context injection after compaction.
     """
+    from sage.config import detect_project_root
     from sage.continuity import clear_continuity, has_pending_continuity
 
-    if not has_pending_continuity():
+    project_root = detect_project_root()
+
+    if not has_pending_continuity(project_root):
         console.print("[yellow]No pending continuity marker[/yellow]")
         return
 
@@ -2164,7 +2282,7 @@ def continuity_clear(force):
             console.print("Cancelled.")
             return
 
-    clear_continuity()
+    clear_continuity(project_root)
     console.print("[green]✓[/green] Continuity marker cleared")
 
 
@@ -2176,9 +2294,11 @@ def continuity_mark(reason):
     This is mainly for testing. The marker will trigger context injection
     on the next sage MCP tool call.
     """
+    from sage.config import detect_project_root
     from sage.continuity import mark_for_continuity
 
-    result = mark_for_continuity(reason=reason)
+    project_root = detect_project_root()
+    result = mark_for_continuity(reason=reason, project_dir=project_root)
 
     if result.ok:
         console.print("[green]✓[/green] Continuity marker created")
@@ -2189,6 +2309,114 @@ def continuity_mark(reason):
     else:
         console.print(f"[red]Failed to create marker: {result.unwrap_err().message}[/red]")
         sys.exit(1)
+
+
+@continuity.command("inject")
+def continuity_inject():
+    """Output continuity context for hook injection.
+
+    This command is designed to be called from SessionStart hooks.
+    It outputs raw context (no formatting) that gets injected into
+    Claude's context at session start.
+
+    If there's no pending continuity, outputs nothing.
+    """
+    from sage.checkpoint import format_checkpoint_for_context, load_checkpoint
+    from sage.config import detect_project_root, get_sage_config
+    from sage.continuity import clear_continuity, get_continuity_marker, has_pending_continuity
+    from sage.session import get_pending_injections
+
+    config = get_sage_config()
+    project_root = detect_project_root()
+
+    if not config.continuity_enabled:
+        return
+
+    # Check for pending marker or queued checkpoints (project-scoped)
+    has_marker = has_pending_continuity(project_root)
+    marker = get_continuity_marker(project_root) if has_marker else None
+
+    try:
+        queued = get_pending_injections()
+    except Exception:
+        queued = []
+
+    if not marker and not queued:
+        return
+
+    # Build output with prominent header
+    lines = [
+        "",
+        "╔══════════════════════════════════════════════════════════════════════╗",
+        "║  SAGE: Session context restored from checkpoint                      ║",
+        "╚══════════════════════════════════════════════════════════════════════╝",
+        "",
+    ]
+
+    # Load checkpoint from marker - this is the PRIMARY source of truth
+    injected_ids = []
+    checkpoint_id = marker.get("checkpoint_id") if marker else None
+    has_quality_checkpoint = False
+
+    if checkpoint_id:
+        checkpoint = load_checkpoint(checkpoint_id, project_path=project_root)
+        if checkpoint:
+            # Check if this is a quality checkpoint (not just a recovery stub)
+            is_quality = (
+                checkpoint.get("confidence", 0) > 0
+                or (checkpoint.get("thesis") or "").strip()
+                or len(checkpoint.get("open_questions", []) or []) > 0
+            )
+            if is_quality:
+                has_quality_checkpoint = True
+            lines.append("**Last Checkpoint:**")
+            lines.append(format_checkpoint_for_context(checkpoint))
+            injected_ids.append(checkpoint_id)
+
+    # Load queued checkpoints (up to 3)
+    if queued:
+        lines.append("")
+        lines.append("**Session Checkpoints:**")
+        for entry in queued[:3]:
+            if entry.checkpoint_id in injected_ids:
+                continue
+            checkpoint = load_checkpoint(entry.checkpoint_id, project_path=project_root)
+            if checkpoint:
+                lines.append(f"*[{entry.checkpoint_type}]*")
+                lines.append(format_checkpoint_for_context(checkpoint))
+                injected_ids.append(entry.checkpoint_id)
+                # Check if any queued checkpoint is quality
+                if checkpoint.get("confidence", 0) > 0 or (checkpoint.get("thesis") or ""):
+                    has_quality_checkpoint = True
+
+    # Include compaction summary:
+    # - If we have a quality checkpoint: skip it (checkpoint is higher signal)
+    # - If no quality checkpoint: include as fallback context
+    if marker and marker.get("compaction_summary"):
+        if has_quality_checkpoint:
+            # Quality checkpoint exists - the summary is redundant/lower signal
+            # Just note that it was available but skipped
+            lines.append("")
+            lines.append("*[Compaction summary omitted - checkpoint has higher signal]*")
+        else:
+            # No quality checkpoint - include summary as fallback
+            summary = marker["compaction_summary"]
+            if len(summary) > 3000:
+                summary = summary[:3000] + "..."
+            lines.append("")
+            lines.append("**Claude Code Compaction Summary:**")
+            lines.append("*(No quality checkpoint available - using compaction summary as fallback)*")
+            lines.append(summary)
+
+    lines.append("")
+    lines.append("╚══════════════════════════════════════════════════════════════════════╝")
+
+    # Output raw (no Rich formatting - this goes to Claude's context)
+    print("\n".join(lines))
+
+    # Clear marker after injection
+    if marker:
+        clear_continuity(project_root)
 
 
 # ============================================================================
