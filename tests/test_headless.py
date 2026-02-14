@@ -293,8 +293,10 @@ class TestConstants:
         """EXTRACTION_PROMPT has required sections."""
         assert "TOPIC" in EXTRACTION_PROMPT
         assert "DECISIONS" in EXTRACTION_PROMPT
-        assert "OPEN_THREADS" in EXTRACTION_PROMPT
-        assert "SUMMARY" in EXTRACTION_PROMPT
+        assert "OPEN_QUESTIONS" in EXTRACTION_PROMPT  # Maps to open_threads
+        assert "CORE_QUESTION" in EXTRACTION_PROMPT
+        assert "THESIS" in EXTRACTION_PROMPT
+        assert "CONFIDENCE" in EXTRACTION_PROMPT
         assert "{content}" in EXTRACTION_PROMPT
 
 

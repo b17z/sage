@@ -24,20 +24,26 @@ MAX_CONTENT_LENGTH = 100_000  # ~25k tokens
 # Timeout for Claude CLI execution (seconds)
 EXTRACTION_TIMEOUT = 60
 
-# Extraction prompt template
-EXTRACTION_PROMPT = '''Extract from this conversation:
+# Extraction prompt template - matches structured checkpoint schema
+EXTRACTION_PROMPT = '''You are extracting a research checkpoint from a conversation transcript.
 
-1. TOPIC: What is being worked on? (1 sentence)
-2. DECISIONS: What was decided? (bullet list, max 5)
-3. OPEN_THREADS: What's unfinished? (bullet list, max 5)
-4. SUMMARY: Current state in 2-3 sentences
+Extract the following:
+
+1. CORE_QUESTION: What decision or action is this work driving toward? (1 sentence)
+2. THESIS: Current synthesized position or conclusion (1-2 sentences)
+3. CONFIDENCE: How confident in the thesis? (0.0-1.0, where 0.5=uncertain, 0.9=highly confident)
+4. OPEN_QUESTIONS: What remains unknown or needs more work? (list, max 5)
+5. DECISIONS: Key decisions made during this session (list, max 5)
+6. TOPIC: Brief topic slug for identification (3-5 words, lowercase, hyphens)
 
 Respond in this exact JSON format:
 {{
-    "topic": "...",
+    "core_question": "...",
+    "thesis": "...",
+    "confidence": 0.7,
+    "open_questions": ["...", "..."],
     "decisions": ["...", "..."],
-    "open_threads": ["...", "..."],
-    "summary": "..."
+    "topic": "implementing-auth-flow"
 }}
 
 Transcript:
