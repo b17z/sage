@@ -1,23 +1,30 @@
 #!/bin/bash
-# PreCompact hook for Sage autosave
-# Triggers checkpoint before context compaction
+# PreCompact hook for Sage
+# Saves an emergency checkpoint before compaction, then allows
+# compaction to proceed. The watcher daemon will detect compaction
+# and create a continuity marker pointing to this checkpoint.
 #
-# Schema: input has `trigger` field ("auto" or "manual")
-# Output uses `continue` (boolean), NOT `decision`
+# This hook fires for both manual (/compact) and auto compaction.
+# We always save and allow - blocking is counterproductive.
 
-input=$(cat)
-trigger=$(echo "$input" | jq -r '.trigger // "unknown"')
-
-# Auto-compact (context overflow) - approve immediately to prevent deadlock
-if [ "$trigger" = "auto" ]; then
+# Check if sage CLI is available
+if ! command -v sage &> /dev/null; then
     echo '{"continue": true}'
     exit 0
 fi
 
-# Manual compact (/compact command) - block for checkpoint
-cat << 'EOF'
-{
-  "continue": false,
-  "stopReason": "⚠️ CHECKPOINT BEFORE COMPACTING\n\nCall sage_autosave_check with trigger_event='precompact' to save:\n- core_question: What you've been researching\n- current_thesis: Your synthesized findings\n- confidence: How confident (0-1)\n- open_questions: What remains unanswered\n\nThen run /compact again."
-}
-EOF
+# Save emergency checkpoint (fast local extraction, no Claude)
+result=$(sage checkpoint emergency --project "$(pwd)" 2>&1)
+if [ $? -eq 0 ]; then
+    # Extract checkpoint ID from result for logging
+    checkpoint_id=$(echo "$result" | grep -o '2[0-9]\{3\}-[0-9]\{2\}-[0-9]\{2\}T[0-9-]*_[a-z0-9-]*' | head -1)
+    if [ -n "$checkpoint_id" ]; then
+        echo "{\"continue\": true, \"message\": \"Emergency checkpoint saved: $checkpoint_id\"}"
+    else
+        echo '{"continue": true, "message": "Emergency checkpoint saved"}'
+    fi
+else
+    # Failed to save but still allow compaction
+    echo '{"continue": true, "message": "Warning: Could not save emergency checkpoint"}'
+fi
+exit 0
