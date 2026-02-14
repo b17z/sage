@@ -27,7 +27,14 @@ def temp_sage_dir(tmp_path):
 
 
 @pytest.fixture
-def cleanup_continuity():
+def no_project_root():
+    """Mock detect_project_root to return None so tests use global CONTINUITY_FILE."""
+    with patch("sage.continuity.detect_project_root", return_value=None):
+        yield
+
+
+@pytest.fixture
+def cleanup_continuity(no_project_root):
     """Clean up continuity file after test."""
     yield
     if CONTINUITY_FILE.exists():
@@ -151,7 +158,7 @@ class TestClearContinuity:
         clear_continuity()
         assert not CONTINUITY_FILE.exists()
 
-    def test_idempotent_when_no_marker(self):
+    def test_idempotent_when_no_marker(self, no_project_root):
         """Clearing when no marker exists doesn't error."""
         if CONTINUITY_FILE.exists():
             CONTINUITY_FILE.unlink()

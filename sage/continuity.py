@@ -27,8 +27,37 @@ from sage.errors import Result, SageError, err, ok
 
 logger = logging.getLogger(__name__)
 
-# Marker file location
+# Global marker file location (fallback when no project)
 CONTINUITY_FILE = SAGE_DIR / "continuity.json"
+
+
+def _get_continuity_file(project_path: Path | None = None) -> Path:
+    """Get the continuity marker file path, preferring project-local.
+
+    Continuity markers are project-scoped so that:
+    - Compacting in project A doesn't inject into project B
+    - Project markers can be shared via git (though typically gitignored)
+
+    Args:
+        project_path: Optional project path to use
+
+    Returns:
+        Path to continuity.json (project-local if available, else global)
+    """
+    if project_path:
+        project_sage = project_path / ".sage"
+        if project_sage.exists():
+            return project_sage / "continuity.json"
+
+    # Auto-detect project
+    detected = detect_project_root()
+    if detected:
+        project_sage = detected / ".sage"
+        if project_sage.exists():
+            return project_sage / "continuity.json"
+
+    # Fall back to global
+    return CONTINUITY_FILE
 
 
 def _get_checkpoints_dir(project_path: Path | None = None) -> Path:
@@ -79,6 +108,9 @@ def mark_for_continuity(
     Called by the compaction watcher when it detects isCompactSummary: true.
     Overwrites any existing marker - only most recent matters.
 
+    Markers are project-scoped: stored in <project>/.sage/continuity.json
+    when in a project, or ~/.sage/continuity.json globally.
+
     Args:
         checkpoint_path: Path to checkpoint file. If None, uses most recent.
         reason: Why this was marked (post_compaction, manual, etc.)
@@ -92,6 +124,8 @@ def mark_for_continuity(
         - Marker file created with 0o600 permissions
         - checkpoint_path validated if provided
     """
+    from sage.atomic import atomic_write_json
+
     # Find checkpoint if not provided
     if checkpoint_path is None:
         checkpoint_path = get_most_recent_checkpoint(project_dir)
@@ -111,35 +145,39 @@ def mark_for_continuity(
         "project_dir": str(project_dir) if project_dir else None,
     }
 
-    try:
-        SAGE_DIR.mkdir(parents=True, exist_ok=True)
+    # Get project-scoped marker file
+    marker_file = _get_continuity_file(project_dir)
 
-        # Write with restricted permissions
-        content = json.dumps(data, indent=2)
-        CONTINUITY_FILE.write_text(content)
-        CONTINUITY_FILE.chmod(0o600)
+    # Ensure parent directory exists
+    marker_file.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Continuity marker written: {reason}")
-        return ok(CONTINUITY_FILE)
+    # Atomic write via shared utility
+    result = atomic_write_json(marker_file, data, mode=0o600)
+    if result.is_ok():
+        logger.info(f"Continuity marker written: {reason} -> {marker_file}")
+        return ok(marker_file)
+    else:
+        error = result.unwrap_err()
+        return err(SageError(code="CONTINUITY_WRITE_FAILED", message=error.message))
 
-    except PermissionError as e:
-        return err(SageError(code="CONTINUITY_PERMISSION", message=f"Permission denied: {e}"))
-    except OSError as e:
-        return err(SageError(code="CONTINUITY_WRITE_FAILED", message=f"Failed to write marker: {e}"))
 
-
-def get_continuity_marker() -> dict | None:
+def get_continuity_marker(project_path: Path | None = None) -> dict | None:
     """Get pending continuity marker, if any.
+
+    Args:
+        project_path: Optional project path to scope marker lookup
 
     Returns:
         Marker data dict or None if no pending continuity.
         Returns None on parse errors (logs warning).
     """
-    if not CONTINUITY_FILE.exists():
+    marker_file = _get_continuity_file(project_path)
+
+    if not marker_file.exists():
         return None
 
     try:
-        content = CONTINUITY_FILE.read_text()
+        content = marker_file.read_text()
         data = json.loads(content)
 
         # Basic validation
@@ -157,22 +195,31 @@ def get_continuity_marker() -> dict | None:
         return None
 
 
-def clear_continuity() -> None:
+def clear_continuity(project_path: Path | None = None) -> None:
     """Clear continuity marker after successful injection.
+
+    Args:
+        project_path: Optional project path to scope marker lookup
 
     Idempotent - safe to call if marker doesn't exist.
     """
+    marker_file = _get_continuity_file(project_path)
+
     try:
-        CONTINUITY_FILE.unlink(missing_ok=True)
-        logger.debug("Continuity marker cleared")
+        marker_file.unlink(missing_ok=True)
+        logger.debug(f"Continuity marker cleared: {marker_file}")
     except OSError as e:
         logger.warning(f"Failed to clear continuity marker: {e}")
 
 
-def has_pending_continuity() -> bool:
+def has_pending_continuity(project_path: Path | None = None) -> bool:
     """Check if continuity marker exists without loading it.
+
+    Args:
+        project_path: Optional project path to scope marker lookup
 
     Returns:
         True if marker file exists
     """
-    return CONTINUITY_FILE.exists()
+    marker_file = _get_continuity_file(project_path)
+    return marker_file.exists()

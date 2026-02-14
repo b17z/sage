@@ -127,11 +127,32 @@ class CheckpointWatcher:
         return "structured"
 
 
-def find_active_transcript() -> Path | None:
+def _project_path_to_dir_name(project_path: Path) -> str:
+    """Convert a project path to Claude's directory name format.
+
+    Claude Code names project directories by replacing / and . with - in the path.
+    Example: /Users/be.nvy/sage -> -Users-be-nvy-sage
+
+    Args:
+        project_path: Absolute path to project directory
+
+    Returns:
+        Directory name as Claude Code would create it
+    """
+    # Resolve to absolute path
+    resolved = project_path.resolve()
+    # Replace / and . with - (Claude's naming scheme)
+    return str(resolved).replace("/", "-").replace(".", "-")
+
+
+def find_active_transcript(project_path: Path | None = None) -> Path | None:
     """Find the most recently modified Claude Code transcript.
 
-    Looks in ~/.claude/projects/ for .jsonl files and returns
-    the most recently modified one.
+    If project_path is provided, only looks in that project's directory.
+    Otherwise, looks across all projects for the most recent transcript.
+
+    Args:
+        project_path: Optional path to limit search to a specific project
 
     Returns:
         Path to active transcript, or None if not found
@@ -148,6 +169,22 @@ def find_active_transcript() -> Path | None:
     # Security: resolve to real path, ensure still under claude_projects
     claude_projects = claude_projects.resolve()
 
+    # If project_path specified, only look in that project's directory
+    if project_path is not None:
+        project_dir_name = _project_path_to_dir_name(project_path)
+        project_dir = claude_projects / project_dir_name
+
+        if not project_dir.exists():
+            logger.debug(f"Project directory not found: {project_dir}")
+            return None
+
+        transcripts = list(project_dir.glob("*.jsonl"))
+        if not transcripts:
+            return None
+
+        return max(transcripts, key=lambda p: p.stat().st_mtime)
+
+    # Global search across all projects
     transcripts = []
     for jsonl in claude_projects.glob("*/*.jsonl"):
         # Resolve and verify it's under the expected directory
@@ -317,9 +354,13 @@ def _handle_compaction(summary: str, transcript_path: Path | None = None) -> Non
     if transcript_path:
         _generate_recovery_checkpoint(transcript_path, trigger="pre_compact")
 
+    # Get project root for project-scoped continuity marker
+    project_root = detect_project_root()
+
     result = mark_for_continuity(
         reason="post_compaction",
         compaction_summary=summary,
+        project_dir=project_root,
     )
 
     if result.ok:
@@ -533,10 +574,16 @@ def _remove_pid_file() -> None:
         pass
 
 
-def start_daemon() -> bool:
+def start_daemon(project_path: Path | None = None, force_restart: bool = False) -> bool:
     """Start the watcher as a background daemon.
 
     Uses fork() to daemonize. Not available on Windows.
+
+    Args:
+        project_path: Optional project path to scope transcript search.
+                      If provided, only watches transcripts from this project.
+        force_restart: If True, stop existing watcher before starting.
+                       Use this when switching projects.
 
     Returns:
         True if daemon started successfully, False otherwise
@@ -547,11 +594,14 @@ def start_daemon() -> bool:
         - Proper cleanup on exit
     """
     if is_running():
-        return False  # Already running
+        if force_restart:
+            stop_daemon()
+        else:
+            return False  # Already running
 
-    transcript = find_active_transcript()
+    transcript = find_active_transcript(project_path)
     if not transcript:
-        _log_to_file("No transcript found, cannot start")
+        _log_to_file(f"No transcript found for project {project_path}, cannot start")
         return False
 
     # Check platform
