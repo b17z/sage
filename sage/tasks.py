@@ -467,42 +467,22 @@ def save_pending_tasks(tasks: list[Task]) -> None:
     if not tasks:
         return
 
+    from sage.atomic import atomic_write_jsonl
+
     SAGE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Serialize tasks
     records = [task.to_dict() for task in tasks]
 
-    # Atomic write: temp file + rename
-    try:
-        # Create temp file in same directory (for atomic rename)
-        fd, temp_path = tempfile.mkstemp(
-            dir=SAGE_DIR,
-            prefix=".pending_tasks_",
-            suffix=".jsonl.tmp",
+    # Atomic write via shared utility
+    result = atomic_write_jsonl(PENDING_TASKS_FILE, records, mode=0o600)
+    if result.is_err():
+        # Log error but don't crash - this is best-effort persistence
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Failed to save pending tasks: {result.unwrap_err().message}"
         )
-
-        try:
-            with os.fdopen(fd, "w") as f:
-                for record in records:
-                    f.write(json.dumps(record) + "\n")
-
-            # Set permissions before rename
-            os.chmod(temp_path, 0o600)
-
-            # Atomic rename
-            os.rename(temp_path, PENDING_TASKS_FILE)
-
-        except Exception:
-            # Clean up temp file on error
-            try:
-                os.unlink(temp_path)
-            except Exception:
-                pass
-            raise
-
-    except Exception:
-        # Log error but don't crash
-        pass
 
 
 def load_pending_tasks() -> list[Task]:
