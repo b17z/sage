@@ -95,6 +95,11 @@ sage knowledge list           # See stored knowledge
 sage knowledge match "query"  # Test what would recall
 sage skills list              # Check installed skills
 sage watcher start            # Auto-detect compaction
+
+# Configuration
+sage config list              # View current settings
+sage config set checkpoint_max_age_days 30  # Customize storage
+sage config set checkpoint_max_count 100    # Cap checkpoints
 ```
 
 ## Learn More
@@ -103,6 +108,7 @@ sage watcher start            # Auto-detect compaction
 - **[Architecture](docs/ARCHITECTURE.md)** — System design
 - **[Skills](docs/skills.md)** — How methodology skills work
 - **[Continuity](docs/continuity.md)** — Session persistence deep-dive
+- **[Maintenance](docs/maintenance.md)** — Storage maintenance and caching
 
 ## Requirements
 
@@ -113,7 +119,7 @@ sage watcher start            # Auto-detect compaction
 
 ```bash
 pip install -e ".[dev,mcp]"
-pytest tests/ -v  # 931 tests
+pytest tests/ -v  # 1369 tests
 ```
 
 ## License

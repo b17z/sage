@@ -3,7 +3,7 @@
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
 **Current version:** v3.0.0 (plugin architecture)
-**Test count:** 1309 tests (maintain or increase)
+**Test count:** 1439 tests (maintain or increase)
 
 ---
 
@@ -121,9 +121,10 @@ skills/                      # Skill source files (edit here)
 | File | Purpose |
 |------|---------|
 | `sage/mcp_server.py` | MCP tools for Claude Code |
-| `sage/checkpoint.py` | Checkpoint schema, save/load |
-| `sage/knowledge.py` | Knowledge storage, retrieval |
+| `sage/checkpoint.py` | Checkpoint schema, save/load, maintenance |
+| `sage/knowledge.py` | Knowledge storage, retrieval, caching |
 | `sage/embeddings.py` | Embedding model, similarity |
+| `sage/atomic.py` | Atomic file write utilities |
 | `sage/default_skills.py` | Sage methodology skill templates |
 | `sage/skill.py` | Research skill management |
 | `sage/continuity.py` | Session continuity markers |
