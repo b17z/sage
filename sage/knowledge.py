@@ -9,20 +9,55 @@ similarity for recall with keyword matching as a fallback/boost.
 
 import logging
 import re
-from dataclasses import dataclass
+import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 
-from sage.config import SAGE_DIR, get_sage_config
+from sage.config import SAGE_DIR, detect_project_root, get_sage_config
 from sage.types import KnowledgeId
 
 logger = logging.getLogger(__name__)
 
 
+# Global fallback paths
 KNOWLEDGE_DIR = SAGE_DIR / "knowledge"
 KNOWLEDGE_INDEX = KNOWLEDGE_DIR / "index.yaml"
+
+
+def _get_knowledge_dir(project_path: Path | None = None) -> Path:
+    """Get the knowledge directory, preferring project-local.
+
+    Knowledge is project-scoped so teams can share knowledge via git.
+
+    Args:
+        project_path: Optional project path to use
+
+    Returns:
+        Path to knowledge directory (project-local if available, else global)
+    """
+    if project_path:
+        project_sage = project_path / ".sage"
+        if project_sage.exists():
+            return project_sage / "knowledge"
+
+    # Auto-detect project
+    detected = detect_project_root()
+    if detected:
+        project_sage = detected / ".sage"
+        if project_sage.exists():
+            return project_sage / "knowledge"
+
+    # Fall back to global
+    return KNOWLEDGE_DIR
+
+
+def _get_knowledge_index(project_path: Path | None = None) -> Path:
+    """Get the knowledge index file path, preferring project-local."""
+    return _get_knowledge_dir(project_path) / "index.yaml"
 
 
 # ============================================================================
@@ -100,11 +135,124 @@ class RecallResult:
         return len(self.items)
 
 
-def ensure_knowledge_dir() -> None:
-    """Ensure knowledge directory structure exists."""
-    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-    (KNOWLEDGE_DIR / "global").mkdir(exist_ok=True)
-    (KNOWLEDGE_DIR / "skills").mkdir(exist_ok=True)
+def ensure_knowledge_dir(project_path: Path | None = None) -> Path:
+    """Ensure knowledge directory structure exists.
+
+    Args:
+        project_path: Optional project path for project-scoped knowledge
+
+    Returns:
+        Path to the knowledge directory that was ensured
+    """
+    knowledge_dir = _get_knowledge_dir(project_path)
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    (knowledge_dir / "global").mkdir(exist_ok=True)
+    (knowledge_dir / "skills").mkdir(exist_ok=True)
+    return knowledge_dir
+
+
+# ============================================================================
+# Index Cache (TTL + mtime validation)
+# ============================================================================
+
+
+@dataclass
+class _IndexCache:
+    """In-memory cache for the knowledge index.
+
+    Uses TTL (time-to-live) and mtime validation for cache invalidation:
+    - Cache expires after knowledge_cache_ttl_seconds
+    - Cache invalidates if index file mtime changes (external edits)
+    - Cache invalidates on any write operation via _invalidate_index_cache()
+    """
+
+    items: list["KnowledgeItem"] = field(default_factory=list)
+    mtime: float = 0.0  # Index file mtime at load time
+    loaded_at: float = 0.0  # Monotonic time of load
+
+    def is_valid(self, ttl_seconds: float) -> bool:
+        """Check if cache is still valid.
+
+        Args:
+            ttl_seconds: TTL from config
+
+        Returns:
+            True if cache is valid (not expired and mtime unchanged)
+        """
+        if not self.items and self.loaded_at == 0.0:
+            # Empty cache that was never loaded
+            return False
+
+        # Check TTL expiry
+        if time.monotonic() - self.loaded_at > ttl_seconds:
+            return False
+
+        # Check mtime (detect external edits)
+        try:
+            current_mtime = KNOWLEDGE_INDEX.stat().st_mtime
+            if current_mtime != self.mtime:
+                return False
+        except OSError:
+            # File doesn't exist or inaccessible - invalidate cache
+            return False
+
+        return True
+
+
+# Global cache instance and lock
+_index_cache = _IndexCache()
+_index_cache_lock = threading.Lock()
+
+
+def _invalidate_index_cache() -> None:
+    """Invalidate the index cache.
+
+    Call this after any write operation that modifies the index.
+    Thread-safe.
+    """
+    global _index_cache
+    with _index_cache_lock:
+        _index_cache = _IndexCache()
+    logger.debug("Knowledge index cache invalidated")
+
+
+def _get_cached_index() -> list["KnowledgeItem"] | None:
+    """Get cached index if valid.
+
+    Returns:
+        Cached items if cache is valid, None otherwise
+    """
+    config = get_sage_config()
+    ttl = config.knowledge_cache_ttl_seconds
+
+    with _index_cache_lock:
+        if _index_cache.is_valid(ttl):
+            logger.debug("Knowledge index cache hit")
+            return _index_cache.items.copy()  # Return copy for safety
+
+    return None
+
+
+def _set_cached_index(items: list["KnowledgeItem"]) -> None:
+    """Update the index cache.
+
+    Args:
+        items: Items to cache
+    """
+    global _index_cache
+
+    try:
+        mtime = KNOWLEDGE_INDEX.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+
+    with _index_cache_lock:
+        _index_cache = _IndexCache(
+            items=items.copy(),  # Store copy
+            mtime=mtime,
+            loaded_at=time.monotonic(),
+        )
+    logger.debug(f"Knowledge index cached: {len(items)} items")
 
 
 # ============================================================================
@@ -265,12 +413,146 @@ def rebuild_all_embeddings() -> tuple[int, int]:
     return success, failed
 
 
-def load_index() -> list[KnowledgeItem]:
-    """Load knowledge index from YAML."""
-    if not KNOWLEDGE_INDEX.exists():
+# ============================================================================
+# Knowledge Maintenance
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class KnowledgeMaintenanceResult:
+    """Result of knowledge maintenance operation."""
+
+    pruned_by_age: int = 0
+    total_remaining: int = 0
+
+
+def run_knowledge_maintenance(
+    max_age_days: int | None = None,
+    project_path: Path | None = None,
+) -> KnowledgeMaintenanceResult:
+    """Prune old knowledge items by metadata.added date.
+
+    Note: Unlike checkpoints, knowledge items don't have a max_count cap
+    because they are intentionally curated by users.
+
+    Args:
+        max_age_days: Override config knowledge_max_age_days (0 = never prune)
+        project_path: Optional project path for project-scoped knowledge
+
+    Returns:
+        KnowledgeMaintenanceResult with counts of pruned and remaining items
+    """
+    from datetime import datetime, timedelta
+
+    config = get_sage_config(project_path)
+
+    if max_age_days is None:
+        max_age_days = config.knowledge_max_age_days
+
+    # If pruning disabled, return early
+    if max_age_days == 0:
+        items = load_index(bypass_cache=True, project_path=project_path)
+        return KnowledgeMaintenanceResult(pruned_by_age=0, total_remaining=len(items))
+
+    # Calculate cutoff date
+    cutoff_date = datetime.now() - timedelta(days=max_age_days)
+
+    items = load_index(bypass_cache=True, project_path=project_path)
+    if not items:
+        return KnowledgeMaintenanceResult()
+
+    to_keep = []
+    to_prune = []
+
+    for item in items:
+        # Parse the added date from metadata
+        try:
+            if not item.metadata.added:
+                # No date, keep it
+                to_keep.append(item)
+                continue
+
+            # Try to parse ISO date (YYYY-MM-DD or full ISO datetime)
+            added_str = item.metadata.added
+            if "T" in added_str:
+                added_date = datetime.fromisoformat(added_str.replace("Z", "+00:00"))
+            else:
+                added_date = datetime.fromisoformat(added_str)
+
+            # Remove timezone info for comparison
+            if added_date.tzinfo is not None:
+                added_date = added_date.replace(tzinfo=None)
+
+            if added_date < cutoff_date:
+                to_prune.append(item)
+            else:
+                to_keep.append(item)
+
+        except (ValueError, TypeError) as e:
+            # Can't parse date, keep the item
+            logger.warning(f"Can't parse date for {item.id}: {e}")
+            to_keep.append(item)
+
+    # Prune items
+    knowledge_dir = _get_knowledge_dir(project_path)
+    pruned_count = 0
+    for item in to_prune:
+        try:
+            # Delete content file
+            content_path = knowledge_dir / item.file
+            if content_path.exists():
+                content_path.unlink()
+
+            # Remove embedding
+            _remove_embedding(item.id)
+
+            pruned_count += 1
+            logger.info(f"Pruned old knowledge: {item.id}")
+
+        except OSError as e:
+            logger.warning(f"Failed to prune knowledge {item.id}: {e}")
+            # Keep it in the index if we couldn't delete it
+            to_keep.append(item)
+
+    # Save updated index (only if we pruned something)
+    if pruned_count > 0:
+        save_index(to_keep, project_path=project_path)
+        logger.info(f"Knowledge maintenance: pruned {pruned_count}, {len(to_keep)} remaining")
+
+    return KnowledgeMaintenanceResult(
+        pruned_by_age=pruned_count,
+        total_remaining=len(to_keep),
+    )
+
+
+def load_index(
+    bypass_cache: bool = False, project_path: Path | None = None
+) -> list[KnowledgeItem]:
+    """Load knowledge index from YAML.
+
+    Uses TTL caching with mtime validation for performance.
+    Cache is automatically invalidated on write operations.
+
+    Args:
+        bypass_cache: If True, skip cache and load from disk
+        project_path: Optional project path for project-scoped knowledge
+
+    Returns:
+        List of KnowledgeItem objects
+    """
+    # Check cache first (unless bypassed)
+    # Note: Cache is global, so project-scoped loads bypass cache for now
+    if not bypass_cache and project_path is None:
+        cached = _get_cached_index()
+        if cached is not None:
+            return cached
+
+    # Load from disk
+    index_path = _get_knowledge_index(project_path)
+    if not index_path.exists():
         return []
 
-    with open(KNOWLEDGE_INDEX) as f:
+    with open(index_path) as f:
         data = yaml.safe_load(f) or {}
 
     items = []
@@ -301,12 +583,26 @@ def load_index() -> list[KnowledgeItem]:
             )
         )
 
+    # Update cache
+    _set_cached_index(items)
+
     return items
 
 
-def save_index(items: list[KnowledgeItem]) -> None:
-    """Save knowledge index to YAML."""
-    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+def save_index(items: list[KnowledgeItem], project_path: Path | None = None) -> None:
+    """Save knowledge index to YAML.
+
+    Uses atomic write (temp file + rename) for crash safety.
+    Invalidates the index cache after successful write.
+
+    Args:
+        items: List of KnowledgeItem objects to save
+        project_path: Optional project path for project-scoped knowledge
+    """
+    from sage.atomic import atomic_write_yaml
+
+    knowledge_dir = _get_knowledge_dir(project_path)
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
 
     data = {
         "version": 1,
@@ -334,26 +630,14 @@ def save_index(items: list[KnowledgeItem]) -> None:
         ],
     }
 
-    # Atomic write: temp file + rename to prevent corruption on crash
-    import os
-    import tempfile
+    # Atomic write via shared utility
+    index_path = _get_knowledge_index(project_path)
+    result = atomic_write_yaml(index_path, data, mode=0o600, sort_keys=False)
+    if result.is_err():
+        raise OSError(f"Failed to save knowledge index: {result.unwrap_err().message}")
 
-    fd, temp_path = tempfile.mkstemp(
-        dir=KNOWLEDGE_DIR,
-        prefix=".index_",
-        suffix=".yaml.tmp",
-    )
-    try:
-        with os.fdopen(fd, "w") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-        os.chmod(temp_path, 0o600)
-        os.rename(temp_path, KNOWLEDGE_INDEX)
-    except Exception:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        raise
+    # Invalidate cache after successful write
+    _invalidate_index_cache()
 
 
 def _is_safe_path(base: Path, target: Path) -> bool:
@@ -376,12 +660,20 @@ def _strip_frontmatter(content: str) -> str:
     return content[end_idx + 3 :].strip()
 
 
-def load_knowledge_content(item: KnowledgeItem) -> KnowledgeItem:
-    """Load the actual content for a knowledge item."""
-    file_path = KNOWLEDGE_DIR / item.file
+def load_knowledge_content(
+    item: KnowledgeItem, project_path: Path | None = None
+) -> KnowledgeItem:
+    """Load the actual content for a knowledge item.
+
+    Args:
+        item: The KnowledgeItem to load content for
+        project_path: Optional project path for project-scoped knowledge
+    """
+    knowledge_dir = _get_knowledge_dir(project_path)
+    file_path = knowledge_dir / item.file
 
     # Security: ensure path doesn't escape knowledge directory
-    if not _is_safe_path(KNOWLEDGE_DIR, file_path):
+    if not _is_safe_path(knowledge_dir, file_path):
         return item
 
     if not file_path.exists():
@@ -525,6 +817,7 @@ def recall_knowledge(
     max_tokens: int = 2000,
     use_embeddings: bool = True,
     item_types: tuple[str, ...] | None = None,
+    project_path: Path | None = None,
 ) -> RecallResult:
     """
     Recall relevant knowledge items for a query.
@@ -547,11 +840,12 @@ def recall_knowledge(
         max_tokens: Maximum total tokens to recall
         use_embeddings: Whether to use embedding similarity (if available)
         item_types: Optional tuple of types to filter (None = all types)
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         RecallResult with matching items and total tokens
     """
-    items = load_index()
+    items = load_index(project_path=project_path)
 
     if not items:
         return RecallResult(items=[], total_tokens=0)
@@ -674,6 +968,7 @@ def add_knowledge(
     source: str = "",
     patterns: list[str] | None = None,
     item_type: str = "knowledge",
+    project_path: Path | None = None,
 ) -> KnowledgeItem:
     """
     Add a new knowledge item.
@@ -686,6 +981,7 @@ def add_knowledge(
         source: Where this knowledge came from
         patterns: Optional regex patterns for matching
         item_type: Type of knowledge item (knowledge, preference, todo, reference)
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         The created KnowledgeItem
@@ -694,7 +990,8 @@ def add_knowledge(
     if item_type not in KNOWLEDGE_TYPES:
         logger.warning(f"Unknown knowledge type '{item_type}', using 'knowledge'")
         item_type = "knowledge"
-    ensure_knowledge_dir()
+
+    knowledge_dir = ensure_knowledge_dir(project_path)
 
     # Sanitize IDs to prevent path traversal
     safe_id = _sanitize_id(knowledge_id)
@@ -702,7 +999,7 @@ def add_knowledge(
 
     # Determine file path
     if safe_skill:
-        file_dir = KNOWLEDGE_DIR / "skills" / safe_skill
+        file_dir = knowledge_dir / "skills" / safe_skill
         file_dir.mkdir(parents=True, exist_ok=True)
         file_path = f"skills/{safe_skill}/{safe_id}.md"
     else:
@@ -732,7 +1029,7 @@ def add_knowledge(
     md_content = f"---\n{fm_yaml}---\n\n{content}"
 
     # Write content file
-    full_path = KNOWLEDGE_DIR / file_path
+    full_path = knowledge_dir / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(md_content)
     # Restrict permissions - knowledge content may be sensitive
@@ -764,14 +1061,22 @@ def add_knowledge(
     )
 
     # Update index
-    items = load_index()
+    items = load_index(project_path=project_path)
     # Remove existing item with same ID
     items = [i for i in items if i.id != safe_id]
     items.append(item)
-    save_index(items)
+    save_index(items, project_path=project_path)
 
     # Generate and store embedding (non-blocking, failures logged)
     _add_embedding(safe_id, content)
+
+    # Run maintenance if enabled (non-blocking, failures logged)
+    config = get_sage_config()
+    if config.maintenance_on_save:
+        try:
+            run_knowledge_maintenance(project_path=project_path)
+        except Exception as e:
+            logger.warning(f"Knowledge maintenance failed: {e}")
 
     return item
 
@@ -782,6 +1087,7 @@ def update_knowledge(
     keywords: list[str] | None = None,
     status: str | None = None,
     source: str | None = None,
+    project_path: Path | None = None,
 ) -> KnowledgeItem | None:
     """
     Update an existing knowledge item.
@@ -795,11 +1101,13 @@ def update_knowledge(
         keywords: New keywords (if changing)
         status: New status - 'active', 'deprecated', or 'archived' (if changing)
         source: New source attribution (if changing)
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         Updated KnowledgeItem, or None if not found
     """
-    items = load_index()
+    knowledge_dir = _get_knowledge_dir(project_path)
+    items = load_index(project_path=project_path)
 
     # Find existing item
     existing = None
@@ -850,7 +1158,10 @@ def update_knowledge(
         "added": updated.metadata.added,
     }
     if updated.scope.skills:
-        frontmatter["skill"] = updated.scope.skills[0] if len(updated.scope.skills) == 1 else list(updated.scope.skills)
+        if len(updated.scope.skills) == 1:
+            frontmatter["skill"] = updated.scope.skills[0]
+        else:
+            frontmatter["skill"] = list(updated.scope.skills)
     if updated.metadata.status:
         frontmatter["status"] = updated.metadata.status
     # Remove None values
@@ -862,14 +1173,14 @@ def update_knowledge(
     md_content = f"---\n{fm_yaml}---\n\n{new_content}"
 
     # Write updated file
-    file_path = KNOWLEDGE_DIR / updated.file
-    if _is_safe_path(KNOWLEDGE_DIR, file_path):
+    file_path = knowledge_dir / updated.file
+    if _is_safe_path(knowledge_dir, file_path):
         file_path.write_text(md_content)
         file_path.chmod(0o600)
 
     # Update index
     items[existing_idx] = updated
-    save_index(items)
+    save_index(items, project_path=project_path)
 
     # Re-embed if content changed
     if content is not None and content != loaded.content:
@@ -882,6 +1193,7 @@ def deprecate_knowledge(
     knowledge_id: str,
     reason: str,
     replacement_id: str | None = None,
+    project_path: Path | None = None,
 ) -> KnowledgeItem | None:
     """
     Mark a knowledge item as deprecated.
@@ -893,6 +1205,7 @@ def deprecate_knowledge(
         knowledge_id: ID of item to deprecate
         reason: Why this is deprecated
         replacement_id: Optional ID of replacement item
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         Updated KnowledgeItem, or None if not found
@@ -906,10 +1219,13 @@ def deprecate_knowledge(
         knowledge_id=knowledge_id,
         status="deprecated",
         source=note,  # Store deprecation info in source field
+        project_path=project_path,
     )
 
 
-def archive_knowledge(knowledge_id: str) -> KnowledgeItem | None:
+def archive_knowledge(
+    knowledge_id: str, project_path: Path | None = None
+) -> KnowledgeItem | None:
     """
     Archive a knowledge item (hidden from recall).
 
@@ -918,20 +1234,29 @@ def archive_knowledge(knowledge_id: str) -> KnowledgeItem | None:
 
     Args:
         knowledge_id: ID of item to archive
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         Updated KnowledgeItem, or None if not found
     """
-    return update_knowledge(knowledge_id=knowledge_id, status="archived")
+    return update_knowledge(
+        knowledge_id=knowledge_id, status="archived", project_path=project_path
+    )
 
 
-def remove_knowledge(knowledge_id: str) -> bool:
+def remove_knowledge(knowledge_id: str, project_path: Path | None = None) -> bool:
     """
     Remove a knowledge item.
 
-    Returns True if item was found and removed.
+    Args:
+        knowledge_id: ID of item to remove
+        project_path: Optional project path for project-scoped knowledge
+
+    Returns:
+        True if item was found and removed
     """
-    items = load_index()
+    knowledge_dir = _get_knowledge_dir(project_path)
+    items = load_index(project_path=project_path)
 
     # Find and remove item
     removed_item = None
@@ -944,11 +1269,11 @@ def remove_knowledge(knowledge_id: str) -> bool:
         return False
 
     items = [i for i in items if i.id != knowledge_id]
-    save_index(items)
+    save_index(items, project_path=project_path)
 
     # Also remove content file (with path safety check)
-    file_path = KNOWLEDGE_DIR / removed_item.file
-    if _is_safe_path(KNOWLEDGE_DIR, file_path) and file_path.exists():
+    file_path = knowledge_dir / removed_item.file
+    if _is_safe_path(knowledge_dir, file_path) and file_path.exists():
         file_path.unlink()
 
     # Remove embedding (non-blocking, failures logged)
@@ -957,11 +1282,17 @@ def remove_knowledge(knowledge_id: str) -> bool:
     return True
 
 
-def list_knowledge(skill: str | None = None) -> list[KnowledgeItem]:
+def list_knowledge(
+    skill: str | None = None, project_path: Path | None = None
+) -> list[KnowledgeItem]:
     """
     List knowledge items, optionally filtered by skill.
+
+    Args:
+        skill: Optional skill filter
+        project_path: Optional project path for project-scoped knowledge
     """
-    items = load_index()
+    items = load_index(project_path=project_path)
 
     if skill is None:
         return items
@@ -998,17 +1329,20 @@ def format_recalled_context(result: RecallResult) -> str:
 # ============================================================================
 
 
-def list_todos(status: str | None = None) -> list[KnowledgeItem]:
+def list_todos(
+    status: str | None = None, project_path: Path | None = None
+) -> list[KnowledgeItem]:
     """
     List todo items, optionally filtered by status.
 
     Args:
         status: Filter by status (pending, done) or None for all
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         List of todo KnowledgeItems
     """
-    items = load_index()
+    items = load_index(project_path=project_path)
     todos = [item for item in items if item.item_type == "todo"]
 
     if status is not None:
@@ -1017,17 +1351,18 @@ def list_todos(status: str | None = None) -> list[KnowledgeItem]:
     return todos
 
 
-def mark_todo_done(todo_id: str) -> bool:
+def mark_todo_done(todo_id: str, project_path: Path | None = None) -> bool:
     """
     Mark a todo item as done.
 
     Args:
         todo_id: The todo item ID
+        project_path: Optional project path for project-scoped knowledge
 
     Returns:
         True if todo was found and marked done
     """
-    items = load_index()
+    items = load_index(project_path=project_path)
 
     # Find the todo
     todo_idx = None
@@ -1057,11 +1392,12 @@ def mark_todo_done(todo_id: str) -> bool:
     )
 
     items[todo_idx] = new_item
-    save_index(items)
+    save_index(items, project_path=project_path)
 
     # Also update the frontmatter in the file
-    file_path = KNOWLEDGE_DIR / old_item.file
-    if _is_safe_path(KNOWLEDGE_DIR, file_path) and file_path.exists():
+    knowledge_dir = _get_knowledge_dir(project_path)
+    file_path = knowledge_dir / old_item.file
+    if _is_safe_path(knowledge_dir, file_path) and file_path.exists():
         content = file_path.read_text()
         # Update status in frontmatter
         content = re.sub(r"^status:\s*\w+", "status: done", content, flags=re.MULTILINE)
@@ -1071,6 +1407,10 @@ def mark_todo_done(todo_id: str) -> bool:
     return True
 
 
-def get_pending_todos() -> list[KnowledgeItem]:
-    """Get all pending todo items for session-start injection."""
-    return list_todos(status="pending")
+def get_pending_todos(project_path: Path | None = None) -> list[KnowledgeItem]:
+    """Get all pending todo items for session-start injection.
+
+    Args:
+        project_path: Optional project path for project-scoped knowledge
+    """
+    return list_todos(status="pending", project_path=project_path)

@@ -25,6 +25,13 @@ from sage.knowledge import (
 
 
 @pytest.fixture
+def no_project_root():
+    """Mock detect_project_root to return None (use global paths)."""
+    with patch("sage.knowledge.detect_project_root", return_value=None):
+        yield
+
+
+@pytest.fixture
 def mock_knowledge_dir(tmp_path: Path):
     """Create a temporary knowledge directory."""
     knowledge_dir = tmp_path / ".sage" / "knowledge"
@@ -35,7 +42,7 @@ def mock_knowledge_dir(tmp_path: Path):
 
 
 @pytest.fixture
-def mock_knowledge_paths(tmp_path: Path, mock_knowledge_dir: Path):
+def mock_knowledge_paths(tmp_path: Path, mock_knowledge_dir: Path, no_project_root):
     """Patch knowledge paths to use temporary directory."""
     with (
         patch("sage.knowledge.KNOWLEDGE_DIR", mock_knowledge_dir),
@@ -948,3 +955,525 @@ class TestKnowledgeTypeConstants:
         for t in KNOWLEDGE_TYPES:
             assert t in TYPE_THRESHOLDS
             assert 0.0 <= TYPE_THRESHOLDS[t] <= 1.0
+
+
+class TestKnowledgeIndexCache:
+    """Tests for knowledge index caching.
+
+    Note: These tests focus on observable behavior rather than internal cache
+    state, since the cache uses module-level variables that are affected by
+    patching in complex ways.
+    """
+
+    @pytest.fixture
+    def mock_cache_paths(self, tmp_path: Path):
+        """Patch knowledge paths and reset cache for testing."""
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        (knowledge_dir / "global").mkdir()
+        (knowledge_dir / "skills").mkdir()
+
+        from sage import knowledge
+
+        # Reset cache before each test
+        knowledge._invalidate_index_cache()
+
+        with (
+            patch("sage.knowledge.detect_project_root", return_value=None),
+            patch("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir),
+            patch("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml"),
+            patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"),
+            patch("sage.knowledge._add_embedding", return_value=False),
+            patch("sage.knowledge._remove_embedding", return_value=True),
+            patch("sage.knowledge._get_all_embedding_similarities", return_value={}),
+            patch("sage.knowledge.get_sage_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.knowledge_max_age_days = 0
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 60.0
+            yield knowledge_dir
+
+        # Clean up cache after test
+        knowledge._invalidate_index_cache()
+
+    def test_load_index_returns_items(self, mock_cache_paths: Path):
+        """load_index() returns items from the index."""
+        from sage.knowledge import add_knowledge, load_index
+
+        # Add an item to create the index
+        add_knowledge(
+            content="Test content",
+            knowledge_id="cache-test",
+            keywords=["cache"],
+        )
+
+        # Load should return the item
+        items = load_index()
+        assert len(items) == 1
+        assert items[0].id == "cache-test"
+
+    def test_load_index_returns_cached_within_ttl(self, mock_cache_paths: Path):
+        """load_index() returns cached data within TTL."""
+        from sage.knowledge import add_knowledge, load_index
+
+        add_knowledge(
+            content="Test content",
+            knowledge_id="ttl-test",
+            keywords=["test"],
+        )
+
+        # First load
+        items1 = load_index()
+
+        # Second load should return same data
+        items2 = load_index()
+
+        assert len(items1) == len(items2)
+        assert items1[0].id == items2[0].id
+
+    def test_invalidate_cache_works(self, mock_cache_paths: Path):
+        """_invalidate_index_cache() clears the cached items."""
+        from sage.knowledge import (
+            _index_cache,
+            _invalidate_index_cache,
+            add_knowledge,
+            load_index,
+        )
+
+        add_knowledge(
+            content="Test content",
+            knowledge_id="clear-test",
+            keywords=["test"],
+        )
+
+        # Load to potentially populate cache
+        load_index()
+
+        # Invalidate
+        _invalidate_index_cache()
+
+        # Cache should be empty
+        assert len(_index_cache.items) == 0
+        assert _index_cache.loaded_at == 0.0
+
+    def test_cache_invalidated_on_add_knowledge(self, mock_cache_paths: Path):
+        """Adding knowledge updates the index correctly."""
+        from sage.knowledge import add_knowledge, load_index
+
+        add_knowledge(
+            content="First item",
+            knowledge_id="first",
+            keywords=["test"],
+        )
+
+        # Load should show one item
+        items = load_index()
+        assert len(items) == 1
+
+        # Add another item
+        add_knowledge(
+            content="Second item",
+            knowledge_id="second",
+            keywords=["test"],
+        )
+
+        # Load should show both items
+        items = load_index()
+        assert len(items) == 2
+
+    def test_cache_invalidated_on_remove_knowledge(self, mock_cache_paths: Path):
+        """Removing knowledge updates the index correctly."""
+        from sage.knowledge import add_knowledge, load_index, remove_knowledge
+
+        add_knowledge(
+            content="To remove",
+            knowledge_id="to-remove",
+            keywords=["test"],
+        )
+        add_knowledge(
+            content="To keep",
+            knowledge_id="to-keep",
+            keywords=["test"],
+        )
+
+        # Load should show two items
+        items = load_index()
+        assert len(items) == 2
+
+        # Remove item
+        remove_knowledge("to-remove")
+
+        # Load should show only one item
+        items = load_index()
+        assert len(items) == 1
+        assert items[0].id == "to-keep"
+
+    def test_cache_thread_safe(self, mock_cache_paths: Path):
+        """Cache operations are thread-safe."""
+        import threading
+
+        from sage.knowledge import (
+            _invalidate_index_cache,
+            add_knowledge,
+            load_index,
+        )
+
+        add_knowledge(
+            content="Thread test",
+            knowledge_id="thread-test",
+            keywords=["test"],
+        )
+
+        results = []
+        errors = []
+
+        def reader():
+            try:
+                for _ in range(10):
+                    items = load_index()
+                    results.append(len(items))
+            except Exception as e:
+                errors.append(str(e))
+
+        def invalidator():
+            try:
+                for _ in range(10):
+                    _invalidate_index_cache()
+            except Exception as e:
+                errors.append(str(e))
+
+        threads = [
+            threading.Thread(target=reader),
+            threading.Thread(target=reader),
+            threading.Thread(target=invalidator),
+        ]
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0, f"Thread errors: {errors}"
+        # All results should be valid counts (>= 0)
+        assert all(r >= 0 for r in results)
+
+    def test_bypass_cache_forces_disk_read(self, mock_cache_paths: Path):
+        """load_index(bypass_cache=True) forces disk read."""
+        from sage.knowledge import add_knowledge, load_index
+
+        add_knowledge(
+            content="Bypass test",
+            knowledge_id="bypass-test",
+            keywords=["test"],
+        )
+
+        # Normal load
+        items1 = load_index()
+        assert len(items1) == 1
+
+        # Bypass load should also return the item
+        items2 = load_index(bypass_cache=True)
+        assert len(items2) == 1
+        assert items2[0].id == "bypass-test"
+
+
+class TestKnowledgeMaintenance:
+    """Tests for knowledge maintenance (age-based pruning)."""
+
+    @pytest.fixture
+    def maintenance_paths(self, tmp_path: Path):
+        """Set up paths for maintenance testing."""
+        knowledge_dir = tmp_path / ".sage" / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        (knowledge_dir / "global").mkdir()
+        (knowledge_dir / "skills").mkdir()
+
+        from sage import knowledge
+
+        knowledge._invalidate_index_cache()
+
+        with (
+            patch("sage.knowledge.detect_project_root", return_value=None),
+            patch("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir),
+            patch("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml"),
+            patch("sage.knowledge.SAGE_DIR", tmp_path / ".sage"),
+            patch("sage.knowledge._add_embedding", return_value=False),
+            patch("sage.knowledge._remove_embedding", return_value=True),
+            patch("sage.knowledge._get_all_embedding_similarities", return_value={}),
+        ):
+            yield knowledge_dir
+
+        knowledge._invalidate_index_cache()
+
+    def test_knowledge_maintenance_prunes_old_items(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() prunes items older than max_age_days."""
+        from datetime import datetime, timedelta
+
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            add_knowledge,
+            run_knowledge_maintenance,
+            save_index,
+        )
+
+        # Add items with different dates
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
+        recent_date = datetime.now().strftime("%Y-%m-%d")
+
+        add_knowledge(
+            content="Recent content",
+            knowledge_id="recent-item",
+            keywords=["test"],
+        )
+
+        # Manually create an old item
+        old_item = KnowledgeItem(
+            id="old-item",
+            file="global/old-item.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=old_date, source="test"),
+            item_type="knowledge",
+        )
+        (maintenance_paths / "global" / "old-item.md").write_text("Old content")
+
+        # Update index with both items
+        from sage.knowledge import load_index
+
+        items = load_index(bypass_cache=True)
+        items.append(old_item)
+        save_index(items)
+
+        # Run maintenance with max_age=90 days
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 90
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            result = run_knowledge_maintenance(max_age_days=90)
+
+        assert result.pruned_by_age == 1
+        assert result.total_remaining == 1
+        assert not (maintenance_paths / "global" / "old-item.md").exists()
+
+    def test_knowledge_maintenance_respects_max_age_zero(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() skips pruning when max_age_days=0."""
+        from datetime import datetime, timedelta
+
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            load_index,
+            run_knowledge_maintenance,
+            save_index,
+        )
+
+        old_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+        # Create an old item
+        old_item = KnowledgeItem(
+            id="very-old",
+            file="global/very-old.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=old_date),
+            item_type="knowledge",
+        )
+        (maintenance_paths / "global" / "very-old.md").write_text("Old content")
+        save_index([old_item])
+
+        # Run with max_age=0 (disabled)
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 0
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            result = run_knowledge_maintenance(max_age_days=0)
+
+        assert result.pruned_by_age == 0
+        assert (maintenance_paths / "global" / "very-old.md").exists()
+
+    def test_knowledge_maintenance_removes_content_files(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() removes content files for pruned items."""
+        from datetime import datetime, timedelta
+
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            run_knowledge_maintenance,
+            save_index,
+        )
+
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
+
+        old_item = KnowledgeItem(
+            id="to-prune",
+            file="global/to-prune.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=old_date),
+            item_type="knowledge",
+        )
+        content_file = maintenance_paths / "global" / "to-prune.md"
+        content_file.write_text("Content to prune")
+        save_index([old_item])
+
+        assert content_file.exists()
+
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 30
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            run_knowledge_maintenance(max_age_days=30)
+
+        assert not content_file.exists()
+
+    def test_knowledge_maintenance_updates_index(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() updates the index file."""
+        from datetime import datetime, timedelta
+
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            load_index,
+            run_knowledge_maintenance,
+            save_index,
+        )
+
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
+        recent_date = datetime.now().strftime("%Y-%m-%d")
+
+        old_item = KnowledgeItem(
+            id="old",
+            file="global/old.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=old_date),
+            item_type="knowledge",
+        )
+        recent_item = KnowledgeItem(
+            id="recent",
+            file="global/recent.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=recent_date),
+            item_type="knowledge",
+        )
+
+        (maintenance_paths / "global" / "old.md").write_text("Old")
+        (maintenance_paths / "global" / "recent.md").write_text("Recent")
+        save_index([old_item, recent_item])
+
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 30
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            run_knowledge_maintenance(max_age_days=30)
+
+        # Reload and verify only recent item remains
+        items = load_index(bypass_cache=True)
+        assert len(items) == 1
+        assert items[0].id == "recent"
+
+    def test_add_knowledge_triggers_maintenance(self, maintenance_paths: Path):
+        """add_knowledge() triggers maintenance when enabled."""
+        from datetime import datetime, timedelta
+
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            add_knowledge,
+            load_index,
+            save_index,
+        )
+
+        # Pre-create an old item
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
+        old_item = KnowledgeItem(
+            id="pre-existing-old",
+            file="global/pre-existing-old.md",
+            triggers=KnowledgeTriggers(keywords=("old",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added=old_date),
+            item_type="knowledge",
+        )
+        (maintenance_paths / "global" / "pre-existing-old.md").write_text("Old content")
+        save_index([old_item])
+
+        # Add new knowledge with maintenance enabled
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 30
+            mock_cfg.return_value.maintenance_on_save = True
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            add_knowledge(
+                content="New content",
+                knowledge_id="new-item",
+                keywords=["new"],
+            )
+
+        # Old item should have been pruned
+        items = load_index(bypass_cache=True)
+        assert len(items) == 1
+        assert items[0].id == "new-item"
+
+    def test_knowledge_maintenance_handles_empty_index(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() handles empty index gracefully."""
+        from sage.knowledge import run_knowledge_maintenance
+
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 30
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            result = run_knowledge_maintenance()
+
+        assert result.pruned_by_age == 0
+        assert result.total_remaining == 0
+
+    def test_knowledge_maintenance_handles_invalid_dates(self, maintenance_paths: Path):
+        """run_knowledge_maintenance() handles items with invalid dates."""
+        from sage.knowledge import (
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+            run_knowledge_maintenance,
+            save_index,
+        )
+
+        # Create item with invalid date
+        item = KnowledgeItem(
+            id="bad-date",
+            file="global/bad-date.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added="not-a-date"),  # Invalid date
+            item_type="knowledge",
+        )
+        (maintenance_paths / "global" / "bad-date.md").write_text("Content")
+        save_index([item])
+
+        with patch("sage.knowledge.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.knowledge_max_age_days = 30
+            mock_cfg.return_value.maintenance_on_save = False
+            mock_cfg.return_value.knowledge_cache_ttl_seconds = 0.0
+
+            result = run_knowledge_maintenance(max_age_days=30)
+
+        # Item should be kept (can't parse date)
+        assert result.pruned_by_age == 0
+        assert result.total_remaining == 1
