@@ -378,23 +378,36 @@ def _load_queue() -> list[QueueEntry]:
         return []
 
     try:
-        with open(INJECTION_QUEUE_FILE) as f:
-            data = json.load(f)
+        content = INJECTION_QUEUE_FILE.read_text().strip()
+        if not content:
+            # Empty file - likely from interrupted write, clean it up
+            logger.warning("Injection queue file empty, removing corrupted file")
+            INJECTION_QUEUE_FILE.unlink(missing_ok=True)
+            return []
+        data = json.loads(content)
         if not isinstance(data, list):
+            logger.warning("Injection queue not a list, resetting")
+            INJECTION_QUEUE_FILE.unlink(missing_ok=True)
             return []
         return [QueueEntry.from_dict(e) for e in data if isinstance(e, dict)]
-    except (json.JSONDecodeError, KeyError, OSError) as e:
+    except json.JSONDecodeError as e:
+        logger.warning(f"Corrupted injection queue JSON, resetting: {e}")
+        INJECTION_QUEUE_FILE.unlink(missing_ok=True)
+        return []
+    except (KeyError, OSError) as e:
         logger.warning(f"Failed to load injection queue: {e}")
         return []
 
 
 def _save_queue(queue: list[QueueEntry]) -> None:
-    """Save the injection queue to disk."""
+    """Save the injection queue to disk atomically."""
+    from sage.atomic import atomic_write_json
+
     try:
         SAGE_DIR.mkdir(parents=True, exist_ok=True)
         data = [e.to_dict() for e in queue]
-        with open(INJECTION_QUEUE_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-        INJECTION_QUEUE_FILE.chmod(0o600)
-    except OSError as e:
+        result = atomic_write_json(INJECTION_QUEUE_FILE, data, mode=0o600, indent=2)
+        if result.is_err():
+            logger.warning(f"Failed to save injection queue: {result.unwrap_err().message}")
+    except Exception as e:
         logger.warning(f"Failed to save injection queue: {e}")

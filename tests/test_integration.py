@@ -43,6 +43,7 @@ def temp_sage_dir(tmp_path: Path, monkeypatch):
 
     # Patch detect_project_root to return None so get_sage_config uses SAGE_DIR
     monkeypatch.setattr("sage.config.detect_project_root", lambda start_path=None: None)
+    monkeypatch.setattr("sage.knowledge.detect_project_root", lambda: None)
 
     return sage_dir
 
@@ -256,7 +257,8 @@ class TestMCPAutosaveIntegration:
             confidence=0.8,
             trigger="manual",
         )
-        assert "📍 Checkpoint saved:" in result1
+        # Response format may include file context: "📍 Checkpoint saved [N files changed]:"
+        assert "📍 Checkpoint saved" in result1
 
         # Try to autosave with nearly identical thesis (should be >0.9 similar)
         result2 = sage_autosave_check(
@@ -267,7 +269,7 @@ class TestMCPAutosaveIntegration:
         )
 
         # Should be blocked as duplicate
-        assert "Not saving" in result2 or "similar" in result2.lower() or "📍 Checkpoint saved:" in result2
+        assert "Not saving" in result2 or "similar" in result2.lower() or "📍 Checkpoint saved" in result2
 
         # Cleanup
         checkpoints = list_checkpoints()
@@ -286,7 +288,8 @@ class TestMCPAutosaveIntegration:
             current_thesis="Embeddings convert text to vectors for semantic comparison.",
             confidence=0.8,
         )
-        assert "📍 Checkpoint saved:" in result1
+        # Response format may include file context: "📍 Checkpoint saved [N files changed]:"
+        assert "📍 Checkpoint saved" in result1
 
         # Save about something completely different
         result2 = sage_autosave_check(
@@ -295,7 +298,8 @@ class TestMCPAutosaveIntegration:
             current_thesis="Good pizza requires quality ingredients and proper oven temperature.",
             confidence=0.8,
         )
-        assert "📍 Checkpoint saved:" in result2
+        # Response format may include file context: "📍 Checkpoint saved [N files changed]:"
+        assert "📍 Checkpoint saved" in result2
 
         # Should have 2 checkpoints
         checkpoints = list_checkpoints()

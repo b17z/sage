@@ -130,11 +130,16 @@ def _execute_write_marker(params: dict[str, Any]) -> None:
     compaction_summary = params.get("compaction_summary")
 
     try:
+        from sage.config import detect_project_root
         from sage.continuity import mark_for_continuity
+
+        # Get project root for project-scoped continuity marker
+        project_root = detect_project_root()
 
         result = mark_for_continuity(
             reason=reason,
             compaction_summary=compaction_summary,
+            project_dir=project_root,
         )
 
         if result.ok:

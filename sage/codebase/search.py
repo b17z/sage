@@ -79,8 +79,8 @@ def search_code(
     if CODE_TABLE not in db.table_names():
         return []
 
-    # Get query embedding
-    result = embeddings.get_query_embedding(query)
+    # Get query embedding using code-specific model
+    result = embeddings.get_code_query_embedding(query)
     if result.is_err():
         logger.warning(f"Failed to embed query: {result.unwrap_err().message}")
         return []

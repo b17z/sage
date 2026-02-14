@@ -206,7 +206,10 @@ def save_index_meta(meta: dict, project_path: Path | None = None) -> None:
 
 
 def embed_chunks(chunks: list[CodeChunk]) -> list[CodeChunk]:
-    """Generate embeddings for chunks.
+    """Generate embeddings for chunks using code-specific model.
+
+    Uses codesage model for better code understanding. The model is configured
+    via code_embedding_model in SageConfig (defaults to codesage/codesage-large).
 
     Args:
         chunks: Chunks to embed
@@ -231,8 +234,8 @@ def embed_chunks(chunks: list[CodeChunk]) -> list[CodeChunk]:
             parts.append(chunk.signature)
         texts.append("\n".join(parts))
 
-    # Batch embed
-    result = embeddings.get_embeddings_batch(texts)
+    # Batch embed using code-specific model
+    result = embeddings.get_code_embeddings_batch(texts)
     if result.is_err():
         logger.warning(f"Failed to embed chunks: {result.unwrap_err().message}")
         return chunks

@@ -84,12 +84,14 @@ class TestExecuteWriteMarker:
 
     def test_writes_continuity_marker(self, temp_sage_dir: Path, monkeypatch):
         """write_marker action creates continuity marker."""
-        # Patch continuity module
+        # Patch continuity module to use temp dir and disable project detection
         monkeypatch.setattr("sage.continuity.SAGE_DIR", temp_sage_dir)
         monkeypatch.setattr(
             "sage.continuity.CONTINUITY_FILE",
             temp_sage_dir / "continuity.json",
         )
+        monkeypatch.setattr("sage.continuity.detect_project_root", lambda: None)
+        monkeypatch.setattr("sage.config.detect_project_root", lambda: None)
 
         action = PluginAction(
             action_type="write_marker",
