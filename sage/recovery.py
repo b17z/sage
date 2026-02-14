@@ -53,6 +53,10 @@ class RecoveryCheckpoint:
     Unlike structured checkpoints, these are generated without Claude's
     explicit cooperation. They serve as a safety net for context preservation.
 
+    When extracted via Claude (headless mode), includes structured fields
+    (core_question, thesis, confidence) that match the structured checkpoint
+    schema for uniform handling.
+
     Attributes:
         id: Unique identifier (format: timestamp_recovery-topic)
         type: Always "recovery"
@@ -67,6 +71,9 @@ class RecoveryCheckpoint:
         tools_used: Tool names used in conversation
         summary: Optional summary (from Claude extraction)
         salience_score: Maximum salience score detected
+        core_question: What decision/action this drives toward (Claude extraction)
+        thesis: Current synthesized position (Claude extraction)
+        confidence: Confidence in thesis 0-1 (Claude extraction)
     """
 
     id: str
@@ -87,6 +94,11 @@ class RecoveryCheckpoint:
 
     # Optional: from headless Claude
     summary: str | None = None
+
+    # Structured fields (from Claude extraction) - match checkpoint.py schema
+    core_question: str = ""
+    thesis: str = ""
+    confidence: float = 0.0
 
     # Metadata
     salience_score: float = 0.0
@@ -127,8 +139,25 @@ def extract_topic(assistant_content: str, user_content: str) -> str:
     Returns:
         Topic string (best effort)
     """
-    # Take the first user message as primary context
-    first_user = user_content.split("\n\n")[0] if user_content else ""
+    # Patterns to skip (system messages, not real user content)
+    skip_patterns = [
+        r"^\[.*\]$",  # [Request interrupted by user for tool use]
+        r"^/\w+",  # /compact, /clear, etc.
+        r"^$",  # Empty
+    ]
+
+    # Find first meaningful user message
+    user_messages = user_content.split("\n\n") if user_content else []
+    first_user = ""
+
+    for msg in user_messages:
+        msg = msg.strip()
+        # Skip system messages and commands
+        if any(re.match(pattern, msg) for pattern in skip_patterns):
+            continue
+        if len(msg) > 5:  # Skip very short messages
+            first_user = msg
+            break
 
     if first_user:
         # Extract first sentence
@@ -206,9 +235,10 @@ def extract_recovery_checkpoint(
     files_touched = tuple(get_files_touched(window))
     tools_used = tuple(get_tools_used(window))
 
-    # Optional: use Claude for summary
+    # Optional: use Claude for high-quality extraction
     summary = None
     extraction_method = "local"
+    claude_extraction = None
 
     if use_claude:
         try:
@@ -217,15 +247,34 @@ def extract_recovery_checkpoint(
             if is_claude_available():
                 result = extract_with_claude(all_content)
                 if result:
-                    summary = result.get("summary")
-                    # Claude can provide better topic
+                    claude_extraction = result
+                    extraction_method = "claude"
+                    # Use Claude's better extraction
                     if result.get("topic"):
                         topic = result["topic"]
-                    extraction_method = "claude"
+                    if result.get("decisions"):
+                        decisions = tuple(result["decisions"][:5])
+                    if result.get("open_questions"):
+                        open_threads = tuple(result["open_questions"][:5])
+                    # Build summary from thesis if available
+                    if result.get("thesis"):
+                        summary = result["thesis"]
+                    elif result.get("core_question"):
+                        summary = f"Working on: {result['core_question']}"
         except ImportError:
             logger.debug("Headless Claude not available")
         except Exception as e:
             logger.warning(f"Claude extraction failed: {e}")
+
+    # Extract structured fields from Claude result
+    core_question = ""
+    thesis = ""
+    confidence = 0.0
+
+    if claude_extraction:
+        core_question = claude_extraction.get("core_question", "")
+        thesis = claude_extraction.get("thesis", "")
+        confidence = float(claude_extraction.get("confidence", 0.0))
 
     return RecoveryCheckpoint(
         id=generate_recovery_id(topic),
@@ -240,6 +289,9 @@ def extract_recovery_checkpoint(
         files_touched=files_touched,
         tools_used=tools_used,
         summary=summary,
+        core_question=core_question,
+        thesis=thesis,
+        confidence=confidence,
         salience_score=max_salience,
     )
 
@@ -255,7 +307,7 @@ def _recovery_to_markdown(checkpoint: RecoveryCheckpoint) -> str:
     Returns:
         Markdown string with YAML frontmatter
     """
-    # Frontmatter
+    # Frontmatter - include structured fields when available
     frontmatter = {
         "id": checkpoint.id,
         "type": "recovery",
@@ -265,6 +317,14 @@ def _recovery_to_markdown(checkpoint: RecoveryCheckpoint) -> str:
         "salience_score": checkpoint.salience_score,
     }
 
+    # Add structured checkpoint fields if from Claude extraction
+    if checkpoint.core_question:
+        frontmatter["core_question"] = checkpoint.core_question
+    if checkpoint.thesis:
+        frontmatter["thesis"] = checkpoint.thesis
+    if checkpoint.confidence > 0:
+        frontmatter["confidence"] = checkpoint.confidence
+
     # Build markdown body
     lines = []
 
@@ -272,8 +332,22 @@ def _recovery_to_markdown(checkpoint: RecoveryCheckpoint) -> str:
     lines.append(f"# {checkpoint.topic}")
     lines.append("")
 
-    # Summary if available
-    if checkpoint.summary:
+    # Core question and thesis (structured fields) - prioritize these
+    if checkpoint.core_question:
+        lines.append("## Core Question")
+        lines.append(checkpoint.core_question)
+        lines.append("")
+
+    if checkpoint.thesis:
+        lines.append("## Thesis")
+        if checkpoint.confidence > 0:
+            lines.append(f"*Confidence: {checkpoint.confidence:.0%}*")
+            lines.append("")
+        lines.append(checkpoint.thesis)
+        lines.append("")
+
+    # Summary (fallback if no thesis)
+    elif checkpoint.summary:
         lines.append("## Summary")
         lines.append(checkpoint.summary)
         lines.append("")
@@ -396,6 +470,9 @@ def _markdown_to_recovery(content: str) -> RecoveryCheckpoint | None:
             files_touched=tuple(files_touched),
             tools_used=tuple(tools_used),
             summary=summary,
+            core_question=fm.get("core_question", ""),
+            thesis=fm.get("thesis", ""),
+            confidence=float(fm.get("confidence", 0.0)),
             salience_score=fm.get("salience_score", 0.0),
         )
 
