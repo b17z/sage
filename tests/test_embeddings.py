@@ -15,6 +15,10 @@ from sage.embeddings import (
     cosine_similarity,
     cosine_similarity_matrix,
     find_similar,
+    get_code_embedding,
+    get_code_embeddings_batch,
+    get_code_query_embedding,
+    get_configured_code_model,
     get_configured_model,
     get_model_info,
     load_embeddings,
@@ -836,3 +840,200 @@ class TestClearModelCache:
         # Verify next get_model would load fresh (by checking globals are None)
         assert sage.embeddings._model is None
         # If we called get_model now, it would load a new model
+
+
+class TestCodeEmbeddingModels:
+    """Tests for code-specific embedding models (codesage)."""
+
+    def test_codesage_model_info_exists(self):
+        """CodeSage models are in MODEL_INFO."""
+        assert "codesage/codesage-large" in MODEL_INFO
+        assert "codesage/codesage-small" in MODEL_INFO
+
+    def test_codesage_large_has_correct_dimensions(self):
+        """CodeSage large has 1024 dimensions (same as BGE-large)."""
+        info = get_model_info("codesage/codesage-large")
+        assert info["dim"] == 1024
+
+    def test_codesage_no_query_prefix(self):
+        """CodeSage models don't need query prefix."""
+        assert MODEL_INFO["codesage/codesage-large"]["query_prefix"] == ""
+        assert MODEL_INFO["codesage/codesage-small"]["query_prefix"] == ""
+
+    def test_codesage_has_max_tokens(self):
+        """CodeSage has max_tokens info for chunking."""
+        info = MODEL_INFO["codesage/codesage-large"]
+        assert "max_tokens" in info
+        assert info["max_tokens"] == 1024
+
+
+class TestGetConfiguredCodeModel:
+    """Tests for get_configured_code_model function."""
+
+    def test_returns_code_model_from_config(self):
+        """get_configured_code_model returns code model from SageConfig."""
+        from sage.config import SageConfig
+
+        with patch("sage.config.get_sage_config") as mock_config:
+            mock_config.return_value = SageConfig(code_embedding_model="codesage/codesage-small")
+            result = get_configured_code_model()
+            assert result == "codesage/codesage-small"
+
+    def test_default_is_codesage_large(self):
+        """Default code model is codesage-large."""
+        from sage.config import SageConfig
+
+        with patch("sage.config.get_sage_config") as mock_config:
+            mock_config.return_value = SageConfig()  # Use defaults
+            result = get_configured_code_model()
+            assert result == "codesage/codesage-large"
+
+
+class TestCodeEmbeddingFunctions:
+    """Tests for code-specific embedding functions."""
+
+    def test_get_code_embedding_uses_code_model(self):
+        """get_code_embedding uses the code-specific model."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch(
+                "sage.embeddings.get_configured_code_model",
+                return_value="codesage/codesage-large",
+            ),
+        ):
+            from sage.embeddings import ok
+
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_code_embedding("def foo(): pass")
+
+            assert result.is_ok()
+            # Verify it called get_model with the code model
+            mock_get_model.assert_called_with("codesage/codesage-large")
+
+    def test_get_code_query_embedding_uses_code_model(self):
+        """get_code_query_embedding uses the code-specific model."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch(
+                "sage.embeddings.get_configured_code_model",
+                return_value="codesage/codesage-large",
+            ),
+        ):
+            from sage.embeddings import ok
+
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_code_query_embedding("authentication function")
+
+            assert result.is_ok()
+            # Verify it used the code model
+            mock_get_model.assert_called_with("codesage/codesage-large")
+
+    def test_get_code_embeddings_batch_uses_code_model(self):
+        """get_code_embeddings_batch uses the code-specific model."""
+        mock_model = MagicMock()
+        mock_embeddings = np.array(
+            [
+                [0.5, 0.5, 0.5, 0.5],
+                [0.5, 0.5, 0.5, -0.5],
+            ]
+        )
+        mock_embeddings = mock_embeddings / np.linalg.norm(mock_embeddings, axis=1, keepdims=True)
+        mock_model.encode.return_value = mock_embeddings
+
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch(
+                "sage.embeddings.get_configured_code_model",
+                return_value="codesage/codesage-large",
+            ),
+        ):
+            from sage.embeddings import ok
+
+            mock_get_model.return_value = ok(mock_model)
+
+            result = get_code_embeddings_batch(["def foo():", "class Bar:"])
+
+            assert result.is_ok()
+            assert result.unwrap().shape == (2, 4)
+
+    def test_code_and_prose_use_different_models(self):
+        """Code and prose embeddings use different configured models."""
+        from sage.config import SageConfig
+
+        with patch("sage.config.get_sage_config") as mock_config:
+            mock_config.return_value = SageConfig(
+                embedding_model="BAAI/bge-large-en-v1.5",
+                code_embedding_model="codesage/codesage-large",
+            )
+
+            prose_model = get_configured_model()
+            code_model = get_configured_code_model()
+
+            assert prose_model == "BAAI/bge-large-en-v1.5"
+            assert code_model == "codesage/codesage-large"
+            assert prose_model != code_model
+
+
+class TestSeparateEmbeddingSpaces:
+    """Tests for separate embedding spaces (code vs prose)."""
+
+    def test_code_embedding_does_not_add_bge_prefix(self):
+        """Code embeddings don't add BGE query prefix (CodeSage doesn't need it)."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch(
+                "sage.embeddings.get_configured_code_model",
+                return_value="codesage/codesage-large",
+            ),
+        ):
+            from sage.embeddings import ok
+
+            mock_get_model.return_value = ok(mock_model)
+
+            get_code_query_embedding("find authentication")
+
+            # Check that encode was called without prefix
+            call_args = mock_model.encode.call_args
+            text_arg = call_args[0][0]
+            assert not text_arg.startswith("Represent this sentence")
+            assert text_arg == "find authentication"
+
+    def test_prose_embedding_adds_bge_prefix_for_queries(self):
+        """Prose query embeddings add BGE prefix when using BGE model."""
+        mock_model = MagicMock()
+        mock_embedding = np.array([0.5, 0.5, 0.5, 0.5])
+        mock_model.encode.return_value = mock_embedding / np.linalg.norm(mock_embedding)
+
+        with (
+            patch("sage.embeddings.is_available", return_value=True),
+            patch("sage.embeddings.get_model") as mock_get_model,
+            patch("sage.embeddings.get_configured_model", return_value="BAAI/bge-large-en-v1.5"),
+        ):
+            from sage.embeddings import get_query_embedding, ok
+
+            mock_get_model.return_value = ok(mock_model)
+
+            get_query_embedding("find knowledge about auth")
+
+            # Check that encode was called with prefix
+            call_args = mock_model.encode.call_args
+            text_arg = call_args[0][0]
+            assert text_arg.startswith("Represent this sentence")

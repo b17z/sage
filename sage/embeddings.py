@@ -75,6 +75,19 @@ MODEL_INFO: dict[str, dict] = {
         "query_prefix": "",
         "size_mb": 80,
     },
+    # Code-specialized models
+    "codesage/codesage-large": {
+        "dim": 1024,
+        "query_prefix": "",  # CodeSage doesn't need query prefix
+        "size_mb": 1360,
+        "max_tokens": 1024,  # Larger context for code
+    },
+    "codesage/codesage-small": {
+        "dim": 1024,
+        "query_prefix": "",
+        "size_mb": 435,
+        "max_tokens": 1024,
+    },
 }
 
 # Directory for embedding storage
@@ -158,11 +171,23 @@ def is_available() -> bool:
 
 
 def get_configured_model() -> str:
-    """Get the configured embedding model from SageConfig."""
+    """Get the configured embedding model from SageConfig (for prose)."""
     from sage.config import get_sage_config
 
     config = get_sage_config()
     return config.embedding_model
+
+
+def get_configured_code_model() -> str:
+    """Get the configured code embedding model from SageConfig.
+
+    Code embeddings use a specialized model (codesage) that better understands
+    programming constructs, while prose uses BGE for natural language.
+    """
+    from sage.config import get_sage_config
+
+    config = get_sage_config()
+    return config.code_embedding_model
 
 
 def get_model_info(model_name: str) -> dict:
@@ -312,6 +337,63 @@ def get_query_embedding(text: str, model_name: str | None = None) -> Result[np.n
     prefixed_text = prefix + text if prefix else text
 
     return get_embedding(prefixed_text, model_name)
+
+
+def get_code_embedding(text: str, model_name: str | None = None) -> Result[np.ndarray, SageError]:
+    """Generate embedding for code content using the code-specific model.
+
+    Uses codesage model which better understands programming constructs.
+    For natural language text (knowledge, checkpoints), use get_embedding().
+
+    Args:
+        text: Code content to embed
+        model_name: Model to use. If None, uses configured code model.
+
+    Returns:
+        Result containing the embedding vector or an error
+    """
+    if model_name is None:
+        model_name = get_configured_code_model()
+
+    return get_embedding(text, model_name)
+
+
+def get_code_query_embedding(
+    text: str, model_name: str | None = None
+) -> Result[np.ndarray, SageError]:
+    """Generate embedding for a code search query.
+
+    Args:
+        text: Query text (can be natural language describing code)
+        model_name: Model to use. If None, uses configured code model.
+
+    Returns:
+        Result containing the embedding vector or an error
+    """
+    if model_name is None:
+        model_name = get_configured_code_model()
+
+    return get_query_embedding(text, model_name)
+
+
+def get_code_embeddings_batch(
+    texts: list[str], model_name: str | None = None
+) -> Result[np.ndarray, SageError]:
+    """Generate embeddings for multiple code snippets (batched).
+
+    Uses the code-specific embedding model (codesage).
+
+    Args:
+        texts: List of code content to embed
+        model_name: Model to use. If None, uses configured code model.
+
+    Returns:
+        Result containing array of embeddings (shape: [n_texts, dim]) or an error
+    """
+    if model_name is None:
+        model_name = get_configured_code_model()
+
+    return get_embeddings_batch(texts, model_name)
 
 
 def get_embeddings_batch(
