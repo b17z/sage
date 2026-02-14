@@ -413,6 +413,7 @@ class TestConfigIntegrationKnowledge:
             patch("sage.knowledge.KNOWLEDGE_INDEX", knowledge_index),
             patch("sage.config.SAGE_DIR", sage_dir),
             patch("sage.config.detect_project_root", return_value=None),
+            patch("sage.knowledge.detect_project_root", return_value=None),
         ):
             add_knowledge(
                 content="Test content",
@@ -841,3 +842,92 @@ class TestConfigCLIEdgeCases:
 
         assert result.exit_code == 0
         assert "recall_threshold" in result.output
+
+
+class TestStorageMaintenanceConfig:
+    """Tests for storage maintenance configuration fields."""
+
+    def test_maintenance_config_defaults(self):
+        """Maintenance config has sensible defaults."""
+        cfg = SageConfig()
+
+        assert cfg.checkpoint_max_age_days == 90
+        assert cfg.checkpoint_max_count == 200
+        assert cfg.knowledge_max_age_days == 0  # Never prune by default
+        assert cfg.maintenance_on_save is True
+
+    def test_cache_ttl_default(self):
+        """Knowledge cache TTL has sensible default."""
+        cfg = SageConfig()
+
+        assert cfg.knowledge_cache_ttl_seconds == 45.0
+
+    def test_maintenance_config_validation_warns_on_low_cap(self, caplog):
+        """Warning logged when checkpoint_max_count is very low."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            SageConfig(checkpoint_max_count=5)
+
+        assert "checkpoint_max_count=5 is very low" in caplog.text
+
+    def test_negative_max_age_corrected(self, caplog):
+        """Negative max_age values are corrected to 0."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = SageConfig(checkpoint_max_age_days=-10)
+
+        assert cfg.checkpoint_max_age_days == 0
+        assert "cannot be negative" in caplog.text
+
+    def test_negative_knowledge_max_age_corrected(self, caplog):
+        """Negative knowledge_max_age values are corrected to 0."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = SageConfig(knowledge_max_age_days=-5)
+
+        assert cfg.knowledge_max_age_days == 0
+
+    def test_negative_cache_ttl_corrected(self, caplog):
+        """Negative cache TTL values are corrected to 0."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = SageConfig(knowledge_cache_ttl_seconds=-10.0)
+
+        assert cfg.knowledge_cache_ttl_seconds == 0.0
+
+    def test_maintenance_config_save_load_roundtrip(self, tmp_path: Path):
+        """Maintenance config values survive save/load cycle."""
+        sage_dir = tmp_path / ".sage"
+        original = SageConfig(
+            checkpoint_max_age_days=30,
+            checkpoint_max_count=100,
+            knowledge_max_age_days=60,
+            maintenance_on_save=False,
+            knowledge_cache_ttl_seconds=60.0,
+        )
+
+        original.save(sage_dir)
+        loaded = SageConfig.load(sage_dir)
+
+        assert loaded.checkpoint_max_age_days == 30
+        assert loaded.checkpoint_max_count == 100
+        assert loaded.knowledge_max_age_days == 60
+        assert loaded.maintenance_on_save is False
+        assert loaded.knowledge_cache_ttl_seconds == 60.0
+
+    def test_zero_values_are_valid(self):
+        """Zero values for age/count are valid (disables pruning/capping)."""
+        cfg = SageConfig(
+            checkpoint_max_age_days=0,
+            checkpoint_max_count=0,
+            knowledge_max_age_days=0,
+        )
+
+        # Should not raise or warn for zeros
+        assert cfg.checkpoint_max_age_days == 0
+        assert cfg.checkpoint_max_count == 0
+        assert cfg.knowledge_max_age_days == 0

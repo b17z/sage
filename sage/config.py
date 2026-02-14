@@ -155,8 +155,9 @@ class SageConfig:
     depth_min_messages: int = 8
     depth_min_tokens: int = 2000
 
-    # Embedding model - BGE-large for better retrieval quality
-    embedding_model: str = "BAAI/bge-large-en-v1.5"
+    # Embedding models
+    embedding_model: str = "BAAI/bge-large-en-v1.5"  # For prose (knowledge, checkpoints)
+    code_embedding_model: str = "codesage/codesage-large"  # For code indexing
 
     # Async settings (v2.0)
     async_enabled: bool = False  # Sync by default; use CLAUDE.md Task subagent for backgrounding
@@ -190,20 +191,51 @@ class SageConfig:
 
     # Recovery checkpoint settings (v2.7)
     recovery_enabled: bool = True  # Generate recovery checkpoints on compaction
-    recovery_use_claude: bool = False  # Use headless Claude for extraction (opt-in)
+    recovery_use_claude: bool = True  # Use headless Claude for high-quality extraction
     recovery_salience_threshold: float = 0.5  # Min salience to save observation
+
+    # Storage maintenance settings (v3.1)
+    checkpoint_max_age_days: int = 90  # Prune checkpoints older than N days (0 = never)
+    checkpoint_max_count: int = 200  # Cap to max N checkpoints (0 = unlimited)
+    knowledge_max_age_days: int = 0  # Prune knowledge older than N days (0 = never)
+    maintenance_on_save: bool = True  # Auto-run maintenance on save operations
+
+    # Caching settings (v3.1)
+    knowledge_cache_ttl_seconds: float = 45.0  # TTL for knowledge index cache
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         import logging
 
+        logger = logging.getLogger(__name__)
+
         # Warn if weights don't sum to 1.0 (with floating point tolerance)
         weight_sum = self.embedding_weight + self.keyword_weight
         if abs(weight_sum - 1.0) > 0.001:
-            logging.getLogger(__name__).warning(
-                f"embedding_weight ({self.embedding_weight}) + keyword_weight ({self.keyword_weight}) "
-                f"= {weight_sum}, expected 1.0. This may affect scoring accuracy."
+            logger.warning(
+                f"embedding_weight ({self.embedding_weight}) + "
+                f"keyword_weight ({self.keyword_weight}) = {weight_sum}, "
+                "expected 1.0. This may affect scoring accuracy."
             )
+
+        # Validate maintenance settings
+        if 0 < self.checkpoint_max_count < 10:
+            logger.warning(
+                f"checkpoint_max_count={self.checkpoint_max_count} is very low. "
+                "Consider using at least 10 to retain meaningful history."
+            )
+
+        if self.checkpoint_max_age_days < 0:
+            logger.warning("checkpoint_max_age_days cannot be negative, treating as 0")
+            object.__setattr__(self, "checkpoint_max_age_days", 0)
+
+        if self.knowledge_max_age_days < 0:
+            logger.warning("knowledge_max_age_days cannot be negative, treating as 0")
+            object.__setattr__(self, "knowledge_max_age_days", 0)
+
+        if self.knowledge_cache_ttl_seconds < 0:
+            logger.warning("knowledge_cache_ttl_seconds cannot be negative, using 0")
+            object.__setattr__(self, "knowledge_cache_ttl_seconds", 0.0)
 
     @classmethod
     def load(cls, sage_dir: Path) -> "SageConfig":
@@ -257,7 +289,10 @@ class SageConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary (all fields)."""
-        return {field.name: getattr(self, field.name) for field in self.__dataclass_fields__.values()}
+        return {
+            field.name: getattr(self, field.name)
+            for field in self.__dataclass_fields__.values()
+        }
 
     def get_autosave_threshold(self, trigger_event: str) -> float | None:
         """Get autosave threshold for a trigger event.
