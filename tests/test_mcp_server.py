@@ -355,6 +355,8 @@ class TestListKnowledge:
         knowledge_dir.mkdir()
         monkeypatch.setattr("sage.knowledge.KNOWLEDGE_DIR", knowledge_dir)
         monkeypatch.setattr("sage.knowledge.KNOWLEDGE_INDEX", knowledge_dir / "index.yaml")
+        monkeypatch.setattr("sage.knowledge.detect_project_root", lambda: None)
+        monkeypatch.setattr("sage.mcp_server._PROJECT_ROOT", None)
 
         result = sage_list_knowledge()
 
@@ -1117,3 +1119,184 @@ class TestReloadConfig:
         result = sage_reload_config()
 
         assert str(old_project) in result or "Project root" in result
+
+
+class TestSessionContextInjection:
+    """Tests for session context injection behavior."""
+
+    def test_first_tool_call_checks_for_context(self, tmp_path, monkeypatch):
+        """First tool call checks for context to inject."""
+        import sage.mcp_server
+        from sage.mcp_server import _get_session_start_context, _reset_session_state
+
+        # Reset state
+        _reset_session_state()
+
+        # Mock no continuity pending
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: False)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_continuity_context", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        result = _get_session_start_context()
+        # Should be None since nothing to inject
+        assert result is None
+
+    def test_subsequent_calls_skip_context_check(self, tmp_path, monkeypatch):
+        """After first call, context check is skipped."""
+        import sage.mcp_server
+        from sage.mcp_server import _get_session_start_context, _reset_session_state
+
+        # Reset state
+        _reset_session_state()
+
+        # Track calls
+        check_calls = []
+
+        def mock_continuity():
+            check_calls.append("continuity")
+            return None
+
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: False)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_continuity_context", mock_continuity)
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        # First call
+        _get_session_start_context()
+        assert len(check_calls) == 1
+
+        # Second call - should not check again
+        _get_session_start_context()
+        assert len(check_calls) == 1  # Still 1, not 2
+
+    def test_compaction_mid_session_resets_flag(self, tmp_path, monkeypatch):
+        """If compaction marker appears mid-session, flag is reset."""
+        import sage.mcp_server
+        from sage.mcp_server import _get_session_start_context, _reset_session_state
+
+        # Reset state
+        _reset_session_state()
+
+        # Track continuity check calls
+        continuity_calls = []
+
+        def mock_get_continuity():
+            continuity_calls.append("called")
+            return "═══ SESSION CONTINUITY ═══\nTest context"
+
+        # First: no continuity
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: False)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_continuity_context", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        # First call (sets flag to True)
+        _get_session_start_context()
+
+        # Now simulate compaction: marker appears
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: True)
+        monkeypatch.setattr(sage.mcp_server, "_get_continuity_context", mock_get_continuity)
+
+        # Second call - should detect compaction and reset flag
+        result = _get_session_start_context()
+
+        # Should have gotten continuity context
+        assert result is not None
+        assert "SESSION CONTINUITY" in result
+        assert len(continuity_calls) == 1
+
+    def test_compaction_mid_session_logs_reset(self, tmp_path, monkeypatch):
+        """Compaction detection mid-session is logged."""
+        import sage.mcp_server
+        from sage.mcp_server import _get_session_start_context, _reset_session_state
+
+        # Reset state
+        _reset_session_state()
+
+        # Track log calls
+        log_calls = []
+        mock_logger = MagicMock()
+        mock_logger.info = lambda msg: log_calls.append(msg)
+        mock_logger.debug = lambda msg: None
+
+        monkeypatch.setattr(sage.mcp_server, "logger", mock_logger)
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: False)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_continuity_context", lambda: None)
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        # First call
+        _get_session_start_context()
+
+        # Now simulate compaction
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: True)
+        monkeypatch.setattr(
+            sage.mcp_server, "_get_continuity_context", lambda: "Test continuity"
+        )
+
+        # Second call - should log the reset
+        _get_session_start_context()
+
+        # Check that reset was logged
+        reset_logged = any("compaction detected mid-session" in msg for msg in log_calls)
+        assert reset_logged, f"Expected reset log, got: {log_calls}"
+
+    def test_decorator_injects_context_on_first_call(self, tmp_path, monkeypatch):
+        """with_session_context decorator injects context on first call."""
+        import sage.mcp_server
+        from sage.mcp_server import _reset_session_state, with_session_context
+
+        # Reset state
+        _reset_session_state()
+
+        # Mock context
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: True)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(
+            sage.mcp_server, "_get_continuity_context", lambda: "Test continuity"
+        )
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        @with_session_context
+        def dummy_tool() -> str:
+            return "Tool result"
+
+        result = dummy_tool()
+
+        # Should include both context and result
+        assert "Test continuity" in result
+        assert "Tool result" in result
+
+    def test_decorator_skips_context_on_subsequent_calls(self, tmp_path, monkeypatch):
+        """with_session_context decorator skips context on subsequent calls."""
+        import sage.mcp_server
+        from sage.mcp_server import _reset_session_state, with_session_context
+
+        # Reset state
+        _reset_session_state()
+
+        # First call: has context
+        monkeypatch.setattr(sage.mcp_server, "has_pending_continuity", lambda _=None: False)
+        monkeypatch.setattr(sage.mcp_server, "_check_watcher_autostart", lambda: None)
+        monkeypatch.setattr(
+            sage.mcp_server, "_get_continuity_context", lambda: "First context"
+        )
+        monkeypatch.setattr(sage.mcp_server, "_get_proactive_recall", lambda: None)
+
+        @with_session_context
+        def dummy_tool() -> str:
+            return "Tool result"
+
+        first_result = dummy_tool()
+        assert "First context" in first_result
+
+        # Change context (shouldn't matter - flag is set)
+        monkeypatch.setattr(
+            sage.mcp_server, "_get_continuity_context", lambda: "Second context"
+        )
+
+        second_result = dummy_tool()
+        # Should NOT include context on second call
+        assert "Second context" not in second_result
+        assert second_result == "Tool result"

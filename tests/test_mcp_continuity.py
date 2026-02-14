@@ -17,7 +17,15 @@ def reset_session_state():
 
 
 @pytest.fixture
-def cleanup_continuity():
+def no_project_root():
+    """Mock detect_project_root to return None so tests use global CONTINUITY_FILE."""
+    with patch("sage.continuity.detect_project_root", return_value=None):
+        with patch("sage.mcp_server._PROJECT_ROOT", None):
+            yield
+
+
+@pytest.fixture
+def cleanup_continuity(no_project_root):
     """Clean up continuity marker after test."""
     from sage.continuity import CONTINUITY_FILE
 

@@ -41,7 +41,7 @@ import threading
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -195,11 +195,23 @@ def _get_session_start_context() -> str | None:
 
     Returns context string on first call of the session, None on subsequent calls.
     This enables automatic context injection without requiring explicit sage_health() call.
+
+    Note: If continuity is pending (compaction happened mid-session), we reset the
+    injection flag to ensure context is injected on the next tool call.
     """
     global _session_context_injected
+
+    # Check if compaction happened mid-session (continuity marker exists)
+    # If so, reset the flag to re-inject context
+    if _session_context_injected and has_pending_continuity(_PROJECT_ROOT):
+        logger.info("Session continuity: compaction detected mid-session, resetting injection state")
+        _session_context_injected = False
+
     if _session_context_injected:
         return None
     _session_context_injected = True
+
+    logger.info("Session start: checking for context to inject")
 
     parts = []
 
@@ -212,15 +224,19 @@ def _get_session_start_context() -> str | None:
     continuity = _get_continuity_context()
     if continuity:
         parts.append(continuity)
+        logger.info("Session start: continuity context found and will be injected")
 
     # Get proactive recall (project-relevant knowledge)
     proactive = _get_proactive_recall()
     if proactive:
         parts.append(proactive)
+        logger.info("Session start: proactive recall found and will be injected")
 
     if not parts:
+        logger.debug("Session start: no context to inject")
         return None
 
+    logger.info(f"Session start: injecting {len(parts)} context section(s)")
     return "\n\n".join(parts)
 
 
@@ -230,6 +246,29 @@ def _inject_session_context(response: str) -> str:
     if context:
         return context + "\n\n" + response
     return response
+
+
+def with_session_context(func: Callable[..., str]) -> Callable[..., str]:
+    """Decorator that injects session context into the first tool response.
+
+    Apply this to ALL MCP tools to ensure session context (continuity + proactive
+    recall) is injected on the very first tool call, regardless of which tool
+    the user calls first.
+
+    Usage:
+        @mcp.tool()
+        @with_session_context
+        def sage_my_tool(...) -> str:
+            return "result"
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        result = func(*args, **kwargs)
+        return _inject_session_context(result)
+
+    return wrapper
 
 
 # =============================================================================
@@ -601,12 +640,13 @@ def _get_continuity_context() -> str | None:
     """
     config = get_sage_config(_PROJECT_ROOT)
     if not config.continuity_enabled:
-        clear_continuity()
+        logger.debug("Continuity disabled via config, clearing marker")
+        clear_continuity(_PROJECT_ROOT)
         return None
 
     # Check for pending continuity marker (from compaction)
-    has_marker = has_pending_continuity()
-    marker = get_continuity_marker() if has_marker else None
+    has_marker = has_pending_continuity(_PROJECT_ROOT)
+    marker = get_continuity_marker(_PROJECT_ROOT) if has_marker else None
 
     # Check for session queue entries
     queued_checkpoints = _get_queued_checkpoints()
@@ -660,11 +700,13 @@ def _get_continuity_context() -> str | None:
 
     # Clear the marker
     if marker:
-        clear_continuity()
+        clear_continuity(_PROJECT_ROOT)
+        logger.info("Continuity marker cleared after injection")
 
     # Clear injected checkpoints from queue
     if injected_ids:
         _clear_injected_checkpoints(injected_ids)
+        logger.info(f"Injected {len(injected_ids)} checkpoint(s): {injected_ids}")
 
     return "\n".join(lines)
 
@@ -678,10 +720,14 @@ def _get_queued_checkpoints():
     try:
         from sage.session import get_pending_injections
 
-        return get_pending_injections()
+        entries = get_pending_injections()
+        if entries:
+            logger.debug(f"Found {len(entries)} queued checkpoint(s) for injection")
+        return entries
     except ImportError:
         return []
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to get queued checkpoints: {e}")
         return []
 
 
@@ -695,10 +741,11 @@ def _clear_injected_checkpoints(checkpoint_ids: list[str]) -> None:
         from sage.session import clear_injected
 
         clear_injected(checkpoint_ids)
+        logger.debug(f"Cleared {len(checkpoint_ids)} checkpoint(s) from injection queue")
     except ImportError:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to clear injected checkpoints: {e}")
 
 
 def _get_project_context() -> str | None:
@@ -792,6 +839,7 @@ def _get_proactive_recall() -> str | None:
     try:
         context = _get_project_context()
         if not context:
+            logger.debug("No project context detected for proactive recall")
             return None
 
         # Recall knowledge matching project context
@@ -799,9 +847,13 @@ def _get_proactive_recall() -> str | None:
         result = recall_knowledge(context, skill_name="", threshold=0.4)
 
         if result.count == 0:
+            logger.debug(f"No knowledge matched project context: {context}")
             return None
-    except Exception:
+
+        logger.info(f"Proactive recall: {result.count} item(s) for context '{context}'")
+    except Exception as e:
         # Don't let proactive recall errors break health check
+        logger.warning(f"Proactive recall failed: {e}")
         return None
 
     # Format for injection
@@ -828,6 +880,7 @@ def _get_proactive_recall() -> str | None:
 
 
 @mcp.tool()
+@with_session_context
 def sage_version() -> str:
     """Get Sage version and configuration info.
 
@@ -851,10 +904,11 @@ def sage_version() -> str:
         f"  Keyword weight: {cfg.keyword_weight}",
     ]
 
-    return _inject_session_context("\n".join(lines))
+    return "\n".join(lines)
 
 
 @mcp.tool()
+@with_session_context
 def sage_health() -> str:
     """Check Sage system health and diagnostics.
 
@@ -877,8 +931,6 @@ def sage_health() -> str:
     from sage.knowledge import KNOWLEDGE_DIR, list_knowledge
     from sage.tasks import TASKS_DIR, load_pending_tasks
     from sage.watcher import get_watcher_status
-
-    # Session start context will be injected via _inject_session_context at the end
 
     lines = ["Sage Health Check", "─" * 40]
     issues = []
@@ -984,13 +1036,11 @@ def sage_health() -> str:
     else:
         lines.append("All systems healthy!")
 
-    result = "\n".join(lines)
-
-    # Inject session start context (continuity + proactive recall) if first call
-    return _inject_session_context(result)
+    return "\n".join(lines)
 
 
 @mcp.tool()
+@with_session_context
 def sage_continuity_status() -> str:
     """Check session continuity status and inject pending context.
 
@@ -1064,6 +1114,7 @@ def sage_continuity_status() -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_get_config() -> str:
     """Get current Sage configuration values.
 
@@ -1116,6 +1167,7 @@ def sage_get_config() -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -> str:
     """Debug what knowledge and checkpoints would match a query.
 
@@ -1265,6 +1317,7 @@ def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = Tr
 
 
 @mcp.tool()
+@with_session_context
 def sage_save_checkpoint(
     core_question: str,
     thesis: str,
@@ -1279,6 +1332,7 @@ def sage_save_checkpoint(
     key_evidence: list[str] | None = None,
     reasoning_trace: str = "",
     template: str = "default",
+    auto_code_context: bool = True,
 ) -> str:
     """Save a semantic checkpoint of the current research state.
 
@@ -1300,10 +1354,14 @@ def sage_save_checkpoint(
         key_evidence: Concrete facts/data points supporting the thesis (for context hydration)
         reasoning_trace: Narrative explaining the thinking process that led to conclusions
         template: Checkpoint template to use (default, research, decision, code-review)
+        auto_code_context: Automatically capture files explored/changed from session (default True)
 
     Returns:
         Confirmation message with checkpoint ID (queued for async save)
     """
+    from sage.checkpoint import enrich_checkpoint_with_code_context
+    from sage.watcher import find_active_transcript
+
     # Validate confidence bounds (fast, sync)
     if not (0.0 <= confidence <= 1.0):
         return f"⏸ Invalid confidence {confidence}: must be between 0.0 and 1.0"
@@ -1335,12 +1393,31 @@ def sage_save_checkpoint(
 
     # Save checkpoint synchronously (caller should wrap in background Task per sage-memory skill)
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
+
+    # Auto-inject code context from transcript (v1.3)
+    if auto_code_context:
+        transcript_path = find_active_transcript()
+        if transcript_path:
+            checkpoint = enrich_checkpoint_with_code_context(checkpoint, transcript_path)
+            logger.debug(
+                f"Enriched checkpoint with code context: "
+                f"{len(checkpoint.files_explored)} explored, {len(checkpoint.files_changed)} changed"
+            )
+
     save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-    return f"📍 Checkpoint saved{template_info}: {thesis_preview}"
+    # Include code context info in response if present
+    code_info = ""
+    if checkpoint.files_changed:
+        code_info = f" [{len(checkpoint.files_changed)} files changed]"
+    elif checkpoint.files_explored:
+        code_info = f" [{len(checkpoint.files_explored)} files explored]"
+
+    return f"📍 Checkpoint saved{template_info}{code_info}: {thesis_preview}"
 
 
 @mcp.tool()
+@with_session_context
 def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     """List saved research checkpoints.
 
@@ -1354,7 +1431,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
 
     if not checkpoints:
-        return _inject_session_context("No checkpoints found.")
+        return "No checkpoints found."
 
     lines = [f"Found {len(checkpoints)} checkpoint(s):\n"]
     for cp in checkpoints:
@@ -1365,10 +1442,11 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
         lines.append(f"  Confidence: {cp.confidence:.0%} | Trigger: {cp.trigger}")
         lines.append("")
 
-    return _inject_session_context("\n".join(lines))
+    return "\n".join(lines)
 
 
 @mcp.tool()
+@with_session_context
 def sage_load_checkpoint(checkpoint_id: str) -> str:
     """Load a checkpoint for context injection.
 
@@ -1390,6 +1468,7 @@ def sage_load_checkpoint(checkpoint_id: str) -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_search_checkpoints(query: str, limit: int = 5) -> str:
     """Search checkpoints by semantic similarity to a query.
 
@@ -1465,6 +1544,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_save_knowledge(
     knowledge_id: str,
     content: str,
@@ -1500,12 +1580,14 @@ def sage_save_knowledge(
         skill=skill,
         source=source,
         item_type=item_type,
+        project_path=_PROJECT_ROOT,
     )
 
     return f"📍 Knowledge saved: {knowledge_id}{type_label} ({scope})"
 
 
 @mcp.tool()
+@with_session_context
 def sage_recall_knowledge(query: str, skill: str = "") -> str:
     """Recall relevant knowledge for a query.
 
@@ -1521,17 +1603,18 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
     """
     from sage import embeddings
 
-    result = recall_knowledge(query, skill)
+    result = recall_knowledge(query, skill, project_path=_PROJECT_ROOT)
 
     if result.count == 0:
         if not embeddings.is_available():
-            return _inject_session_context("No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*")
-        return _inject_session_context("No relevant knowledge found.")
+            return "No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*"
+        return "No relevant knowledge found."
 
-    return _inject_session_context(format_recalled_context(result))
+    return format_recalled_context(result)
 
 
 @mcp.tool()
+@with_session_context
 def sage_list_knowledge(skill: str | None = None) -> str:
     """List stored knowledge items.
 
@@ -1541,10 +1624,10 @@ def sage_list_knowledge(skill: str | None = None) -> str:
     Returns:
         List of knowledge items with IDs and keywords
     """
-    items = list_knowledge(skill)
+    items = list_knowledge(skill, project_path=_PROJECT_ROOT)
 
     if not items:
-        return _inject_session_context("No knowledge items found.")
+        return "No knowledge items found."
 
     lines = [f"Found {len(items)} knowledge item(s):\n"]
     for item in items:
@@ -1559,10 +1642,11 @@ def sage_list_knowledge(skill: str | None = None) -> str:
         lines.append(f"  Tokens: ~{item.metadata.tokens}")
         lines.append("")
 
-    return _inject_session_context("\n".join(lines))
+    return "\n".join(lines)
 
 
 @mcp.tool()
+@with_session_context
 def sage_remove_knowledge(knowledge_id: str) -> str:
     """Remove a knowledge item.
 
@@ -1572,12 +1656,13 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
     Returns:
         Confirmation or error message
     """
-    if remove_knowledge(knowledge_id):
+    if remove_knowledge(knowledge_id, project_path=_PROJECT_ROOT):
         return f"✓ Removed knowledge item: {knowledge_id}"
     return f"Knowledge item not found: {knowledge_id}"
 
 
 @mcp.tool()
+@with_session_context
 def sage_update_knowledge(
     knowledge_id: str,
     content: str | None = None,
@@ -1620,6 +1705,7 @@ def sage_update_knowledge(
         keywords=keywords,
         status=status,
         source=source,
+        project_path=_PROJECT_ROOT,
     )
 
     if result is None:
@@ -1639,6 +1725,7 @@ def sage_update_knowledge(
 
 
 @mcp.tool()
+@with_session_context
 def sage_deprecate_knowledge(
     knowledge_id: str,
     reason: str,
@@ -1669,6 +1756,7 @@ def sage_deprecate_knowledge(
         knowledge_id=knowledge_id,
         reason=reason.strip(),
         replacement_id=replacement_id,
+        project_path=_PROJECT_ROOT,
     )
 
     if result is None:
@@ -1681,6 +1769,7 @@ def sage_deprecate_knowledge(
 
 
 @mcp.tool()
+@with_session_context
 def sage_archive_knowledge(knowledge_id: str) -> str:
     """Archive a knowledge item (hide from recall).
 
@@ -1700,7 +1789,7 @@ def sage_archive_knowledge(knowledge_id: str) -> str:
     """
     from sage.knowledge import archive_knowledge
 
-    result = archive_knowledge(knowledge_id)
+    result = archive_knowledge(knowledge_id, project_path=_PROJECT_ROOT)
 
     if result is None:
         return f"Knowledge item not found: {knowledge_id}"
@@ -1714,6 +1803,7 @@ def sage_archive_knowledge(knowledge_id: str) -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_list_todos(status: str = "") -> str:
     """List todo items.
 
@@ -1724,7 +1814,7 @@ def sage_list_todos(status: str = "") -> str:
         Formatted list of todos
     """
     status_filter = status if status else None
-    todos = list_todos(status=status_filter)
+    todos = list_todos(status=status_filter, project_path=_PROJECT_ROOT)
 
     if not todos:
         return "No todos found."
@@ -1742,6 +1832,7 @@ def sage_list_todos(status: str = "") -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_mark_todo_done(todo_id: str) -> str:
     """Mark a todo as done.
 
@@ -1751,19 +1842,20 @@ def sage_mark_todo_done(todo_id: str) -> str:
     Returns:
         Confirmation or error message
     """
-    if mark_todo_done(todo_id):
+    if mark_todo_done(todo_id, project_path=_PROJECT_ROOT):
         return f"✓ Marked todo as done: {todo_id}"
     return f"Todo not found: {todo_id}"
 
 
 @mcp.tool()
+@with_session_context
 def sage_get_pending_todos() -> str:
     """Get pending todos for session-start injection.
 
     Returns:
         Formatted list of pending todos or message if none
     """
-    todos = get_pending_todos()
+    todos = get_pending_todos(project_path=_PROJECT_ROOT)
 
     if not todos:
         return "No pending todos."
@@ -1783,6 +1875,7 @@ def sage_get_pending_todos() -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
     """Set a Sage tuning configuration value.
 
@@ -1856,6 +1949,7 @@ def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
 
 
 @mcp.tool()
+@with_session_context
 def sage_reload_config() -> str:
     """Reload Sage configuration and clear cached models.
 
@@ -1923,6 +2017,7 @@ AUTOSAVE_TRIGGERS = {
 
 
 @mcp.tool()
+@with_session_context
 def sage_autosave_check(
     trigger_event: str,
     core_question: str,
@@ -2090,6 +2185,7 @@ def _check_code_deps() -> str | None:
 
 
 @mcp.tool()
+@with_session_context
 def sage_index_code(
     path: str = ".",
     project: str | None = None,
@@ -2141,6 +2237,7 @@ def sage_index_code(
 
 
 @mcp.tool()
+@with_session_context
 def sage_search_code(
     query: str,
     project: str | None = None,
@@ -2193,6 +2290,7 @@ def sage_search_code(
 
 
 @mcp.tool()
+@with_session_context
 def sage_grep_symbol(
     name: str,
     project_path: str | None = None,
@@ -2265,6 +2363,7 @@ def sage_grep_symbol(
 
 
 @mcp.tool()
+@with_session_context
 def sage_analyze_function(
     name: str,
     project_path: str | None = None,
@@ -2321,6 +2420,7 @@ def sage_analyze_function(
 
 
 @mcp.tool()
+@with_session_context
 def sage_mark_core(
     path: str,
     summary: str = "",
@@ -2352,6 +2452,7 @@ def sage_mark_core(
 
 
 @mcp.tool()
+@with_session_context
 def sage_list_core(
     project: str | None = None,
 ) -> str:
@@ -2390,6 +2491,7 @@ def sage_list_core(
 
 
 @mcp.tool()
+@with_session_context
 def sage_unmark_core(
     path: str,
 ) -> str:
