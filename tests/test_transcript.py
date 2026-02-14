@@ -791,3 +791,418 @@ class TestIntegration:
         window2 = read_transcript_since(transcript_path, cursor=loaded_cursor.position)
         assert len(window2) == 1
         assert window2.entries[0].content == "Another question"
+
+
+# =============================================================================
+# File Interaction Extraction Tests (v1.3)
+# =============================================================================
+
+
+class TestFileInteraction:
+    """Tests for FileInteraction dataclass."""
+
+    def test_file_interaction_is_frozen(self):
+        """FileInteraction is immutable."""
+        from sage.transcript import FileInteraction
+
+        interaction = FileInteraction(
+            file="/path/to/file.py",
+            action="read",
+            timestamp="2026-01-15T10:00:00Z",
+        )
+        with pytest.raises(AttributeError):
+            interaction.file = "/other/file.py"
+
+    def test_file_interaction_with_lines(self):
+        """FileInteraction can store line ranges."""
+        from sage.transcript import FileInteraction
+
+        interaction = FileInteraction(
+            file="/path/to/file.py",
+            action="read",
+            timestamp="2026-01-15T10:00:00Z",
+            lines=(10, 50),
+        )
+        assert interaction.lines == (10, 50)
+
+    def test_file_interaction_default_lines_none(self):
+        """FileInteraction lines default to None."""
+        from sage.transcript import FileInteraction
+
+        interaction = FileInteraction(
+            file="/path/to/file.py",
+            action="read",
+            timestamp="2026-01-15T10:00:00Z",
+        )
+        assert interaction.lines is None
+
+
+class TestSessionCodeContext:
+    """Tests for SessionCodeContext dataclass."""
+
+    def test_session_code_context_is_frozen(self):
+        """SessionCodeContext is immutable."""
+        from sage.transcript import SessionCodeContext
+
+        context = SessionCodeContext(
+            interactions=(),
+            files_read=frozenset(),
+            files_edited=frozenset(),
+            files_written=frozenset(),
+        )
+        with pytest.raises(AttributeError):
+            context.files_read = frozenset(["/a.py"])
+
+    def test_session_code_context_files_changed(self):
+        """files_changed combines edited and written files."""
+        from sage.transcript import SessionCodeContext
+
+        context = SessionCodeContext(
+            interactions=(),
+            files_read=frozenset(["/a.py"]),
+            files_edited=frozenset(["/b.py"]),
+            files_written=frozenset(["/c.py"]),
+        )
+        assert context.files_changed == frozenset(["/b.py", "/c.py"])
+
+    def test_session_code_context_all_files(self):
+        """all_files combines all file sets."""
+        from sage.transcript import SessionCodeContext
+
+        context = SessionCodeContext(
+            interactions=(),
+            files_read=frozenset(["/a.py"]),
+            files_edited=frozenset(["/b.py"]),
+            files_written=frozenset(["/c.py"]),
+        )
+        assert context.all_files == frozenset(["/a.py", "/b.py", "/c.py"])
+
+    def test_session_code_context_empty(self):
+        """SessionCodeContext.empty() creates empty context."""
+        from sage.transcript import SessionCodeContext
+
+        context = SessionCodeContext.empty()
+        assert context.interactions == ()
+        assert context.files_read == frozenset()
+        assert context.files_edited == frozenset()
+        assert context.files_written == frozenset()
+
+
+class TestExtractFileInteractions:
+    """Tests for extract_file_interactions function."""
+
+    def test_extract_read_interactions(self):
+        """Extracts Read tool calls as read interactions."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Reading...",
+                timestamp="2026-01-15T10:00:00Z",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/project/auth.py"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].file == "/project/auth.py"
+        assert interactions[0].action == "read"
+        assert interactions[0].timestamp == "2026-01-15T10:00:00Z"
+
+    def test_extract_edit_interactions(self):
+        """Extracts Edit tool calls as edit interactions."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Editing...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Edit", input={"file_path": "/project/auth.py", "old_string": "x", "new_string": "y"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].action == "edit"
+
+    def test_extract_write_interactions(self):
+        """Extracts Write tool calls as write interactions."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Writing...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Write", input={"file_path": "/new/file.py", "content": "..."}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].action == "write"
+
+    def test_extract_grep_interactions(self):
+        """Extracts Grep tool calls as grep interactions."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Searching...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Grep", input={"path": "/project", "pattern": "def"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].action == "grep"
+        assert interactions[0].file == "/project"
+
+    def test_extract_notebook_edit_interactions(self):
+        """Extracts NotebookEdit tool calls as edit interactions."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Editing notebook...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="NotebookEdit", input={"notebook_path": "/nb.ipynb"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].action == "edit"
+        assert interactions[0].file == "/nb.ipynb"
+
+    def test_extract_ignores_unknown_tools(self):
+        """Unknown tools are not extracted."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Custom...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="CustomTool", input={"file_path": "/a.py"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 0
+
+    def test_extract_skips_missing_file_path(self):
+        """Tool calls without file path are skipped."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Reading...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Read", input={}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 0
+
+    def test_extract_line_range_from_read(self):
+        """Read with offset/limit extracts line range."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Reading lines...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/a.py", "offset": 10, "limit": 20}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 1
+        assert interactions[0].lines == (10, 29)  # 10 + 20 - 1
+
+    def test_extract_multiple_interactions(self):
+        """Multiple tool calls across entries are extracted."""
+        from sage.transcript import extract_file_interactions
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Step 1...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/a.py"}),
+                    ToolCall(name="Edit", input={"file_path": "/b.py"}),
+                ),
+            ),
+            TranscriptEntry(
+                role="assistant",
+                content="Step 2...",
+                timestamp="t2",
+                tool_calls=(
+                    ToolCall(name="Write", input={"file_path": "/c.py"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        interactions = extract_file_interactions(window)
+
+        assert len(interactions) == 3
+        files = [i.file for i in interactions]
+        assert "/a.py" in files
+        assert "/b.py" in files
+        assert "/c.py" in files
+
+
+class TestBuildSessionCodeContext:
+    """Tests for build_session_code_context function."""
+
+    def test_build_context_categorizes_files(self):
+        """build_session_code_context categorizes files by action."""
+        from sage.transcript import build_session_code_context
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Working...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/read1.py"}),
+                    ToolCall(name="Read", input={"file_path": "/read2.py"}),
+                    ToolCall(name="Edit", input={"file_path": "/edited.py"}),
+                    ToolCall(name="Write", input={"file_path": "/written.py"}),
+                    ToolCall(name="Grep", input={"path": "/search"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        context = build_session_code_context(window)
+
+        assert context.files_read == frozenset(["/read1.py", "/read2.py"])
+        assert context.files_edited == frozenset(["/edited.py"])
+        assert context.files_written == frozenset(["/written.py"])
+        # Grep doesn't add to file sets
+        assert "/search" not in context.all_files
+
+    def test_build_context_deduplicates(self):
+        """build_session_code_context deduplicates files."""
+        from sage.transcript import build_session_code_context
+
+        entries = (
+            TranscriptEntry(
+                role="assistant",
+                content="Step 1...",
+                timestamp="t1",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/a.py"}),
+                ),
+            ),
+            TranscriptEntry(
+                role="assistant",
+                content="Step 2...",
+                timestamp="t2",
+                tool_calls=(
+                    ToolCall(name="Read", input={"file_path": "/a.py"}),
+                ),
+            ),
+        )
+        window = TranscriptWindow(entries=entries, cursor_position=100)
+
+        context = build_session_code_context(window)
+
+        assert context.files_read == frozenset(["/a.py"])
+        assert len(context.interactions) == 2  # Still has both interactions
+
+    def test_build_context_empty_window(self):
+        """build_session_code_context handles empty window."""
+        from sage.transcript import build_session_code_context
+
+        window = TranscriptWindow(entries=(), cursor_position=0)
+
+        context = build_session_code_context(window)
+
+        assert context.interactions == ()
+        assert context.all_files == frozenset()
+
+
+class TestGetSessionCodeContext:
+    """Tests for get_session_code_context convenience function."""
+
+    def test_get_session_code_context_from_file(self, tmp_path: Path):
+        """get_session_code_context reads transcript and builds context."""
+        from sage.transcript import get_session_code_context
+
+        transcript_path = tmp_path / "session.jsonl"
+        entries = [
+            {
+                "timestamp": "t1",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/a.py"}},
+                        {"type": "tool_use", "name": "Edit", "input": {"file_path": "/b.py"}},
+                    ],
+                },
+            },
+        ]
+        with open(transcript_path, "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+        context = get_session_code_context(transcript_path)
+
+        assert "/a.py" in context.files_read
+        assert "/b.py" in context.files_edited
+
+    def test_get_session_code_context_nonexistent_file(self, tmp_path: Path):
+        """get_session_code_context returns empty for nonexistent file."""
+        from sage.transcript import get_session_code_context
+
+        transcript_path = tmp_path / "nonexistent.jsonl"
+
+        context = get_session_code_context(transcript_path)
+
+        assert context.interactions == ()
+        assert context.all_files == frozenset()

@@ -6,6 +6,8 @@ extraction. Uses cursor-based incremental reading for efficient tailing.
 Architecture:
 - TranscriptEntry represents a single conversation turn
 - TranscriptWindow holds a collection of entries with cursor position
+- FileInteraction captures individual file operations (read/edit/write)
+- SessionCodeContext aggregates file interactions for checkpoint enrichment
 - Cursor-based reading enables incremental tailing for the watcher daemon
 
 Security:
@@ -34,6 +36,53 @@ class ToolCall:
     name: str
     input: dict[str, Any] = field(default_factory=dict)
     output: str = ""
+
+
+@dataclass(frozen=True)
+class FileInteraction:
+    """A single file interaction extracted from transcript tool calls.
+
+    Captures what Claude did with a file during the session.
+    """
+
+    file: str
+    action: str  # "read" | "edit" | "write" | "grep" | "glob"
+    timestamp: str
+    lines: tuple[int, int] | None = None  # Line range if applicable
+
+
+@dataclass(frozen=True)
+class SessionCodeContext:
+    """Aggregated code context for a session.
+
+    Built from transcript tool calls, captures which files were
+    read, edited, or written during the session.
+    """
+
+    interactions: tuple[FileInteraction, ...]
+    files_read: frozenset[str]
+    files_edited: frozenset[str]
+    files_written: frozenset[str]
+
+    @property
+    def files_changed(self) -> frozenset[str]:
+        """Files that were modified (edit or write)."""
+        return self.files_edited | self.files_written
+
+    @property
+    def all_files(self) -> frozenset[str]:
+        """All files touched during the session."""
+        return self.files_read | self.files_edited | self.files_written
+
+    @classmethod
+    def empty(cls) -> "SessionCodeContext":
+        """Create an empty context."""
+        return cls(
+            interactions=(),
+            files_read=frozenset(),
+            files_edited=frozenset(),
+            files_written=frozenset(),
+        )
 
 
 @dataclass(frozen=True)
@@ -444,3 +493,145 @@ def load_cursor(path: Path) -> CursorState | None:
     except (json.JSONDecodeError, OSError, IOError) as e:
         logger.warning(f"Failed to load cursor: {e}")
         return None
+
+
+# =============================================================================
+# File Interaction Extraction
+# =============================================================================
+
+# Map tool names to action types
+_TOOL_ACTION_MAP: dict[str, str] = {
+    "Read": "read",
+    "Edit": "edit",
+    "Write": "write",
+    "Grep": "grep",
+    "Glob": "glob",
+    "NotebookEdit": "edit",
+}
+
+
+def _extract_file_path(tool_input: dict[str, Any]) -> str | None:
+    """Extract file path from tool input.
+
+    Looks for common file path argument names.
+    """
+    for key in ("file_path", "path", "file", "notebook_path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _extract_line_range(
+    tool_input: dict[str, Any],
+    action: str,
+) -> tuple[int, int] | None:
+    """Extract line range from tool input if available.
+
+    Args:
+        tool_input: The tool's input dictionary
+        action: The action type (read, edit, etc.)
+
+    Returns:
+        Tuple of (start_line, end_line) or None
+    """
+    if action == "read":
+        offset = tool_input.get("offset")
+        limit = tool_input.get("limit")
+        if offset is not None and limit is not None:
+            try:
+                start = int(offset)
+                end = start + int(limit) - 1
+                return (start, end)
+            except (ValueError, TypeError):
+                pass
+    # Edit doesn't expose line numbers directly in input
+    # We could potentially parse old_string to find location,
+    # but that's fragile and expensive
+    return None
+
+
+def extract_file_interactions(window: TranscriptWindow) -> tuple[FileInteraction, ...]:
+    """Extract file interactions from transcript tool calls.
+
+    Args:
+        window: TranscriptWindow to extract from
+
+    Returns:
+        Tuple of FileInteraction objects in chronological order
+    """
+    interactions: list[FileInteraction] = []
+
+    for entry in window.entries:
+        for tool in entry.tool_calls:
+            action = _TOOL_ACTION_MAP.get(tool.name)
+            if action is None:
+                continue
+
+            file_path = _extract_file_path(tool.input)
+            if not file_path:
+                continue
+
+            lines = _extract_line_range(tool.input, action)
+
+            interactions.append(
+                FileInteraction(
+                    file=file_path,
+                    action=action,
+                    timestamp=entry.timestamp,
+                    lines=lines,
+                )
+            )
+
+    return tuple(interactions)
+
+
+def build_session_code_context(window: TranscriptWindow) -> SessionCodeContext:
+    """Build aggregated code context from transcript.
+
+    Extracts all file interactions and categorizes them by action type.
+
+    Args:
+        window: TranscriptWindow to extract from
+
+    Returns:
+        SessionCodeContext with categorized file sets
+    """
+    interactions = extract_file_interactions(window)
+
+    files_read: set[str] = set()
+    files_edited: set[str] = set()
+    files_written: set[str] = set()
+
+    for interaction in interactions:
+        if interaction.action == "read":
+            files_read.add(interaction.file)
+        elif interaction.action == "edit":
+            files_edited.add(interaction.file)
+        elif interaction.action == "write":
+            files_written.add(interaction.file)
+        # grep and glob don't add to file sets (they search, not access)
+
+    return SessionCodeContext(
+        interactions=interactions,
+        files_read=frozenset(files_read),
+        files_edited=frozenset(files_edited),
+        files_written=frozenset(files_written),
+    )
+
+
+def get_session_code_context(transcript_path: Path) -> SessionCodeContext:
+    """Get code context for a transcript file.
+
+    Convenience function that reads the transcript and builds context.
+
+    Args:
+        transcript_path: Path to the JSONL transcript file
+
+    Returns:
+        SessionCodeContext (empty if transcript can't be read)
+    """
+    window = read_full_transcript(transcript_path)
+    if window.is_empty:
+        return SessionCodeContext.empty()
+    return build_session_code_context(window)
