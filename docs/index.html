@@ -679,7 +679,7 @@
 
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">v3.0 — Plugin Architecture</div>
+      <div class="hero-badge">v3.1 — Code-Aware Memory</div>
       <h1>Claude that <span>remembers</span><br>across sessions</h1>
       <p class="hero-sub">Semantic memory for Claude Code. Watcher daemon detects compaction, checkpoints capture research state, knowledge persists across sessions.</p>
       <div class="cta-group">
@@ -772,6 +772,20 @@
           <div class="feature-title">Plugin Architecture</div>
           <div class="feature-desc">Watcher daemon with event-driven plugins. Session tracking, checkpoint queueing, TTL-based injection.</div>
           <div class="feature-tag">v3.0+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4BB;</div>
+          <div class="feature-title">Code-Aware Memory</div>
+          <div class="feature-desc">Checkpoints track files_explored, files_changed, and code_refs. Dual embedding models—BGE for prose, CodeSage for code.</div>
+          <div class="feature-tag">v3.1+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F9F9;</div>
+          <div class="feature-title">Storage Maintenance</div>
+          <div class="feature-desc">Automatic pruning by age and count. TTL-cached knowledge index. Configurable thresholds via tuning.yaml.</div>
+          <div class="feature-tag">v3.1+</div>
         </div>
       </div>
     </div>
@@ -916,7 +930,7 @@
   <footer>
     <div class="container">
       <div class="footer-content">
-        <div class="footer-logo">sage v3.0.0</div>
+        <div class="footer-logo">sage v3.1.0</div>
         <div class="footer-links">
           <a href="https://github.com/b17z/sage">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">

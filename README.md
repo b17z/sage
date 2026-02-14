@@ -119,7 +119,7 @@ sage config set checkpoint_max_count 100    # Cap checkpoints
 
 ```bash
 pip install -e ".[dev,mcp]"
-pytest tests/ -v  # 1369 tests
+pytest tests/ -v  # 1439 tests
 ```
 
 ## License

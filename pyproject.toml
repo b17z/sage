@@ -1,6 +1,6 @@
 [project]
 name = "claude-sage"
-version = "3.0.0"
+version = "3.1.0"
 description = "Semantic checkpointing for Claude Code"
 readme = "README.md"
 keywords = ["claude", "claude-code", "checkpointing", "memory", "mcp", "ai"]
