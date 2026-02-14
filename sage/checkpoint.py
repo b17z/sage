@@ -57,6 +57,21 @@ class Contribution:
 
 
 @dataclass(frozen=True)
+class CodeRef:
+    """Reference to code that informed the checkpoint.
+
+    Links research conclusions to specific code locations.
+    Can be hydrated from the code index on checkpoint load.
+    """
+
+    file: str
+    lines: tuple[int, int] | None = None
+    chunk_id: str | None = None  # Link to codesage index for retrieval
+    snippet: str | None = None  # Cached snippet (survives re-index)
+    relevance: str = "context"  # "supports" | "contradicts" | "context" | "stale"
+
+
+@dataclass(frozen=True)
 class Checkpoint:
     """A semantic checkpoint of research state."""
 
@@ -91,6 +106,11 @@ class Checkpoint:
     # Template support (v1.2)
     template: str = "default"  # Template name for rendering
     custom_fields: dict = field(default_factory=dict)  # Extra fields for non-default templates
+
+    # Code context (v1.3) - automatic context capture from session
+    code_refs: tuple[CodeRef, ...] = ()  # Explicit code references
+    files_explored: frozenset[str] = field(default_factory=frozenset)  # Files read during session
+    files_changed: frozenset[str] = field(default_factory=frozenset)  # Files edited/written
 
 
 def generate_checkpoint_id(description: str) -> CheckpointId:
@@ -139,6 +159,9 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
         "action_goal": checkpoint.action_goal or None,
         "action_type": checkpoint.action_type or None,
         "template": checkpoint.template if checkpoint.template != "default" else None,
+        # Code context (v1.3) - stored in frontmatter for structured access
+        "files_explored": sorted(checkpoint.files_explored) if checkpoint.files_explored else None,
+        "files_changed": sorted(checkpoint.files_changed) if checkpoint.files_changed else None,
     }
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
@@ -196,6 +219,26 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
         lines.append("## Unique Contributions")
         for c in checkpoint.unique_contributions:
             lines.append(f"- **{c.type}**: {c.content}")
+        lines.append("")
+
+    # Code references (v1.3)
+    if checkpoint.code_refs:
+        lines.append("## Code References")
+        for ref in checkpoint.code_refs:
+            line_info = f":{ref.lines[0]}-{ref.lines[1]}" if ref.lines else ""
+            relevance_marker = {
+                "supports": "[+]",
+                "contradicts": "[-]",
+                "context": "[~]",
+                "stale": "[!]",
+            }.get(ref.relevance, "[?]")
+            lines.append(f"- {relevance_marker} `{ref.file}{line_info}`")
+            if ref.snippet:
+                # Indent snippet as code block
+                lines.append("  ```")
+                for snippet_line in ref.snippet.split("\n")[:5]:  # Limit to 5 lines
+                    lines.append(f"  {snippet_line}")
+                lines.append("  ```")
         lines.append("")
 
     body = "\n".join(lines)
@@ -307,6 +350,12 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
                 if contrib:
                     contributions.append(contrib)
 
+        # Parse code context from frontmatter (v1.3)
+        files_explored_raw = fm.get("files_explored", [])
+        files_changed_raw = fm.get("files_changed", [])
+        files_explored = frozenset(files_explored_raw) if files_explored_raw else frozenset()
+        files_changed = frozenset(files_changed_raw) if files_changed_raw else frozenset()
+
         return Checkpoint(
             id=fm.get("id", ""),
             ts=fm.get("ts", ""),
@@ -328,6 +377,9 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             message_count=fm.get("message_count", 0),
             token_estimate=fm.get("token_estimate", 0),
             template=fm.get("template", "default"),
+            # Code context (v1.3)
+            files_explored=files_explored,
+            files_changed=files_changed,
         )
     except (yaml.YAMLError, KeyError, ValueError):
         return None
@@ -567,13 +619,137 @@ def is_duplicate_checkpoint(
     return DuplicateCheckResult(is_duplicate=False)
 
 
+# ============================================================================
+# Checkpoint Maintenance
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class MaintenanceResult:
+    """Result of checkpoint maintenance operation."""
+
+    pruned_by_age: int = 0
+    pruned_by_cap: int = 0
+    total_remaining: int = 0
+
+
+def run_checkpoint_maintenance(
+    project_path: Path | None = None,
+    max_age_days: int | None = None,
+    max_count: int | None = None,
+) -> MaintenanceResult:
+    """Prune old checkpoints and cap to max count.
+
+    Executes in order:
+    1. Prune checkpoints older than max_age_days
+    2. Cap remaining checkpoints to max_count (keeping most recent)
+    3. Clean up orphaned embeddings for deleted checkpoints
+
+    Args:
+        project_path: Optional project path for project-local checkpoints
+        max_age_days: Override config checkpoint_max_age_days (0 = never prune)
+        max_count: Override config checkpoint_max_count (0 = unlimited)
+
+    Returns:
+        MaintenanceResult with counts of pruned and remaining checkpoints
+    """
+    from datetime import timedelta
+
+    config = get_sage_config(project_path)
+
+    # Use provided values or fall back to config
+    if max_age_days is None:
+        max_age_days = config.checkpoint_max_age_days
+    if max_count is None:
+        max_count = config.checkpoint_max_count
+
+    checkpoints_dir = get_checkpoints_dir(project_path)
+
+    if not checkpoints_dir.exists():
+        return MaintenanceResult()
+
+    # Get all checkpoint files with mtime
+    checkpoint_files = []
+    for ext in [".md", ".yaml"]:
+        for f in checkpoints_dir.glob(f"*{ext}"):
+            try:
+                mtime = f.stat().st_mtime
+                checkpoint_files.append((f, mtime))
+            except OSError:
+                # File may have been deleted, skip
+                continue
+
+    if not checkpoint_files:
+        return MaintenanceResult()
+
+    # Sort by mtime descending (newest first)
+    checkpoint_files.sort(key=lambda x: x[1], reverse=True)
+
+    pruned_by_age = 0
+    pruned_by_cap = 0
+
+    # Phase 1: Prune by age
+    if max_age_days > 0:
+        from datetime import datetime
+
+        cutoff = datetime.now().timestamp() - timedelta(days=max_age_days).total_seconds()
+
+        remaining_files = []
+        for file_path, mtime in checkpoint_files:
+            if mtime < cutoff:
+                # File is too old - delete it
+                checkpoint_id = file_path.stem
+                try:
+                    file_path.unlink()
+                    _remove_checkpoint_embedding(checkpoint_id)
+                    pruned_by_age += 1
+                    logger.info(f"Pruned old checkpoint: {checkpoint_id}")
+                except OSError as e:
+                    logger.warning(f"Failed to prune checkpoint {checkpoint_id}: {e}")
+            else:
+                remaining_files.append((file_path, mtime))
+
+        checkpoint_files = remaining_files
+
+    # Phase 2: Cap by count
+    if max_count > 0 and len(checkpoint_files) > max_count:
+        # Files are sorted newest-first, so we delete from the end
+        to_delete = checkpoint_files[max_count:]
+
+        for file_path, _ in to_delete:
+            checkpoint_id = file_path.stem
+            try:
+                file_path.unlink()
+                _remove_checkpoint_embedding(checkpoint_id)
+                pruned_by_cap += 1
+                logger.info(f"Pruned excess checkpoint: {checkpoint_id}")
+            except OSError as e:
+                logger.warning(f"Failed to prune checkpoint {checkpoint_id}: {e}")
+
+        checkpoint_files = checkpoint_files[:max_count]
+
+    total_remaining = len(checkpoint_files)
+
+    if pruned_by_age > 0 or pruned_by_cap > 0:
+        logger.info(
+            f"Checkpoint maintenance: pruned {pruned_by_age} by age, "
+            f"{pruned_by_cap} by cap, {total_remaining} remaining"
+        )
+
+    return MaintenanceResult(
+        pruned_by_age=pruned_by_age,
+        pruned_by_cap=pruned_by_cap,
+        total_remaining=total_remaining,
+    )
+
+
 def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) -> Path:
     """Save a checkpoint to disk as Markdown with YAML frontmatter.
 
     Uses atomic write (temp file + rename) to prevent data corruption on crash.
+    Optionally runs maintenance to prune old checkpoints (if maintenance_on_save=True).
     """
-    import os
-    import tempfile
+    from sage.atomic import atomic_write_text
 
     checkpoints_dir = ensure_checkpoints_dir(project_path)
 
@@ -582,27 +758,22 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
 
     file_path = checkpoints_dir / f"{checkpoint.id}.md"
 
-    # Atomic write: temp file + rename
-    fd, temp_path = tempfile.mkstemp(
-        dir=checkpoints_dir,
-        prefix=f".{checkpoint.id}_",
-        suffix=".md.tmp",
-    )
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(content)
-        os.chmod(temp_path, 0o600)
-        os.rename(temp_path, file_path)
-    except Exception:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-        raise
+    # Atomic write via shared utility
+    result = atomic_write_text(file_path, content, mode=0o600)
+    if result.is_err():
+        raise OSError(f"Failed to save checkpoint: {result.unwrap_err().message}")
 
     # Store thesis embedding for deduplication (non-blocking, failures logged)
     if checkpoint.thesis:
         _add_checkpoint_embedding(checkpoint.id, checkpoint.thesis)
+
+    # Run maintenance if enabled (non-blocking, failures logged)
+    config = get_sage_config(project_path)
+    if config.maintenance_on_save:
+        try:
+            run_checkpoint_maintenance(project_path)
+        except Exception as e:
+            logger.warning(f"Checkpoint maintenance failed: {e}")
 
     return file_path
 
@@ -840,6 +1011,36 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
         parts.append("## Action Context\n")
         parts.append(f"**Goal**: {checkpoint.action_goal}\n")
         parts.append(f"**Type**: {checkpoint.action_type}\n")
+        parts.append("\n")
+
+    # Code context (v1.3)
+    if checkpoint.code_refs:
+        parts.append("## Code References\n")
+        for ref in checkpoint.code_refs:
+            line_info = f":{ref.lines[0]}-{ref.lines[1]}" if ref.lines else ""
+            relevance_marker = {
+                "supports": "[+]",
+                "contradicts": "[-]",
+                "context": "[~]",
+                "stale": "[!]",
+            }.get(ref.relevance, "[?]")
+            parts.append(f"- {relevance_marker} `{ref.file}{line_info}`\n")
+        parts.append("\n")
+
+    if checkpoint.files_changed:
+        parts.append("## Files Changed\n")
+        for f in sorted(checkpoint.files_changed):
+            parts.append(f"- `{f}`\n")
+        parts.append("\n")
+
+    if checkpoint.files_explored and not checkpoint.files_changed:
+        # Only show explored if no changes (otherwise it's redundant)
+        parts.append("## Files Explored\n")
+        for f in sorted(checkpoint.files_explored)[:10]:  # Limit to 10
+            parts.append(f"- `{f}`\n")
+        if len(checkpoint.files_explored) > 10:
+            parts.append(f"- _...and {len(checkpoint.files_explored) - 10} more_\n")
+        parts.append("\n")
 
     return "".join(parts)
 
@@ -886,6 +1087,10 @@ def create_checkpoint_from_dict(
         "issues_found",
         "suggestions",
         "files_reviewed",
+        # Code context (v1.3)
+        "code_refs",
+        "files_explored",
+        "files_changed",
     }
     custom_fields = {k: v for k, v in data.items() if k not in standard_fields}
 
@@ -927,4 +1132,74 @@ def create_checkpoint_from_dict(
         action_type=data.get("action", {}).get("type", ""),
         template=template,
         custom_fields=custom_fields,
+        # Code context (v1.3)
+        code_refs=tuple(
+            CodeRef(
+                file=r.get("file", ""),
+                lines=tuple(r["lines"]) if r.get("lines") else None,
+                chunk_id=r.get("chunk_id"),
+                snippet=r.get("snippet"),
+                relevance=r.get("relevance", "context"),
+            )
+            for r in data.get("code_refs", [])
+        ),
+        files_explored=frozenset(data.get("files_explored", [])),
+        files_changed=frozenset(data.get("files_changed", [])),
     )
+
+
+def enrich_checkpoint_with_code_context(
+    checkpoint: Checkpoint,
+    transcript_path: Path,
+) -> Checkpoint:
+    """Enrich a checkpoint with code context from the session transcript.
+
+    Extracts file interactions from the transcript and adds them to the
+    checkpoint's files_explored and files_changed fields.
+
+    Args:
+        checkpoint: The checkpoint to enrich
+        transcript_path: Path to the JSONL transcript file
+
+    Returns:
+        New Checkpoint with code context added (immutable, so returns copy)
+    """
+    from sage.transcript import get_session_code_context
+
+    context = get_session_code_context(transcript_path)
+
+    if context.all_files:
+        # Merge with any existing context (in case checkpoint already has some)
+        new_files_explored = checkpoint.files_explored | context.files_read
+        new_files_changed = checkpoint.files_changed | context.files_changed
+
+        # Create new checkpoint with updated fields
+        # Using dataclasses.replace would be cleaner but Checkpoint is frozen
+        return Checkpoint(
+            id=checkpoint.id,
+            ts=checkpoint.ts,
+            trigger=checkpoint.trigger,
+            core_question=checkpoint.core_question,
+            thesis=checkpoint.thesis,
+            confidence=checkpoint.confidence,
+            open_questions=checkpoint.open_questions,
+            sources=checkpoint.sources,
+            tensions=checkpoint.tensions,
+            unique_contributions=checkpoint.unique_contributions,
+            key_evidence=checkpoint.key_evidence,
+            reasoning_trace=checkpoint.reasoning_trace,
+            action_goal=checkpoint.action_goal,
+            action_type=checkpoint.action_type,
+            skill=checkpoint.skill,
+            project=checkpoint.project,
+            parent_checkpoint=checkpoint.parent_checkpoint,
+            message_count=checkpoint.message_count,
+            token_estimate=checkpoint.token_estimate,
+            template=checkpoint.template,
+            custom_fields=checkpoint.custom_fields,
+            code_refs=checkpoint.code_refs,
+            files_explored=new_files_explored,
+            files_changed=new_files_changed,
+        )
+
+    return checkpoint

@@ -839,3 +839,749 @@ Checkpoint without depth fields.
         assert parsed is not None
         assert parsed.message_count == 0
         assert parsed.token_estimate == 0
+
+
+class TestCheckpointMaintenance:
+    """Tests for checkpoint maintenance (pruning and capping)."""
+
+    @pytest.fixture
+    def maintenance_paths(self, tmp_path: Path):
+        """Set up paths for maintenance testing."""
+        checkpoints_dir = tmp_path / ".sage" / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+
+        with (
+            patch("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir),
+            patch("sage.checkpoint.SAGE_DIR", tmp_path / ".sage"),
+            patch("sage.checkpoint._add_checkpoint_embedding", return_value=True),
+            patch("sage.checkpoint._remove_checkpoint_embedding", return_value=True),
+        ):
+            yield checkpoints_dir
+
+    def test_maintenance_prunes_old_checkpoints(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() prunes checkpoints older than max_age_days."""
+        import os
+        import time
+
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create some checkpoints
+        for i in range(3):
+            cp = Checkpoint(
+                id=f"2026-01-{10+i:02d}T12-00-00_test-{i}",
+                ts=f"2026-01-{10+i:02d}T12:00:00Z",
+                trigger="manual",
+                core_question=f"Q{i}",
+                thesis=f"T{i}",
+                confidence=0.5,
+            )
+            save_checkpoint(cp)
+
+        # Make one file appear old (backdate mtime)
+        old_file = maintenance_paths / "2026-01-10T12-00-00_test-0.md"
+        old_time = time.time() - (100 * 24 * 3600)  # 100 days ago
+        os.utime(old_file, (old_time, old_time))
+
+        # Run maintenance with max_age=90 days
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 90
+            mock_cfg.return_value.checkpoint_max_count = 0
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance(max_age_days=90, max_count=0)
+
+        assert result.pruned_by_age == 1
+        assert result.total_remaining == 2
+        assert not old_file.exists()
+
+    def test_maintenance_respects_max_age_zero(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() skips age pruning when max_age_days=0."""
+        import os
+        import time
+
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create a checkpoint
+        cp = Checkpoint(
+            id="2026-01-10T12-00-00_test",
+            ts="2026-01-10T12:00:00Z",
+            trigger="manual",
+            core_question="Q",
+            thesis="T",
+            confidence=0.5,
+        )
+        save_checkpoint(cp)
+
+        # Make file very old
+        old_file = maintenance_paths / "2026-01-10T12-00-00_test.md"
+        old_time = time.time() - (365 * 24 * 3600)  # 1 year ago
+        os.utime(old_file, (old_time, old_time))
+
+        # Run with max_age=0 (disabled)
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 0
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance(max_age_days=0, max_count=0)
+
+        assert result.pruned_by_age == 0
+        assert old_file.exists()
+
+    def test_maintenance_caps_to_max_count(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() caps checkpoints to max_count."""
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create 5 checkpoints
+        for i in range(5):
+            cp = Checkpoint(
+                id=f"2026-01-{10+i:02d}T12-00-00_test-{i}",
+                ts=f"2026-01-{10+i:02d}T12:00:00Z",
+                trigger="manual",
+                core_question=f"Q{i}",
+                thesis=f"T{i}",
+                confidence=0.5,
+            )
+            save_checkpoint(cp)
+
+        # Cap to 3
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 3
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance(max_age_days=0, max_count=3)
+
+        assert result.pruned_by_cap == 2
+        assert result.total_remaining == 3
+
+    def test_maintenance_respects_max_count_zero(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() skips capping when max_count=0."""
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create many checkpoints
+        for i in range(10):
+            cp = Checkpoint(
+                id=f"2026-01-{10+i:02d}T12-00-00_test-{i}",
+                ts=f"2026-01-{10+i:02d}T12:00:00Z",
+                trigger="manual",
+                core_question=f"Q{i}",
+                thesis=f"T{i}",
+                confidence=0.5,
+            )
+            save_checkpoint(cp)
+
+        # max_count=0 means unlimited
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 0
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance(max_age_days=0, max_count=0)
+
+        assert result.pruned_by_cap == 0
+        assert result.total_remaining == 10
+
+    def test_maintenance_preserves_recent_checkpoints(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() preserves most recent checkpoints when capping."""
+        import time
+
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create checkpoints with slight time gaps
+        for i in range(5):
+            cp = Checkpoint(
+                id=f"2026-01-{10+i:02d}T12-00-00_test-{i}",
+                ts=f"2026-01-{10+i:02d}T12:00:00Z",
+                trigger="manual",
+                core_question=f"Q{i}",
+                thesis=f"T{i}",
+                confidence=0.5,
+            )
+            save_checkpoint(cp)
+            time.sleep(0.01)  # Ensure different mtime
+
+        # Cap to 2 - should keep the two newest
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 2
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance(max_age_days=0, max_count=2)
+
+        assert result.total_remaining == 2
+
+        # Newest files should remain
+        remaining_files = list(maintenance_paths.glob("*.md"))
+        assert len(remaining_files) == 2
+
+        # Should have the two most recent (highest numbered)
+        remaining_ids = {f.stem for f in remaining_files}
+        assert "2026-01-14T12-00-00_test-4" in remaining_ids
+        assert "2026-01-13T12-00-00_test-3" in remaining_ids
+
+    def test_maintenance_returns_correct_counts(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() returns correct MaintenanceResult."""
+        from sage.checkpoint import (
+            MaintenanceResult,
+            run_checkpoint_maintenance,
+        )
+
+        # No checkpoints
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 0
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance()
+
+        assert isinstance(result, MaintenanceResult)
+        assert result.pruned_by_age == 0
+        assert result.pruned_by_cap == 0
+        assert result.total_remaining == 0
+
+    def test_maintenance_handles_empty_directory(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() handles empty directory gracefully."""
+        from sage.checkpoint import run_checkpoint_maintenance
+
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 30
+            mock_cfg.return_value.checkpoint_max_count = 10
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance()
+
+        assert result.pruned_by_age == 0
+        assert result.pruned_by_cap == 0
+        assert result.total_remaining == 0
+
+    def test_maintenance_handles_corrupted_files(self, maintenance_paths: Path):
+        """run_checkpoint_maintenance() handles corrupted files gracefully."""
+        from sage.checkpoint import (
+            Checkpoint,
+            run_checkpoint_maintenance,
+            save_checkpoint,
+        )
+
+        # Create a valid checkpoint
+        cp = Checkpoint(
+            id="valid-checkpoint",
+            ts="2026-01-10T12:00:00Z",
+            trigger="manual",
+            core_question="Q",
+            thesis="T",
+            confidence=0.5,
+        )
+        save_checkpoint(cp)
+
+        # Create a corrupted file
+        corrupted = maintenance_paths / "corrupted.md"
+        corrupted.write_text("not valid yaml frontmatter")
+
+        # Maintenance should still work (counts files, not content)
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 0
+            mock_cfg.return_value.maintenance_on_save = False
+
+            result = run_checkpoint_maintenance()
+
+        # Both files should be counted
+        assert result.total_remaining == 2
+
+    def test_save_checkpoint_triggers_maintenance(self, maintenance_paths: Path):
+        """save_checkpoint() triggers maintenance when enabled."""
+        from sage.checkpoint import (
+            Checkpoint,
+            save_checkpoint,
+        )
+
+        # Create initial checkpoints
+        for i in range(5):
+            with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+                mock_cfg.return_value.checkpoint_max_age_days = 0
+                mock_cfg.return_value.checkpoint_max_count = 0
+                mock_cfg.return_value.maintenance_on_save = False
+
+                cp = Checkpoint(
+                    id=f"2026-01-{10+i:02d}T12-00-00_init-{i}",
+                    ts=f"2026-01-{10+i:02d}T12:00:00Z",
+                    trigger="manual",
+                    core_question=f"Q{i}",
+                    thesis=f"T{i}",
+                    confidence=0.5,
+                )
+                save_checkpoint(cp)
+
+        # Now save with maintenance enabled and max_count=3
+        with patch("sage.checkpoint.get_sage_config") as mock_cfg:
+            mock_cfg.return_value.checkpoint_max_age_days = 0
+            mock_cfg.return_value.checkpoint_max_count = 3
+            mock_cfg.return_value.maintenance_on_save = True
+
+            cp = Checkpoint(
+                id="2026-01-20T12-00-00_trigger",
+                ts="2026-01-20T12:00:00Z",
+                trigger="manual",
+                core_question="Q",
+                thesis="T",
+                confidence=0.5,
+            )
+            save_checkpoint(cp)
+
+        # Should have capped to 3
+        remaining = list(maintenance_paths.glob("*.md"))
+        assert len(remaining) == 3
+
+
+# =============================================================================
+# Code Context Tests (v1.3)
+# =============================================================================
+
+
+class TestCodeRef:
+    """Tests for CodeRef dataclass."""
+
+    def test_code_ref_is_frozen(self):
+        """CodeRef is immutable."""
+        from sage.checkpoint import CodeRef
+
+        ref = CodeRef(file="/path/to/file.py")
+        with pytest.raises(AttributeError):
+            ref.file = "/other/file.py"
+
+    def test_code_ref_with_all_fields(self):
+        """CodeRef stores all fields correctly."""
+        from sage.checkpoint import CodeRef
+
+        ref = CodeRef(
+            file="/path/to/file.py",
+            lines=(10, 50),
+            chunk_id="abc123",
+            snippet="def foo(): pass",
+            relevance="supports",
+        )
+        assert ref.file == "/path/to/file.py"
+        assert ref.lines == (10, 50)
+        assert ref.chunk_id == "abc123"
+        assert ref.snippet == "def foo(): pass"
+        assert ref.relevance == "supports"
+
+    def test_code_ref_default_values(self):
+        """CodeRef has sensible defaults."""
+        from sage.checkpoint import CodeRef
+
+        ref = CodeRef(file="/path/to/file.py")
+        assert ref.lines is None
+        assert ref.chunk_id is None
+        assert ref.snippet is None
+        assert ref.relevance == "context"
+
+
+class TestCheckpointCodeContext:
+    """Tests for checkpoint code context fields."""
+
+    def test_checkpoint_with_code_context(self):
+        """Checkpoint stores code context fields."""
+        cp = Checkpoint(
+            id="test-code-ctx",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/a.py", "/b.py"]),
+            files_changed=frozenset(["/c.py"]),
+        )
+        assert cp.files_explored == frozenset(["/a.py", "/b.py"])
+        assert cp.files_changed == frozenset(["/c.py"])
+
+    def test_checkpoint_code_context_default_empty(self):
+        """Checkpoint code context defaults to empty."""
+        cp = Checkpoint(
+            id="test-no-ctx",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+        )
+        assert cp.files_explored == frozenset()
+        assert cp.files_changed == frozenset()
+        assert cp.code_refs == ()
+
+    def test_checkpoint_with_code_refs(self):
+        """Checkpoint stores code refs."""
+        from sage.checkpoint import CodeRef
+
+        cp = Checkpoint(
+            id="test-code-refs",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            code_refs=(
+                CodeRef(file="/a.py", relevance="supports"),
+                CodeRef(file="/b.py", lines=(10, 20), relevance="context"),
+            ),
+        )
+        assert len(cp.code_refs) == 2
+        assert cp.code_refs[0].file == "/a.py"
+        assert cp.code_refs[1].lines == (10, 20)
+
+
+class TestCheckpointCodeContextSerialization:
+    """Tests for checkpoint code context markdown serialization."""
+
+    def test_files_explored_in_frontmatter(self):
+        """files_explored is serialized to frontmatter."""
+        cp = Checkpoint(
+            id="test-files-explored",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/a.py", "/b.py"]),
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "files_explored:" in md
+        assert "/a.py" in md
+        assert "/b.py" in md
+
+    def test_files_changed_in_frontmatter(self):
+        """files_changed is serialized to frontmatter."""
+        cp = Checkpoint(
+            id="test-files-changed",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_changed=frozenset(["/c.py"]),
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "files_changed:" in md
+        assert "/c.py" in md
+
+    def test_code_refs_in_body(self):
+        """code_refs are serialized to markdown body."""
+        from sage.checkpoint import CodeRef
+
+        cp = Checkpoint(
+            id="test-code-refs-body",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            code_refs=(
+                CodeRef(file="/a.py", relevance="supports"),
+                CodeRef(file="/b.py", lines=(10, 20), relevance="context"),
+            ),
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "## Code References" in md
+        assert "[+] `/a.py`" in md
+        assert "[~] `/b.py:10-20`" in md
+
+    def test_code_context_roundtrip(self, mock_checkpoint_paths):
+        """Code context survives save/load roundtrip."""
+        cp = Checkpoint(
+            id="test-roundtrip-ctx",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/a.py", "/b.py"]),
+            files_changed=frozenset(["/c.py"]),
+        )
+        save_checkpoint(cp)
+
+        loaded = load_checkpoint(cp.id)
+
+        assert loaded is not None
+        assert loaded.files_explored == frozenset(["/a.py", "/b.py"])
+        assert loaded.files_changed == frozenset(["/c.py"])
+
+    def test_empty_code_context_omitted(self):
+        """Empty code context fields are not in markdown."""
+        cp = Checkpoint(
+            id="test-no-ctx",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+        )
+        md = _checkpoint_to_markdown(cp)
+
+        assert "files_explored:" not in md
+        assert "files_changed:" not in md
+        assert "## Code References" not in md
+
+
+class TestFormatCheckpointCodeContext:
+    """Tests for format_checkpoint_for_context with code context."""
+
+    def test_format_includes_code_refs(self):
+        """format_checkpoint_for_context includes code refs."""
+        from sage.checkpoint import CodeRef
+
+        cp = Checkpoint(
+            id="test-fmt-refs",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            code_refs=(
+                CodeRef(file="/auth.py", relevance="supports"),
+            ),
+        )
+        formatted = format_checkpoint_for_context(cp)
+
+        assert "## Code References" in formatted
+        assert "[+] `/auth.py`" in formatted
+
+    def test_format_includes_files_changed(self):
+        """format_checkpoint_for_context includes files changed."""
+        cp = Checkpoint(
+            id="test-fmt-changed",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_changed=frozenset(["/edited.py", "/written.py"]),
+        )
+        formatted = format_checkpoint_for_context(cp)
+
+        assert "## Files Changed" in formatted
+        assert "`/edited.py`" in formatted
+        assert "`/written.py`" in formatted
+
+    def test_format_files_explored_shown_when_no_changes(self):
+        """format_checkpoint_for_context shows files explored when no changes."""
+        cp = Checkpoint(
+            id="test-fmt-explored",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/a.py", "/b.py"]),
+            files_changed=frozenset(),  # No changes
+        )
+        formatted = format_checkpoint_for_context(cp)
+
+        assert "## Files Explored" in formatted
+        assert "`/a.py`" in formatted
+
+    def test_format_files_explored_hidden_when_changes_exist(self):
+        """format_checkpoint_for_context hides files explored when changes exist."""
+        cp = Checkpoint(
+            id="test-fmt-hide-explored",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/a.py"]),
+            files_changed=frozenset(["/b.py"]),
+        )
+        formatted = format_checkpoint_for_context(cp)
+
+        # Files Changed is shown
+        assert "## Files Changed" in formatted
+        # Files Explored is hidden (redundant when changes exist)
+        assert "## Files Explored" not in formatted
+
+
+class TestCreateCheckpointFromDictCodeContext:
+    """Tests for create_checkpoint_from_dict with code context."""
+
+    def test_create_with_code_refs(self):
+        """create_checkpoint_from_dict handles code_refs."""
+        data = {
+            "core_question": "Q",
+            "thesis": "T",
+            "confidence": 0.8,
+            "code_refs": [
+                {"file": "/a.py", "relevance": "supports"},
+                {"file": "/b.py", "lines": [10, 20], "relevance": "context"},
+            ],
+        }
+        cp = create_checkpoint_from_dict(data, trigger="synthesis")
+
+        assert len(cp.code_refs) == 2
+        assert cp.code_refs[0].file == "/a.py"
+        assert cp.code_refs[0].relevance == "supports"
+        assert cp.code_refs[1].lines == (10, 20)
+
+    def test_create_with_files_explored(self):
+        """create_checkpoint_from_dict handles files_explored."""
+        data = {
+            "core_question": "Q",
+            "thesis": "T",
+            "confidence": 0.8,
+            "files_explored": ["/a.py", "/b.py"],
+            "files_changed": ["/c.py"],
+        }
+        cp = create_checkpoint_from_dict(data, trigger="synthesis")
+
+        assert cp.files_explored == frozenset(["/a.py", "/b.py"])
+        assert cp.files_changed == frozenset(["/c.py"])
+
+
+class TestEnrichCheckpointWithCodeContext:
+    """Tests for enrich_checkpoint_with_code_context function."""
+
+    def test_enrich_adds_file_context(self, tmp_path: Path):
+        """enrich_checkpoint_with_code_context adds files from transcript."""
+        import json
+
+        from sage.checkpoint import enrich_checkpoint_with_code_context
+
+        # Create a transcript
+        transcript_path = tmp_path / "session.jsonl"
+        entries = [
+            {
+                "timestamp": "t1",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/read.py"}},
+                        {"type": "tool_use", "name": "Edit", "input": {"file_path": "/edited.py"}},
+                    ],
+                },
+            },
+        ]
+        with open(transcript_path, "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+        # Create a checkpoint without context
+        cp = Checkpoint(
+            id="test-enrich",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+        )
+
+        # Enrich it
+        enriched = enrich_checkpoint_with_code_context(cp, transcript_path)
+
+        assert "/read.py" in enriched.files_explored
+        assert "/edited.py" in enriched.files_changed
+
+    def test_enrich_merges_with_existing_context(self, tmp_path: Path):
+        """enrich_checkpoint_with_code_context merges with existing context."""
+        import json
+
+        from sage.checkpoint import enrich_checkpoint_with_code_context
+
+        # Create a transcript
+        transcript_path = tmp_path / "session.jsonl"
+        entries = [
+            {
+                "timestamp": "t1",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/new.py"}},
+                    ],
+                },
+            },
+        ]
+        with open(transcript_path, "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+        # Create a checkpoint with existing context
+        cp = Checkpoint(
+            id="test-merge",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            files_explored=frozenset(["/existing.py"]),
+        )
+
+        # Enrich it
+        enriched = enrich_checkpoint_with_code_context(cp, transcript_path)
+
+        # Both files should be present
+        assert "/existing.py" in enriched.files_explored
+        assert "/new.py" in enriched.files_explored
+
+    def test_enrich_empty_transcript_returns_unchanged(self, tmp_path: Path):
+        """enrich_checkpoint_with_code_context returns unchanged for empty transcript."""
+        from sage.checkpoint import enrich_checkpoint_with_code_context
+
+        # Create empty transcript
+        transcript_path = tmp_path / "empty.jsonl"
+        transcript_path.write_text("")
+
+        cp = Checkpoint(
+            id="test-empty",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+        )
+
+        enriched = enrich_checkpoint_with_code_context(cp, transcript_path)
+
+        assert enriched.files_explored == frozenset()
+        assert enriched.files_changed == frozenset()
+
+    def test_enrich_nonexistent_transcript_returns_unchanged(self, tmp_path: Path):
+        """enrich_checkpoint_with_code_context returns unchanged for nonexistent file."""
+        from sage.checkpoint import enrich_checkpoint_with_code_context
+
+        transcript_path = tmp_path / "nonexistent.jsonl"
+
+        cp = Checkpoint(
+            id="test-nonexistent",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+        )
+
+        enriched = enrich_checkpoint_with_code_context(cp, transcript_path)
+
+        # Should return unchanged checkpoint
+        assert enriched.files_explored == frozenset()
+        assert enriched.files_changed == frozenset()
