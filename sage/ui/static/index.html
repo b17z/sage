@@ -45,13 +45,19 @@
             border-bottom: 1px solid var(--border);
         }
 
-        h1 {
+        .header-left h1 {
             font-size: 1.5rem;
             font-weight: 600;
         }
 
-        h1 span {
+        .header-left h1 span {
             color: var(--primary);
+        }
+
+        .header-left .subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
         }
 
         .stats {
@@ -116,6 +122,10 @@
             border-color: var(--primary);
         }
 
+        .search input::placeholder {
+            color: var(--text-muted);
+        }
+
         .list {
             display: flex;
             flex-direction: column;
@@ -151,6 +161,7 @@
         .card-meta {
             font-size: 0.75rem;
             color: var(--text-muted);
+            margin-top: 0.5rem;
         }
 
         .card-body {
@@ -198,6 +209,16 @@
             color: var(--text-muted);
         }
 
+        .tag.status-deprecated {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .tag.status-archived {
+            background: rgba(107, 114, 128, 0.2);
+            color: #9ca3af;
+        }
+
         .detail-panel {
             position: fixed;
             top: 0;
@@ -210,6 +231,7 @@
             overflow-y: auto;
             transform: translateX(100%);
             transition: transform 0.3s ease;
+            z-index: 100;
         }
 
         .detail-panel.open {
@@ -229,6 +251,10 @@
             color: var(--text-muted);
             font-size: 1.5rem;
             cursor: pointer;
+        }
+
+        .detail-close:hover {
+            color: var(--text);
         }
 
         .detail-content h2 {
@@ -255,6 +281,43 @@
             margin-bottom: 0.5rem;
         }
 
+        .detail-content code {
+            background: var(--bg);
+            padding: 0.125rem 0.375rem;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        .detail-content pre {
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.75rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .git-context {
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        .git-context .branch {
+            color: var(--success);
+        }
+
+        .git-context .commit {
+            font-family: monospace;
+        }
+
+        .git-context .dirty {
+            color: var(--warning);
+        }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -267,9 +330,61 @@
             color: var(--text-muted);
         }
 
+        .empty-hint {
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+            z-index: 50;
+        }
+
+        .overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
         @media (max-width: 768px) {
             .detail-panel {
                 width: 100%;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+
+            .stats {
+                width: 100%;
+                justify-content: flex-start;
             }
         }
     </style>
@@ -277,7 +392,10 @@
 <body>
     <div class="container">
         <header>
-            <h1><span>Sage</span> Research Memory</h1>
+            <div class="header-left">
+                <h1><span>Sage</span> Research Memory</h1>
+                <div class="subtitle">Checkpoints and knowledge from your Claude sessions</div>
+            </div>
             <div class="stats">
                 <div class="stat">
                     <span>Checkpoints:</span>
@@ -296,18 +414,26 @@
         </nav>
 
         <div class="search">
-            <input type="text" id="search" placeholder="Search...">
+            <input type="text" id="search" placeholder="Search by ID, content, or keywords...">
         </div>
 
         <div class="list" id="list">
             <div class="loading">Loading...</div>
         </div>
+
+        <footer>
+            <a href="https://github.com/b17z/sage" target="_blank">Sage</a> &middot;
+            Memory for Claude Code &middot;
+            <a href="http://localhost:5555/api/health" target="_blank">API</a>
+        </footer>
     </div>
+
+    <div class="overlay" id="overlay" onclick="closeDetail()"></div>
 
     <div class="detail-panel" id="detail-panel">
         <div class="detail-header">
             <h2 id="detail-title">Details</h2>
-            <button class="detail-close" onclick="closeDetail()">&times;</button>
+            <button class="detail-close" onclick="closeDetail()" title="Close (Esc)">&times;</button>
         </div>
         <div class="detail-content" id="detail-content"></div>
     </div>
@@ -329,6 +455,7 @@
                     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     currentView = btn.dataset.view;
+                    document.getElementById('search').value = '';
                     if (currentView === 'checkpoints') {
                         renderCheckpoints();
                     } else {
@@ -346,14 +473,21 @@
                     renderKnowledge(query);
                 }
             });
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeDetail();
+                }
+            });
         });
 
         async function loadHealth() {
             try {
                 const res = await fetch(`${API}/health`);
                 const data = await res.json();
-                document.getElementById('checkpoint-count').textContent = data.checkpoints;
-                document.getElementById('knowledge-count').textContent = data.knowledge;
+                document.getElementById('checkpoint-count').textContent = data.checkpoints || 0;
+                document.getElementById('knowledge-count').textContent = data.knowledge || 0;
             } catch (e) {
                 console.error('Failed to load health:', e);
             }
@@ -367,7 +501,12 @@
                 renderCheckpoints();
             } catch (e) {
                 console.error('Failed to load checkpoints:', e);
-                document.getElementById('list').innerHTML = '<div class="empty">Failed to load checkpoints</div>';
+                document.getElementById('list').innerHTML = `
+                    <div class="empty">
+                        Failed to load checkpoints
+                        <div class="empty-hint">Make sure the Sage API is running</div>
+                    </div>
+                `;
             }
         }
 
@@ -379,35 +518,65 @@
                 renderKnowledge();
             } catch (e) {
                 console.error('Failed to load knowledge:', e);
-                document.getElementById('list').innerHTML = '<div class="empty">Failed to load knowledge</div>';
+                document.getElementById('list').innerHTML = `
+                    <div class="empty">
+                        Failed to load knowledge
+                        <div class="empty-hint">Make sure the Sage API is running</div>
+                    </div>
+                `;
             }
         }
 
         function renderCheckpoints(filter = '') {
             const list = document.getElementById('list');
             const filtered = checkpoints.filter(cp =>
-                cp.thesis.toLowerCase().includes(filter) ||
-                cp.id.toLowerCase().includes(filter)
+                cp.thesis?.toLowerCase().includes(filter) ||
+                cp.id?.toLowerCase().includes(filter) ||
+                cp.core_question?.toLowerCase().includes(filter)
             );
 
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="empty">No checkpoints found</div>';
+                list.innerHTML = `
+                    <div class="empty">
+                        ${filter ? 'No checkpoints match your search' : 'No checkpoints yet'}
+                        <div class="empty-hint">
+                            ${filter ? 'Try a different search term' : 'Checkpoints are created during Claude research sessions'}
+                        </div>
+                    </div>
+                `;
                 return;
             }
 
             list.innerHTML = filtered.map(cp => {
-                const conf = cp.confidence * 100;
+                const conf = (cp.confidence || 0) * 100;
                 const confClass = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
-                const date = new Date(cp.ts).toLocaleDateString();
+                const date = cp.ts ? new Date(cp.ts).toLocaleDateString() : 'Unknown';
+                const displayId = cp.id?.split('_').slice(1).join('_') || cp.id || 'Untitled';
+
+                // Git context if available
+                let gitHtml = '';
+                if (cp.git_context) {
+                    const gc = cp.git_context;
+                    const branch = gc.branch || 'unknown';
+                    const commit = (gc.commit || '').substring(0, 7);
+                    const dirty = gc.dirty ? ' *' : '';
+                    gitHtml = `
+                        <div class="git-context">
+                            <span class="branch">${escapeHtml(branch)}</span>
+                            ${commit ? `<span class="commit">${escapeHtml(commit)}${dirty}</span>` : ''}
+                        </div>
+                    `;
+                }
 
                 return `
-                    <div class="card" onclick="showCheckpoint('${cp.id}')">
+                    <div class="card" onclick="showCheckpoint('${escapeAttr(cp.id)}')">
                         <div class="card-header">
-                            <span class="card-title">${escapeHtml(cp.id.split('_').slice(1).join('_') || cp.id)}</span>
+                            <span class="card-title">${escapeHtml(displayId)}</span>
                             <span class="confidence ${confClass}">${conf.toFixed(0)}%</span>
                         </div>
-                        <div class="card-body">${escapeHtml(cp.thesis)}</div>
-                        <div class="card-meta">${date} · ${cp.trigger}</div>
+                        <div class="card-body">${escapeHtml(cp.thesis || 'No thesis')}</div>
+                        <div class="card-meta">${date} · ${cp.trigger || 'manual'}</div>
+                        ${gitHtml}
                     </div>
                 `;
             }).join('');
@@ -416,26 +585,40 @@
         function renderKnowledge(filter = '') {
             const list = document.getElementById('list');
             const filtered = knowledge.filter(k =>
-                k.id.toLowerCase().includes(filter) ||
-                k.triggers.some(t => t.toLowerCase().includes(filter))
+                k.id?.toLowerCase().includes(filter) ||
+                k.content?.toLowerCase().includes(filter) ||
+                (k.triggers || []).some(t => t.toLowerCase().includes(filter))
             );
 
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="empty">No knowledge found</div>';
+                list.innerHTML = `
+                    <div class="empty">
+                        ${filter ? 'No knowledge matches your search' : 'No knowledge items yet'}
+                        <div class="empty-hint">
+                            ${filter ? 'Try a different search term' : 'Knowledge is saved via sage_save_knowledge() in Claude sessions'}
+                        </div>
+                    </div>
+                `;
                 return;
             }
 
-            list.innerHTML = filtered.map(k => `
-                <div class="card" onclick="showKnowledge('${k.id}')">
-                    <div class="card-header">
-                        <span class="card-title">${escapeHtml(k.id)}</span>
-                        <span class="tag">${k.type}</span>
+            list.innerHTML = filtered.map(k => {
+                const statusClass = k.status === 'deprecated' ? 'status-deprecated' :
+                                   k.status === 'archived' ? 'status-archived' : '';
+                return `
+                    <div class="card" onclick="showKnowledge('${escapeAttr(k.id)}')">
+                        <div class="card-header">
+                            <span class="card-title">${escapeHtml(k.id)}</span>
+                            <span class="tag ${statusClass}">${k.item_type || 'knowledge'}</span>
+                        </div>
+                        <div class="card-body">${escapeHtml(truncate(k.content, 150))}</div>
+                        <div class="tags">
+                            ${(k.triggers || []).slice(0, 5).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
+                            ${(k.triggers || []).length > 5 ? `<span class="tag">+${k.triggers.length - 5}</span>` : ''}
+                        </div>
                     </div>
-                    <div class="tags">
-                        ${k.triggers.slice(0, 5).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         async function showCheckpoint(id) {
@@ -445,10 +628,24 @@
                 const cp = data.checkpoint;
 
                 document.getElementById('detail-title').textContent = cp.core_question || 'Checkpoint';
+
+                let gitHtml = '';
+                if (cp.git_context) {
+                    const gc = cp.git_context;
+                    gitHtml = `
+                        <h3>Git Context</h3>
+                        <p>
+                            <strong>Branch:</strong> ${escapeHtml(gc.branch || 'unknown')}<br>
+                            <strong>Commit:</strong> <code>${escapeHtml((gc.commit || '').substring(0, 7))}</code>
+                            ${gc.dirty ? '<span class="dirty"> (uncommitted changes)</span>' : ''}
+                        </p>
+                    `;
+                }
+
                 document.getElementById('detail-content').innerHTML = `
                     <h3>Thesis</h3>
                     <p>${escapeHtml(cp.thesis)}</p>
-                    <p><strong>Confidence:</strong> ${(cp.confidence * 100).toFixed(0)}%</p>
+                    <p><strong>Confidence:</strong> ${((cp.confidence || 0) * 100).toFixed(0)}%</p>
 
                     ${cp.key_evidence?.length ? `
                         <h3>Key Evidence</h3>
@@ -467,8 +664,18 @@
                         `).join('')}</ul>
                     ` : ''}
 
-                    <h3>Raw</h3>
-                    <pre style="background: var(--bg); padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem;">${escapeHtml(data.formatted)}</pre>
+                    ${cp.tensions?.length ? `
+                        <h3>Tensions</h3>
+                        <ul>${cp.tensions.map(t => `
+                            <li><strong>${escapeHtml((t.between || []).join(' vs '))}</strong>: ${escapeHtml(t.nature)}
+                            ${t.resolution ? `— ${escapeHtml(t.resolution)}` : '— unresolved'}</li>
+                        `).join('')}</ul>
+                    ` : ''}
+
+                    ${gitHtml}
+
+                    <h3>Formatted</h3>
+                    <pre>${escapeHtml(data.formatted || JSON.stringify(cp, null, 2))}</pre>
                 `;
                 openDetail();
             } catch (e) {
@@ -483,9 +690,14 @@
                 const k = data.knowledge;
 
                 document.getElementById('detail-title').textContent = k.id;
+
+                const statusBadge = k.status && k.status !== 'active' ?
+                    `<span class="tag status-${k.status}">${k.status}</span>` : '';
+
                 document.getElementById('detail-content').innerHTML = `
                     <div class="tags" style="margin-bottom: 1rem;">
-                        ${k.triggers.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
+                        ${(k.triggers || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
+                        ${statusBadge}
                     </div>
 
                     <h3>Content</h3>
@@ -494,14 +706,27 @@
                     ${k.code_links?.length ? `
                         <h3>Code Links</h3>
                         <ul>${k.code_links.map(l => `
-                            <li><code>${escapeHtml(l.chunk_id)}</code> (${l.relation})</li>
+                            <li>
+                                <code>${escapeHtml(l.chunk_id)}</code>
+                                ${l.relation ? `(${escapeHtml(l.relation)})` : ''}
+                                ${l.note ? `— ${escapeHtml(l.note)}` : ''}
+                            </li>
                         `).join('')}</ul>
                     ` : ''}
 
                     <h3>Metadata</h3>
-                    <p><strong>Type:</strong> ${k.item_type}</p>
-                    <p><strong>Source:</strong> ${k.metadata?.source || 'Unknown'}</p>
-                    <p><strong>Added:</strong> ${k.metadata?.added || 'Unknown'}</p>
+                    <p>
+                        <strong>Type:</strong> ${escapeHtml(k.item_type || 'knowledge')}<br>
+                        <strong>Status:</strong> ${escapeHtml(k.status || 'active')}<br>
+                        ${k.metadata?.source ? `<strong>Source:</strong> ${escapeHtml(k.metadata.source)}<br>` : ''}
+                        ${k.metadata?.added ? `<strong>Added:</strong> ${escapeHtml(k.metadata.added)}<br>` : ''}
+                        ${k.skill ? `<strong>Skill:</strong> ${escapeHtml(k.skill)}<br>` : ''}
+                    </p>
+
+                    ${k.deprecation_reason ? `
+                        <h3>Deprecation</h3>
+                        <p>${escapeHtml(k.deprecation_reason)}</p>
+                    ` : ''}
                 `;
                 openDetail();
             } catch (e) {
@@ -511,18 +736,34 @@
 
         function openDetail() {
             document.getElementById('detail-panel').classList.add('open');
+            document.getElementById('overlay').classList.add('open');
         }
 
         function closeDetail() {
             document.getElementById('detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('open');
         }
 
         function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function escapeAttr(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '&quot;');
+        }
+
+        function truncate(str, len) {
             if (!str) return '';
-            return str.replace(/&/g, '&amp;')
-                      .replace(/</g, '&lt;')
-                      .replace(/>/g, '&gt;')
-                      .replace(/"/g, '&quot;');
+            if (str.length <= len) return str;
+            return str.substring(0, len) + '...';
         }
     </script>
 </body>
