@@ -219,9 +219,85 @@ To restore: `sage_update_knowledge(knowledge_id, status="active")`
 
 ### Staleness Detection
 
-Knowledge can become stale when code changes. Future feature: detect when `code_refs` in knowledge items point to changed code.
+Knowledge items with code links are automatically checked for staleness.
+When linked code is refactored or deleted, `sage_health()` reports stale links.
 
-See [Knowledge Decay](../design-knowledge-decay.md) for design discussion.
+See [Code-Linked Knowledge](#code-linked-knowledge-v31) below.
+
+## Code-Linked Knowledge (v3.1)
+
+Knowledge can link directly to code locations, enabling:
+- **Forward lookup**: Query concept → get knowledge + relevant code
+- **Reverse lookup**: Click on code → see related knowledge
+- **Staleness detection**: Know when linked code has changed
+
+### Linking to Code
+
+```python
+sage_save_knowledge(
+    knowledge_id="auth-middleware-pattern",
+    content="The auth middleware uses JWT verification before...",
+    keywords=["auth", "middleware", "jwt"],
+    code_links=[
+        {"chunk_id": "sage/auth/middleware.py::verify_token", "relation": "implements"},
+        {"chunk_id": "sage/auth/middleware.py::AuthMiddleware", "relation": "example"},
+    ]
+)
+```
+
+The `chunk_id` format is `"file/path.py::symbol_name"`. This is semantic enough to survive minor refactors — the code index resolves it by symbol name.
+
+### Link Relations
+
+| Relation | Meaning |
+|----------|---------|
+| `implements` | This code implements the concept (default) |
+| `example` | Example usage of the concept |
+| `related` | Tangentially related code |
+| `deprecated_by` | This code deprecates the knowledge |
+
+### Recall with Code Context
+
+When you call `sage_recall_knowledge("auth patterns")`, results include resolved code snippets:
+
+```
+## auth-middleware-pattern
+The auth middleware uses JWT verification before...
+
+### Linked Code
+**verify_token** (sage/auth/middleware.py:42)
+```python
+def verify_token(token: str) -> Claims:
+    """Verify JWT and return claims."""
+    ...
+```
+
+### Reverse Lookup
+
+Find knowledge that links to specific code:
+
+```python
+sage_code_context(file="sage/auth/middleware.py", symbol="verify_token")
+```
+
+Returns all knowledge items that reference that code location.
+
+### Staleness Detection
+
+When code is refactored, `sage_health()` reports stale links:
+
+```
+✓ Knowledge: 42 items
+! Stale code links: 3 in 2 knowledge items
+```
+
+This means some `chunk_id` references no longer resolve in the code index.
+
+### Why This Matters
+
+**For Agents**: Subagents start with fresh context. Instead of re-exploring the codebase, they call `sage_recall_knowledge("auth")` and get both the insight AND the relevant code snippets.
+
+**For Engineers**: When reviewing knowledge, you see exactly what code informed it. When code changes, you know which knowledge might be outdated.
 
 ## Learning-Oriented Usage
 

@@ -30,6 +30,7 @@ The same features serve both — checkpoints help agents resume after compaction
 | Feature | Purpose | Guide |
 |---------|---------|-------|
 | [Code Context](./features/code-context.md) | Track what code informed your research | files_explored, files_changed, code_refs |
+| [Code-Linked Knowledge](./features/knowledge.md#code-linked-knowledge-v31) | Link knowledge to code locations | Forward/reverse lookup, staleness detection |
 | [Code Indexing](./features/code-indexing.md) | Semantic search over codebases | Find code by intent, not keywords |
 | [Embeddings](./features/embeddings.md) | Dual models for prose and code | BGE for text, CodeSage for code |
 
@@ -104,8 +105,9 @@ sage_autosave_check(trigger_event, ...)
 
 ### Knowledge
 ```python
-sage_save_knowledge(knowledge_id, content, keywords, ...)
-sage_recall_knowledge(query)
+sage_save_knowledge(knowledge_id, content, keywords, code_links=[], ...)
+sage_recall_knowledge(query)       # Returns knowledge + resolved code
+sage_code_context(file, symbol)    # Reverse lookup: code → knowledge
 sage_list_knowledge()
 sage_update_knowledge(knowledge_id, ...)
 sage_remove_knowledge(knowledge_id)

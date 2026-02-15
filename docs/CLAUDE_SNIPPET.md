@@ -66,3 +66,6 @@ Before starting work on a topic, check for existing knowledge:
 ```
 sage_recall_knowledge(query="<what you're working on>")
 ```
+
+### Presenting Results
+MCP tool results display as raw JSON. When calling Sage tools that return knowledge, checkpoints, or code context, **format the results nicely in your response** for readability.
