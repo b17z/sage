@@ -23,30 +23,30 @@
     {
       "name": "checkpoint",
       "description": "Save or list research checkpoints",
-      "file": "../commands/checkpoint.md"
+      "file": "commands/checkpoint.md"
     },
     {
       "name": "recall",
       "description": "Recall relevant knowledge for current context",
-      "file": "../commands/recall.md"
+      "file": "commands/recall.md"
     },
     {
       "name": "knowledge",
       "description": "Manage the knowledge base",
-      "file": "../commands/knowledge.md"
+      "file": "commands/knowledge.md"
     },
     {
       "name": "session",
       "description": "Check session continuity and inject context",
-      "file": "../commands/session.md"
+      "file": "commands/session.md"
     }
   ],
   "skills": [
-    "../skills/sage-memory",
-    "../skills/sage-research",
-    "../skills/sage-session",
-    "../skills/sage-knowledge",
-    "../skills/sage-knowledge-hygiene"
+    "skills/sage-memory",
+    "skills/sage-research",
+    "skills/sage-session",
+    "skills/sage-knowledge",
+    "skills/sage-knowledge-hygiene"
   ],
   "connectors": {
     "mcp": ".claude-plugin/mcp.json"

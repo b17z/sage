@@ -1,30 +1,12 @@
 {
   "mcpServers": {
     "sage": {
-      "command": "sage-mcp",
+      "command": "${CLAUDE_PLUGIN_ROOT}/server/run-sage.sh",
       "args": [],
-      "description": "Semantic memory - checkpoints, knowledge, code context",
-      "tools": [
-        "sage_health",
-        "sage_save_checkpoint",
-        "sage_list_checkpoints",
-        "sage_load_checkpoint",
-        "sage_search_checkpoints",
-        "sage_autosave_check",
-        "sage_save_knowledge",
-        "sage_recall_knowledge",
-        "sage_list_knowledge",
-        "sage_update_knowledge",
-        "sage_deprecate_knowledge",
-        "sage_archive_knowledge",
-        "sage_remove_knowledge",
-        "sage_code_context",
-        "sage_index_code",
-        "sage_search_code",
-        "sage_grep_symbol",
-        "sage_analyze_function",
-        "sage_continuity_status"
-      ]
+      "env": {
+        "SAGE_HOME": "${CLAUDE_WORKSPACE}/.sage"
+      },
+      "description": "Semantic memory - checkpoints, knowledge, code context"
     }
   }
 }

@@ -2693,12 +2693,35 @@ def _get_startup_info() -> str:
 
 
 def main():
-    """Run the Sage MCP server."""
+    """Run the Sage MCP server.
+
+    Supports both stdio (default) and SSE transports:
+        sage-mcp              # stdio transport (for Claude Code CLI)
+        sage-mcp --sse        # SSE transport on port 8742 (0.0.0.0)
+        sage-mcp --sse 9000   # SSE transport on custom port
+
+    For CoWork integration, run with --sse and configure:
+        {"url": "http://host.docker.internal:8742/sse"}
+    """
     import sys
+
     info = _get_startup_info()
     print(f"[Sage MCP] Starting ({info}) at {datetime.now().strftime('%H:%M:%S')}", file=sys.stderr)
     _check_for_updates_on_startup()
-    mcp.run()
+
+    # Check for SSE mode
+    if "--sse" in sys.argv:
+        idx = sys.argv.index("--sse")
+        port = 8742  # Default port
+        if idx + 1 < len(sys.argv) and sys.argv[idx + 1].isdigit():
+            port = int(sys.argv[idx + 1])
+        # Configure for network access (CoWork needs 0.0.0.0)
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = port
+        print(f"[Sage MCP] SSE mode on http://0.0.0.0:{port}/sse", file=sys.stderr)
+        mcp.run(transport="sse")
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":
