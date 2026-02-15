@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v3.1.0 (code-aware features)
-**Test count:** 1439 tests (maintain or increase)
+**Current version:** v3.2.0 (git-aware intelligence)
+**Test count:** 1517 tests (maintain or increase)
 
 ---
 
@@ -124,6 +124,7 @@ skills/                      # Skill source files (edit here)
 | `sage/checkpoint.py` | Checkpoint schema, save/load, maintenance |
 | `sage/knowledge.py` | Knowledge storage, retrieval, caching |
 | `sage/embeddings.py` | Embedding model, similarity |
+| `sage/git.py` | Git context capture, staleness detection |
 | `sage/atomic.py` | Atomic file write utilities |
 | `sage/default_skills.py` | Sage methodology skill templates |
 | `sage/skill.py` | Research skill management |
@@ -141,6 +142,21 @@ pip install -e ".[dev]"     # Install dev mode
 ruff check sage/ --fix      # Lint
 black sage/                 # Format
 pytest                      # Run tests
+```
+
+### Releasing
+
+```bash
+# Check version sync
+python scripts/bump_version.py --check
+
+# Bump version (updates pyproject.toml, __init__.py, plugin.json, marketplace.json, CLAUDE.md)
+python scripts/bump_version.py 3.3.0
+
+# Then commit and tag
+git add -A && git commit -m "chore: bump version to 3.3.0"
+git tag v3.3.0
+git push && git push --tags
 ```
 
 ```bash
@@ -192,3 +208,13 @@ def test_handles_empty_input():
 - [ ] Update test count in this file when adding tests
 - [ ] Config values from `get_config()`, not hardcoded
 - [ ] Install skills: `sage skills install`
+
+## Presenting Sage Output
+
+MCP tool results return structured data. **Always format Sage outputs nicely** rather than showing raw JSON. See `sage-research` and `sage-knowledge` skills for presentation guidelines.
+
+Quick reference:
+- **Checkpoints**: Show as research summaries with thesis, evidence, sources
+- **Knowledge**: Show with source attribution and code links
+- **Code links**: Use `file.py:line` or `file.py::symbol` format
+- **Staleness**: `[!]` = code changed, `[+]` = supports, `[~]` = context

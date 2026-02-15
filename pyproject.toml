@@ -1,6 +1,6 @@
 [project]
 name = "claude-sage"
-version = "3.1.0"
+version = "3.2.0"
 description = "Semantic checkpointing for Claude Code"
 readme = "README.md"
 keywords = ["claude", "claude-code", "checkpointing", "memory", "mcp", "ai"]
@@ -34,7 +34,8 @@ mcp = [
 ]
 code = [
     "lancedb>=0.4.0",
-    "tree-sitter-languages>=1.10.0",
+    "tree-sitter-languages>=1.9.0,<1.10",  # 1.10+ requires tree-sitter 0.22+
+    "tree-sitter>=0.21.0,<0.22",  # 0.22+ has breaking API changes
 ]
 
 [project.scripts]
