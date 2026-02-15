@@ -365,8 +365,13 @@ def remove_system_file(
     Returns:
         True if file was removed, False if not found
     """
+    # Sanitize filename to prevent path traversal
+    safe_name = filename.replace("..", "").replace("/", "_").replace("\\", "_")
+    if not safe_name:
+        return False
+
     system_folder = get_system_folder(project_path)
-    file_path = system_folder / filename
+    file_path = system_folder / safe_name
 
     if file_path.exists() and file_path.is_file():
         try:

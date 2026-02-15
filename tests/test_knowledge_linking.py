@@ -4,7 +4,6 @@ Tests the knowledge linking functionality for multi-hop reasoning.
 """
 
 import pytest
-from pathlib import Path
 
 from sage.knowledge import (
     KnowledgeLink,
@@ -12,7 +11,6 @@ from sage.knowledge import (
     link_knowledge,
     get_linked_knowledge,
     load_index,
-    list_knowledge,
 )
 
 

@@ -3,7 +3,6 @@
 Tests the system folder functionality for auto-injecting agent-managed context.
 """
 
-import pytest
 from pathlib import Path
 
 from sage.system_context import (

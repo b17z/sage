@@ -3,8 +3,6 @@
 Tests the failure memory functionality for tracking what didn't work.
 """
 
-import pytest
-from pathlib import Path
 
 from sage.failures import (
     Failure,

@@ -3,6 +3,12 @@
 Exposes Sage functionality over HTTP for any frontend to consume.
 Uses Python's built-in http.server for zero dependencies.
 
+Security notes:
+- Intended for localhost use only (UI runs on 127.0.0.1 by default)
+- CORS restricted to localhost origins
+- Input IDs are sanitized to prevent path traversal
+- Request body size is limited
+
 Endpoints:
     GET  /api/health              - Health check
     GET  /api/checkpoints         - List checkpoints
@@ -21,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -28,6 +35,17 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
+
+# Security constants
+MAX_BODY_SIZE = 1024 * 1024  # 1MB max request body
+ALLOWED_ORIGINS = [
+    "http://localhost:5555",
+    "http://127.0.0.1:5555",
+    "http://localhost:3000",  # Dev server
+    "http://127.0.0.1:3000",
+]
+# Valid ID pattern: alphanumeric, hyphens, underscores, dots (no path traversal)
+SAFE_ID_PATTERN = re.compile(r"^[\w\-\.]+$")
 
 
 def serialize(obj: Any) -> Any:
@@ -57,13 +75,22 @@ class SageAPIHandler(BaseHTTPRequestHandler):
     # Will be set by server
     project_path: Path | None = None
 
+    def _get_cors_origin(self) -> str:
+        """Get allowed CORS origin based on request Origin header."""
+        origin = self.headers.get("Origin", "")
+        if origin in ALLOWED_ORIGINS:
+            return origin
+        # For local file:// or same-origin requests
+        return ALLOWED_ORIGINS[0]
+
     def _send_json(self, data: Any, status: int = 200) -> None:
         """Send JSON response."""
         body = json.dumps(serialize(data), indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
+        self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
@@ -85,12 +112,19 @@ class SageAPIHandler(BaseHTTPRequestHandler):
             path = path[4:]
         return path.split("/") if path else []
 
+    def _validate_id(self, id_value: str) -> bool:
+        """Validate an ID to prevent path traversal and injection."""
+        if not id_value or len(id_value) > 200:
+            return False
+        return bool(SAFE_ID_PATTERN.match(id_value))
+
     def do_OPTIONS(self) -> None:
         """Handle CORS preflight."""
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._get_cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Vary", "Origin")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -211,6 +245,9 @@ class SageAPIHandler(BaseHTTPRequestHandler):
         else:
             # Get by ID
             checkpoint_id = parts[0]
+            if not self._validate_id(checkpoint_id):
+                self._send_error(400, "Invalid checkpoint ID")
+                return
             checkpoint = load_checkpoint(checkpoint_id, project_path=self.project_path)
             if checkpoint:
                 self._send_json({
@@ -261,6 +298,9 @@ class SageAPIHandler(BaseHTTPRequestHandler):
         else:
             # Get by ID
             knowledge_id = parts[0]
+            if not self._validate_id(knowledge_id):
+                self._send_error(400, "Invalid knowledge ID")
+                return
             item = get_knowledge(knowledge_id, project_path=self.project_path)
             if item:
                 # Check for deprecation info in source field
@@ -303,6 +343,9 @@ class SageAPIHandler(BaseHTTPRequestHandler):
 
         try:
             content_length = int(self.headers.get("Content-Length", 0))
+            if content_length > MAX_BODY_SIZE:
+                self._send_error(413, "Request body too large")
+                return
             body = json.loads(self.rfile.read(content_length).decode("utf-8"))
         except (json.JSONDecodeError, ValueError) as e:
             self._send_error(400, f"Invalid JSON: {e}")
@@ -312,6 +355,10 @@ class SageAPIHandler(BaseHTTPRequestHandler):
         missing = [f for f in required if f not in body]
         if missing:
             self._send_error(400, f"Missing required fields: {missing}")
+            return
+
+        if not self._validate_id(body["id"]):
+            self._send_error(400, "Invalid knowledge ID format")
             return
 
         result = add_knowledge(
@@ -333,8 +380,15 @@ class SageAPIHandler(BaseHTTPRequestHandler):
         """PUT /api/knowledge/:id - Update knowledge."""
         from sage.knowledge import update_knowledge
 
+        if not self._validate_id(knowledge_id):
+            self._send_error(400, "Invalid knowledge ID")
+            return
+
         try:
             content_length = int(self.headers.get("Content-Length", 0))
+            if content_length > MAX_BODY_SIZE:
+                self._send_error(413, "Request body too large")
+                return
             body = json.loads(self.rfile.read(content_length).decode("utf-8"))
         except (json.JSONDecodeError, ValueError) as e:
             self._send_error(400, f"Invalid JSON: {e}")
@@ -357,6 +411,10 @@ class SageAPIHandler(BaseHTTPRequestHandler):
     def _handle_knowledge_delete(self, knowledge_id: str) -> None:
         """DELETE /api/knowledge/:id - Remove knowledge."""
         from sage.knowledge import remove_knowledge
+
+        if not self._validate_id(knowledge_id):
+            self._send_error(400, "Invalid knowledge ID")
+            return
 
         result = remove_knowledge(knowledge_id, project_path=self.project_path)
 

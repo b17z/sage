@@ -3,8 +3,6 @@
 Tests the MCP resource functionality for @sage:// syntax.
 """
 
-import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 # Import the validation function directly
@@ -201,7 +199,6 @@ class TestResourceSecurity:
             get_system_file_resource,
             get_checkpoint_resource,
             get_knowledge_resource,
-            get_failure_resource,
         )
 
         with patch("sage.mcp_server._PROJECT_ROOT", tmp_path):
@@ -254,9 +251,6 @@ class TestResourceIntegration:
 
         with patch("sage.mcp_server._PROJECT_ROOT", tmp_path):
             resource_content = get_checkpoint_resource("format-test")
-
-        # Direct format
-        direct_content = format_checkpoint_for_context(checkpoint)
 
         # Both should contain the thesis
         assert "Format test thesis" in resource_content or "format-test" in resource_content
