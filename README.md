@@ -102,6 +102,20 @@ sage config set checkpoint_max_age_days 30  # Customize storage
 sage config set checkpoint_max_count 100    # Cap checkpoints
 ```
 
+## Visual Interface
+
+```bash
+sage ui              # Local web UI at localhost:5555
+sage ui --api-only   # REST API for custom frontends
+```
+
+Or use any of these:
+- **CoWork plugin** — If you have CoWork access
+- **Obsidian** — Open `~/.sage/` as vault (it's just Markdown)
+- **Custom** — Build on the REST API
+
+See [docs/ui.md](docs/ui.md) for details.
+
 ## Learn More
 
 - **[Features](docs/FEATURES.md)** — Complete feature reference
@@ -109,6 +123,7 @@ sage config set checkpoint_max_count 100    # Cap checkpoints
 - **[Skills](docs/skills.md)** — How methodology skills work
 - **[Continuity](docs/continuity.md)** — Session persistence deep-dive
 - **[Maintenance](docs/maintenance.md)** — Storage maintenance and caching
+- **[UI Options](docs/ui.md)** — Web UI, API, Obsidian, CoWork plugin
 
 ## Requirements
 
@@ -119,8 +134,12 @@ sage config set checkpoint_max_count 100    # Cap checkpoints
 
 ```bash
 pip install -e ".[dev,mcp]"
-pytest tests/ -v  # 1439 tests
+pytest tests/ -v  # 1517 tests
 ```
+
+## Acknowledgments
+
+Output formatting inspired by [TOON](https://toon-format.org) — a token-efficient notation format for LLMs by [@mixeden](https://github.com/mixeden).
 
 ## License
 

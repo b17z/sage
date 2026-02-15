@@ -112,6 +112,10 @@ class Checkpoint:
     files_explored: frozenset[str] = field(default_factory=frozenset)  # Files read during session
     files_changed: frozenset[str] = field(default_factory=frozenset)  # Files edited/written
 
+    # Git context (v1.4) - branch/commit state when checkpoint was saved
+    git_context: dict | None = None  # GitContext.to_dict() - branch, commit, dirty, recent_commits
+    diff_summary: dict | None = None  # DiffSummary.to_dict() - uncommitted changes at save time
+
 
 def generate_checkpoint_id(description: str) -> CheckpointId:
     """Generate a checkpoint ID from timestamp and description."""
@@ -162,6 +166,9 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
         # Code context (v1.3) - stored in frontmatter for structured access
         "files_explored": sorted(checkpoint.files_explored) if checkpoint.files_explored else None,
         "files_changed": sorted(checkpoint.files_changed) if checkpoint.files_changed else None,
+        # Git context (v1.4)
+        "git_context": checkpoint.git_context,
+        "diff_summary": checkpoint.diff_summary,
     }
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
@@ -380,6 +387,9 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             # Code context (v1.3)
             files_explored=files_explored,
             files_changed=files_changed,
+            # Git context (v1.4)
+            git_context=fm.get("git_context"),
+            diff_summary=fm.get("diff_summary"),
         )
     except (yaml.YAMLError, KeyError, ValueError):
         return None
@@ -954,8 +964,25 @@ def delete_checkpoint(checkpoint_id: str, project_path: Path | None = None) -> b
     return True
 
 
-def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
-    """Format a checkpoint for injection into conversation context."""
+def format_checkpoint_for_context(checkpoint: Checkpoint, use_toon: bool | None = None) -> str:
+    """Format a checkpoint for injection into conversation context.
+
+    Args:
+        checkpoint: The checkpoint to format
+        use_toon: If True, use TOON-style compact format. If None, check config.
+
+    Returns:
+        Formatted string for context injection
+    """
+    if use_toon is None:
+        from sage.config import get_sage_config
+
+        config = get_sage_config()
+        use_toon = getattr(config, "output_format", "markdown") == "toon"
+
+    if use_toon:
+        return format_checkpoint_toon(checkpoint)
+
     parts = [
         "# Research Context (Restored from Checkpoint)\n",
         f"*Checkpoint: {checkpoint.id}*\n",
@@ -1041,6 +1068,193 @@ def format_checkpoint_for_context(checkpoint: Checkpoint) -> str:
         if len(checkpoint.files_explored) > 10:
             parts.append(f"- _...and {len(checkpoint.files_explored) - 10} more_\n")
         parts.append("\n")
+
+    # Git context (v1.4)
+    if checkpoint.git_context:
+        gc = checkpoint.git_context
+        parts.append("## Git Context\n")
+        branch = gc.get("branch", "unknown")
+        commit = gc.get("commit", "unknown")
+        dirty = " (dirty)" if gc.get("dirty") else ""
+        parts.append(f"Branch: `{branch}` @ `{commit}`{dirty}\n")
+        if gc.get("recent_commits"):
+            parts.append("Recent commits:\n")
+            for c in gc.get("recent_commits", [])[:3]:
+                parts.append(f"- {c}\n")
+        parts.append("\n")
+
+    # Diff summary (uncommitted changes at save time)
+    if checkpoint.diff_summary:
+        ds = checkpoint.diff_summary
+        insertions = ds.get("insertions", 0)
+        deletions = ds.get("deletions", 0)
+        files_changed = ds.get("files_changed", [])
+        staged_files = ds.get("staged_files", [])
+
+        if files_changed or staged_files:
+            parts.append("## Uncommitted Changes (at save time)\n")
+            parts.append(f"+{insertions} -{deletions} lines\n")
+            all_files = sorted(set(files_changed) | set(staged_files))
+            for f in all_files[:5]:
+                staged_marker = "●" if f in staged_files else "○"
+                parts.append(f"- {staged_marker} `{f}`\n")
+            if len(all_files) > 5:
+                parts.append(f"- _...and {len(all_files) - 5} more files_\n")
+            parts.append("\n")
+
+    return "".join(parts)
+
+
+def format_checkpoint_toon(checkpoint: Checkpoint) -> str:
+    """Format a checkpoint using TOON-inspired compact format.
+
+    Inspired by TOON (https://toon-format.org) by @mixeden.
+
+    Uses TOON principles for token-efficient, parseable output:
+    - Counts in headers: `## Sources [3]`
+    - Tabular data with field hints: `sources[3]{id,type,take,rel}:`
+    - Relation icons: [+] supports, [-] contradicts, [~] nuances
+
+    This format is optimized for both LLM parsing and human scanning.
+    """
+    parts = [
+        "# Research Context\n",
+        f"checkpoint: {checkpoint.id}\n",
+        f"saved: {checkpoint.ts[:16].replace('T', ' ')} | confidence: {checkpoint.confidence:.0%}\n\n",
+    ]
+
+    # Core question and thesis (prose - keep as-is)
+    parts.append(f"## Question\n{checkpoint.core_question}\n\n")
+    parts.append(f"## Thesis\n{checkpoint.thesis}\n\n")
+
+    # Key evidence - simple list with count
+    if checkpoint.key_evidence:
+        parts.append(f"## Evidence [{len(checkpoint.key_evidence)}]\n")
+        for e in checkpoint.key_evidence:
+            parts.append(f"- {e}\n")
+        parts.append("\n")
+
+    # Reasoning trace (prose)
+    if checkpoint.reasoning_trace:
+        parts.append(f"## Reasoning\n{checkpoint.reasoning_trace}\n\n")
+
+    # Open questions - simple list with count
+    if checkpoint.open_questions:
+        parts.append(f"## Open [{len(checkpoint.open_questions)}]\n")
+        for q in checkpoint.open_questions:
+            parts.append(f"- {q}\n")
+        parts.append("\n")
+
+    # Sources - TOON tabular format for 3+, list for fewer
+    if checkpoint.sources:
+        n = len(checkpoint.sources)
+        if n >= 3:
+            parts.append(f"## Sources [{n}]\n")
+            parts.append(f"sources[{n}]{{id,type,take,rel}}:\n")
+            for s in checkpoint.sources:
+                rel = {"supports": "+", "contradicts": "-", "nuances": "~"}.get(s.relation, "?")
+                # Escape commas in take
+                take = s.take.replace(",", ";") if s.take else ""
+                parts.append(f"  {s.id},{s.type},{take},{rel}\n")
+        else:
+            parts.append(f"## Sources [{n}]\n")
+            for s in checkpoint.sources:
+                icon = {"supports": "[+]", "contradicts": "[-]", "nuances": "[~]"}.get(
+                    s.relation, "[?]"
+                )
+                parts.append(f"- {icon} **{s.id}** ({s.type}): {s.take}\n")
+        parts.append("\n")
+
+    # Tensions - TOON for 3+
+    if checkpoint.tensions:
+        unresolved = [t for t in checkpoint.tensions if t.resolution == "unresolved"]
+        if unresolved:
+            n = len(unresolved)
+            if n >= 3:
+                parts.append(f"## Tensions [{n}]\n")
+                parts.append(f"tensions[{n}]{{a,b,nature}}:\n")
+                for t in unresolved:
+                    nature = t.nature.replace(",", ";") if t.nature else ""
+                    parts.append(f"  {t.between[0]},{t.between[1]},{nature}\n")
+            else:
+                parts.append(f"## Tensions [{n}]\n")
+                for t in unresolved:
+                    parts.append(f"- **{t.between[0]}** vs **{t.between[1]}**: {t.nature}\n")
+            parts.append("\n")
+
+    # Unique contributions
+    if checkpoint.unique_contributions:
+        n = len(checkpoint.unique_contributions)
+        parts.append(f"## Discoveries [{n}]\n")
+        for c in checkpoint.unique_contributions:
+            parts.append(f"- *{c.type}*: {c.content}\n")
+        parts.append("\n")
+
+    # Action context (compact)
+    if checkpoint.action_goal:
+        parts.append(f"## Action\n")
+        parts.append(f"goal: {checkpoint.action_goal}\n")
+        parts.append(f"type: {checkpoint.action_type}\n\n")
+
+    # Code references - TOON tabular for 3+
+    if checkpoint.code_refs:
+        n = len(checkpoint.code_refs)
+        if n >= 3:
+            parts.append(f"## Code [{n}]\n")
+            parts.append(f"refs[{n}]{{file,lines,rel}}:\n")
+            for ref in checkpoint.code_refs:
+                line_info = f"{ref.lines[0]}-{ref.lines[1]}" if ref.lines else "-"
+                rel = {"supports": "+", "contradicts": "-", "context": "~", "stale": "!"}.get(
+                    ref.relevance, "?"
+                )
+                parts.append(f"  {ref.file},{line_info},{rel}\n")
+        else:
+            parts.append(f"## Code [{n}]\n")
+            for ref in checkpoint.code_refs:
+                line_info = f":{ref.lines[0]}-{ref.lines[1]}" if ref.lines else ""
+                icon = {"supports": "[+]", "contradicts": "[-]", "context": "[~]", "stale": "[!]"}.get(
+                    ref.relevance, "[?]"
+                )
+                parts.append(f"- {icon} `{ref.file}{line_info}`\n")
+        parts.append("\n")
+
+    # Files changed - TOON list
+    if checkpoint.files_changed:
+        n = len(checkpoint.files_changed)
+        parts.append(f"## Changed [{n}]\n")
+        if n >= 5:
+            parts.append(f"files[{n}]:\n")
+            for f in sorted(checkpoint.files_changed):
+                parts.append(f"  {f}\n")
+        else:
+            for f in sorted(checkpoint.files_changed):
+                parts.append(f"- `{f}`\n")
+        parts.append("\n")
+
+    # Files explored (if no changes)
+    if checkpoint.files_explored and not checkpoint.files_changed:
+        n = len(checkpoint.files_explored)
+        display_n = min(n, 10)
+        parts.append(f"## Explored [{n}]\n")
+        if n >= 5:
+            parts.append(f"files[{display_n}]:\n")
+            for f in sorted(checkpoint.files_explored)[:10]:
+                parts.append(f"  {f}\n")
+        else:
+            for f in sorted(checkpoint.files_explored)[:10]:
+                parts.append(f"- `{f}`\n")
+        if n > 10:
+            parts.append(f"  ...+{n - 10} more\n")
+        parts.append("\n")
+
+    # Git context (compact single line)
+    if checkpoint.git_context:
+        gc = checkpoint.git_context
+        branch = gc.get("branch", "?")
+        commit = gc.get("commit", "?")[:7]
+        dirty = "*" if gc.get("dirty") else ""
+        parts.append(f"## Git\n")
+        parts.append(f"branch: {branch} @ {commit}{dirty}\n\n")
 
     return "".join(parts)
 
@@ -1200,6 +1414,61 @@ def enrich_checkpoint_with_code_context(
             code_refs=checkpoint.code_refs,
             files_explored=new_files_explored,
             files_changed=new_files_changed,
+            git_context=checkpoint.git_context,
+            diff_summary=checkpoint.diff_summary,
         )
 
     return checkpoint
+
+
+def enrich_checkpoint_with_git_context(
+    checkpoint: Checkpoint,
+    project_path: Path | None = None,
+) -> Checkpoint:
+    """Enrich a checkpoint with current git state.
+
+    Captures branch, commit, dirty state, and uncommitted changes.
+
+    Args:
+        checkpoint: The checkpoint to enrich
+        project_path: Repository path
+
+    Returns:
+        New Checkpoint with git context added (immutable, so returns copy)
+    """
+    from sage.git import capture_git_context, get_diff_summary
+
+    git_ctx = capture_git_context(project_path)
+    if git_ctx is None:
+        return checkpoint  # Not a git repo
+
+    diff = get_diff_summary(project_path)
+
+    return Checkpoint(
+        id=checkpoint.id,
+        ts=checkpoint.ts,
+        trigger=checkpoint.trigger,
+        core_question=checkpoint.core_question,
+        thesis=checkpoint.thesis,
+        confidence=checkpoint.confidence,
+        open_questions=checkpoint.open_questions,
+        sources=checkpoint.sources,
+        tensions=checkpoint.tensions,
+        unique_contributions=checkpoint.unique_contributions,
+        key_evidence=checkpoint.key_evidence,
+        reasoning_trace=checkpoint.reasoning_trace,
+        action_goal=checkpoint.action_goal,
+        action_type=checkpoint.action_type,
+        skill=checkpoint.skill,
+        project=checkpoint.project,
+        parent_checkpoint=checkpoint.parent_checkpoint,
+        message_count=checkpoint.message_count,
+        token_estimate=checkpoint.token_estimate,
+        template=checkpoint.template,
+        custom_fields=checkpoint.custom_fields,
+        code_refs=checkpoint.code_refs,
+        files_explored=checkpoint.files_explored,
+        files_changed=checkpoint.files_changed,
+        git_context=git_ctx.to_dict(),
+        diff_summary=diff.to_dict() if diff.files_changed or diff.staged_files else None,
+    )

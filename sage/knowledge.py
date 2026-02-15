@@ -108,6 +108,26 @@ class KnowledgeMetadata:
     source: str = ""  # where this came from
     tokens: int = 0  # estimated token count
     status: str = ""  # For todos: pending | done
+    saved_at_commit: str = ""  # Git commit SHA when saved (v3.2)
+
+
+@dataclass(frozen=True)
+class CodeLink:
+    """Link from knowledge to code via chunk_id.
+
+    Uses chunk_id format "path/to/file.py::symbol_name" which is
+    semantic enough to survive minor refactors. Resolved at recall
+    time via the code index.
+
+    Attributes:
+        chunk_id: Code location in format "file.py::symbol_name"
+        relation: How the code relates to the knowledge
+        note: Optional context about why this code is linked
+    """
+
+    chunk_id: str  # "path/to/file.py::function_name"
+    relation: str = "implements"  # implements | example | related | deprecated_by
+    note: str = ""  # Optional context about the link
 
 
 @dataclass(frozen=True)
@@ -121,6 +141,7 @@ class KnowledgeItem:
     metadata: KnowledgeMetadata
     item_type: str = "knowledge"  # knowledge | preference | todo | reference
     content: str = ""  # loaded on demand
+    code_links: tuple[CodeLink, ...] = ()  # links to code locations (v3.1)
 
 
 @dataclass
@@ -133,6 +154,251 @@ class RecallResult:
     @property
     def count(self) -> int:
         return len(self.items)
+
+
+@dataclass(frozen=True)
+class ResolvedCodeLink:
+    """Result of resolving a CodeLink via the code index.
+
+    Contains either the resolved code snippet or a stale marker.
+    """
+
+    chunk_id: str
+    relation: str
+    note: str
+    file: str
+    line: int | None = None
+    snippet: str | None = None
+    stale: bool = False  # True if chunk_id not found in index
+
+
+def resolve_code_link(
+    link: CodeLink,
+    project_path: Path | None = None,
+) -> ResolvedCodeLink | None:
+    """Resolve a CodeLink to actual code content.
+
+    Parses the chunk_id format "path/to/file.py::symbol_name" and
+    looks up the symbol in the code index.
+
+    Args:
+        link: The CodeLink to resolve
+        project_path: Project root for code index lookup
+
+    Returns:
+        ResolvedCodeLink with code info, or None if chunk_id format invalid
+    """
+    from sage.codebase.search import grep_symbol
+
+    # Parse chunk_id: "path/to/file.py::symbol_name"
+    if "::" not in link.chunk_id:
+        logger.debug(f"Invalid chunk_id format (no ::): {link.chunk_id}")
+        return None
+
+    file_path, symbol_name = link.chunk_id.rsplit("::", 1)
+
+    # Try to resolve via code index
+    try:
+        result = grep_symbol(symbol_name, project_path)
+    except Exception as e:
+        logger.debug(f"Code index lookup failed: {e}")
+        result = None
+
+    if result is None:
+        # Code not found - return stale marker
+        return ResolvedCodeLink(
+            chunk_id=link.chunk_id,
+            relation=link.relation,
+            note=link.note,
+            file=file_path,
+            line=None,
+            snippet=None,
+            stale=True,
+        )
+
+    # Verify file matches (symbol could exist in different file)
+    result_file = getattr(result, "file", "")
+    if result_file and not result_file.endswith(file_path) and file_path not in result_file:
+        # Symbol exists but in different file - treat as stale
+        logger.debug(f"Symbol {symbol_name} found in {result_file}, expected {file_path}")
+        return ResolvedCodeLink(
+            chunk_id=link.chunk_id,
+            relation=link.relation,
+            note=link.note,
+            file=file_path,
+            line=None,
+            snippet=None,
+            stale=True,
+        )
+
+    # Build snippet from result
+    snippet = None
+    if hasattr(result, "signature") and result.signature:
+        snippet = result.signature
+        if hasattr(result, "docstring") and result.docstring:
+            # Truncate long docstrings
+            docstring = result.docstring[:200]
+            if len(result.docstring) > 200:
+                docstring += "..."
+            snippet += f'\n    """{docstring}"""'
+
+    return ResolvedCodeLink(
+        chunk_id=link.chunk_id,
+        relation=link.relation,
+        note=link.note,
+        file=result_file or file_path,
+        line=getattr(result, "line", None),
+        snippet=snippet,
+        stale=False,
+    )
+
+
+def resolve_code_links(
+    links: tuple[CodeLink, ...],
+    project_path: Path | None = None,
+) -> list[ResolvedCodeLink]:
+    """Resolve multiple code links, returning all results.
+
+    Args:
+        links: Tuple of CodeLinks to resolve
+        project_path: Project root for code index lookup
+
+    Returns:
+        List of ResolvedCodeLinks (both found and stale)
+    """
+    results = []
+    for link in links:
+        resolved = resolve_code_link(link, project_path)
+        if resolved:
+            results.append(resolved)
+    return results
+
+
+@dataclass(frozen=True)
+class StaleCodeLinkResult:
+    """Result of staleness check for a knowledge item."""
+
+    knowledge_id: str
+    stale_links: tuple[str, ...]  # chunk_ids that are stale (not found in index)
+    git_changed_files: tuple[str, ...] = ()  # files changed since saved_at_commit
+    commits_since: tuple[str, ...] = ()  # commits that touched linked files
+
+
+def check_knowledge_staleness(
+    project_path: Path | None = None,
+    use_git: bool = True,
+) -> list[StaleCodeLinkResult]:
+    """Check for knowledge items with stale code links.
+
+    Scans all knowledge items with code_links and checks:
+    1. If the linked code still exists in the code index
+    2. If linked files have been modified since saved_at_commit (git-aware)
+
+    Args:
+        project_path: Project root for code index lookup
+        use_git: Whether to use git for commit-aware staleness (default True)
+
+    Returns:
+        List of StaleCodeLinkResult for items with stale links
+    """
+    from sage.git import check_file_changed, is_git_repo
+
+    items = load_index(project_path=project_path)
+    stale_items = []
+
+    # Determine if git is available
+    git_available = use_git and is_git_repo(project_path)
+
+    for item in items:
+        if not item.code_links:
+            continue
+
+        stale_links = []
+        git_changed_files = []
+        commits_since = []
+
+        for link in item.code_links:
+            # Check 1: Code index lookup (symbol exists?)
+            resolved = resolve_code_link(link, project_path)
+            if resolved and resolved.stale:
+                stale_links.append(link.chunk_id)
+                continue  # Already stale, skip git check
+
+            # Check 2: Git-aware staleness (file modified since saved?)
+            if git_available and item.metadata.saved_at_commit:
+                # Extract file path from chunk_id
+                if "::" in link.chunk_id:
+                    file_path = link.chunk_id.rsplit("::", 1)[0]
+                else:
+                    file_path = link.chunk_id
+
+                changed, file_commits = check_file_changed(
+                    file_path,
+                    item.metadata.saved_at_commit,
+                    project_path,
+                )
+                if changed:
+                    git_changed_files.append(file_path)
+                    commits_since.extend(file_commits)
+
+        # Only add if there's staleness of some kind
+        if stale_links or git_changed_files:
+            stale_items.append(
+                StaleCodeLinkResult(
+                    knowledge_id=item.id,
+                    stale_links=tuple(stale_links),
+                    git_changed_files=tuple(set(git_changed_files)),  # dedupe
+                    commits_since=tuple(dict.fromkeys(commits_since)),  # dedupe preserving order
+                )
+            )
+
+    return stale_items
+
+
+def find_knowledge_by_code(
+    file: str | None = None,
+    symbol: str | None = None,
+    project_path: Path | None = None,
+) -> list[KnowledgeItem]:
+    """Find knowledge items that link to specific code.
+
+    Reverse lookup: given a file path and/or symbol name, find knowledge
+    items that reference that code location.
+
+    Args:
+        file: Optional file path pattern to match (substring match)
+        symbol: Optional symbol name to match (exact match on symbol part)
+        project_path: Project root for scoping
+
+    Returns:
+        List of KnowledgeItem that have matching code_links
+    """
+    if not file and not symbol:
+        return []
+
+    items = load_index(project_path=project_path)
+    matches = []
+
+    for item in items:
+        if not item.code_links:
+            continue
+
+        for link in item.code_links:
+            # Parse chunk_id: "path/to/file.py::symbol_name"
+            if "::" in link.chunk_id:
+                link_file, link_symbol = link.chunk_id.rsplit("::", 1)
+            else:
+                link_file = link.chunk_id
+                link_symbol = ""
+
+            file_match = file is None or file in link_file
+            symbol_match = symbol is None or symbol == link_symbol
+
+            if file_match and symbol_match:
+                matches.append(item)
+                break  # Don't add same item multiple times
+
+    return matches
 
 
 def ensure_knowledge_dir(project_path: Path | None = None) -> Path:
@@ -561,6 +827,18 @@ def load_index(
         scope_data = item_data.get("scope", {})
         meta_data = item_data.get("metadata", {})
 
+        # Parse code_links (v3.1)
+        code_links_data = item_data.get("code_links", [])
+        code_links = tuple(
+            CodeLink(
+                chunk_id=cl.get("chunk_id", ""),
+                relation=cl.get("relation", "implements"),
+                note=cl.get("note", ""),
+            )
+            for cl in code_links_data
+            if cl.get("chunk_id")  # Skip entries without chunk_id
+        )
+
         items.append(
             KnowledgeItem(
                 id=item_data["id"],
@@ -578,8 +856,10 @@ def load_index(
                     source=meta_data.get("source", ""),
                     tokens=meta_data.get("tokens", 0),
                     status=meta_data.get("status", ""),
+                    saved_at_commit=meta_data.get("saved_at_commit", ""),
                 ),
                 item_type=item_data.get("type", "knowledge"),
+                code_links=code_links,
             )
         )
 
@@ -624,7 +904,24 @@ def save_index(items: list[KnowledgeItem], project_path: Path | None = None) -> 
                     "source": item.metadata.source,
                     "tokens": item.metadata.tokens,
                     "status": item.metadata.status,
+                    # saved_at_commit (v3.2) - only include if present
+                    **({"saved_at_commit": item.metadata.saved_at_commit} if item.metadata.saved_at_commit else {}),
                 },
+                # Code links (v3.1) - only include if present
+                **(
+                    {
+                        "code_links": [
+                            {
+                                "chunk_id": link.chunk_id,
+                                "relation": link.relation,
+                                **({"note": link.note} if link.note else {}),
+                            }
+                            for link in item.code_links
+                        ]
+                    }
+                    if item.code_links
+                    else {}
+                ),
             }
             for item in items
         ],
@@ -697,6 +994,7 @@ def load_knowledge_content(
         ),
         item_type=item.item_type,
         content=content,
+        code_links=item.code_links,  # preserve code links
     )
 
 
@@ -969,6 +1267,7 @@ def add_knowledge(
     patterns: list[str] | None = None,
     item_type: str = "knowledge",
     project_path: Path | None = None,
+    code_links: list[dict | CodeLink] | None = None,
 ) -> KnowledgeItem:
     """
     Add a new knowledge item.
@@ -982,6 +1281,9 @@ def add_knowledge(
         patterns: Optional regex patterns for matching
         item_type: Type of knowledge item (knowledge, preference, todo, reference)
         project_path: Optional project path for project-scoped knowledge
+        code_links: Optional list of code links with {chunk_id, relation?, note?}
+                   chunk_id format: "path/to/file.py::symbol_name"
+                   relation: implements | example | related | deprecated_by
 
     Returns:
         The created KnowledgeItem
@@ -1038,6 +1340,30 @@ def add_knowledge(
     # Validate patterns to prevent ReDoS
     safe_patterns = _validate_patterns(patterns or [])
 
+    # Parse code_links into CodeLink objects (accepts both dicts and CodeLink)
+    parsed_code_links: tuple[CodeLink, ...] = ()
+    if code_links:
+        links = []
+        for cl in code_links:
+            if isinstance(cl, CodeLink):
+                links.append(cl)
+            elif isinstance(cl, dict) and cl.get("chunk_id"):
+                links.append(
+                    CodeLink(
+                        chunk_id=cl.get("chunk_id", ""),
+                        relation=cl.get("relation", "implements"),
+                        note=cl.get("note", ""),
+                    )
+                )
+        parsed_code_links = tuple(links)
+
+    # Capture git commit if we have code_links (for staleness tracking)
+    saved_at_commit = ""
+    if parsed_code_links:
+        from sage.git import get_commit
+
+        saved_at_commit = get_commit(project_path) or ""
+
     # Create item (use safe_id for storage, original for display)
     item = KnowledgeItem(
         id=safe_id,
@@ -1055,9 +1381,11 @@ def add_knowledge(
             source=source,
             tokens=len(content) // 4,
             status=status,
+            saved_at_commit=saved_at_commit,
         ),
         item_type=item_type,
         content=content,
+        code_links=parsed_code_links,
     )
 
     # Update index
@@ -1301,12 +1629,36 @@ def list_knowledge(
     return [item for item in items if not item.scope.skills or skill in item.scope.skills]
 
 
-def format_recalled_context(result: RecallResult) -> str:
-    """
-    Format recalled knowledge for injection into context.
+def format_recalled_context(
+    result: RecallResult,
+    project_path: Path | None = None,
+    resolve_links: bool = True,
+    use_toon: bool | None = None,
+) -> str:
+    """Format recalled knowledge for injection into context.
+
+    Optionally resolves code_links to include actual code snippets.
+
+    Args:
+        result: RecallResult from recall_knowledge()
+        project_path: Project root for code link resolution
+        resolve_links: Whether to resolve and include code links (default True)
+        use_toon: Use TOON-style compact format. If None, check config.
+
+    Returns:
+        Formatted string for context injection
     """
     if not result.items:
         return ""
+
+    if use_toon is None:
+        from sage.config import get_sage_config
+
+        config = get_sage_config()
+        use_toon = getattr(config, "output_format", "markdown") == "toon"
+
+    if use_toon:
+        return _format_recalled_toon(result, project_path, resolve_links)
 
     parts = [
         f"\n---\n📚 Recalled Knowledge ({result.count} items, ~{result.total_tokens} tokens):\n"
@@ -1319,7 +1671,181 @@ def format_recalled_context(result: RecallResult) -> str:
         parts.append(item.content)
         parts.append("\n")
 
+        # Resolve and include code links
+        if resolve_links and item.code_links:
+            resolved = resolve_code_links(item.code_links, project_path)
+
+            # Check git-based staleness
+            git_changed_files: set[str] = set()
+            if item.metadata.saved_at_commit:
+                from sage.git import check_file_changed, is_git_repo
+
+                if is_git_repo(project_path):
+                    for link in item.code_links:
+                        if "::" in link.chunk_id:
+                            file_path = link.chunk_id.rsplit("::", 1)[0]
+                        else:
+                            file_path = link.chunk_id
+                        changed, _ = check_file_changed(
+                            file_path, item.metadata.saved_at_commit, project_path
+                        )
+                        if changed:
+                            git_changed_files.add(file_path)
+
+            if resolved:
+                parts.append("\n### Linked Code\n")
+                for link in resolved:
+                    # Extract file path for git check
+                    if "::" in link.chunk_id:
+                        link_file = link.chunk_id.rsplit("::", 1)[0]
+                    else:
+                        link_file = link.chunk_id
+
+                    # Status indicator (index stale > git modified > ok)
+                    if link.stale:
+                        status = "⚠️ NOT FOUND"
+                    elif link_file in git_changed_files:
+                        status = "📝 MODIFIED"
+                    else:
+                        status = link.relation
+
+                    # Format: chunk_id (status)
+                    parts.append(f"**`{link.chunk_id}`** ({status})\n")
+
+                    # Location info
+                    if link.line and not link.stale:
+                        parts.append(f"*{link.file}:{link.line}*\n")
+
+                    # Snippet
+                    if link.snippet and not link.stale:
+                        parts.append(f"```\n{link.snippet}\n```\n")
+
+                    # Note
+                    if link.note:
+                        parts.append(f"*Note: {link.note}*\n")
+
+                    parts.append("\n")
+
     parts.append("\n---\n")
+
+    return "".join(parts)
+
+
+def _format_recalled_toon(
+    result: RecallResult,
+    project_path: Path | None = None,
+    resolve_links: bool = True,
+) -> str:
+    """Format recalled knowledge using TOON-inspired compact format.
+
+    Inspired by TOON (https://toon-format.org) by @mixeden.
+
+    Uses TOON principles for token-efficient, parseable output:
+    - Counts in headers: `## knowledge [3]`
+    - Tabular data with field hints for code links
+    - Compact status indicators: [+] ok, [!] stale, [~] modified
+
+    This format is optimized for both LLM parsing and human scanning.
+    """
+    parts = [
+        f"\n---\n# Knowledge [{result.count}] ~{result.total_tokens}tok\n"
+    ]
+
+    for item in result.items:
+        # Header with source inline
+        source_info = f" ({item.metadata.source})" if item.metadata.source else ""
+        parts.append(f"\n## {item.id}{source_info}\n")
+        parts.append(item.content)
+        parts.append("\n")
+
+        # Code links in TOON format
+        if resolve_links and item.code_links:
+            resolved = resolve_code_links(item.code_links, project_path)
+
+            # Check git-based staleness
+            git_changed_files: set[str] = set()
+            if item.metadata.saved_at_commit:
+                from sage.git import check_file_changed, is_git_repo
+
+                if is_git_repo(project_path):
+                    for link in item.code_links:
+                        if "::" in link.chunk_id:
+                            file_path = link.chunk_id.rsplit("::", 1)[0]
+                        else:
+                            file_path = link.chunk_id
+                        changed, _ = check_file_changed(
+                            file_path, item.metadata.saved_at_commit, project_path
+                        )
+                        if changed:
+                            git_changed_files.add(file_path)
+
+            if resolved:
+                n = len(resolved)
+                # Use TOON tabular for 3+ links, compact list otherwise
+                if n >= 3:
+                    parts.append(f"\n### Code [{n}]\n")
+                    parts.append(f"links[{n}]{{chunk,line,status}}:\n")
+                    for link in resolved:
+                        if "::" in link.chunk_id:
+                            link_file = link.chunk_id.rsplit("::", 1)[0]
+                        else:
+                            link_file = link.chunk_id
+
+                        if link.stale:
+                            status = "!"
+                        elif link_file in git_changed_files:
+                            status = "~"
+                        else:
+                            status = "+"
+
+                        line = link.line if link.line and not link.stale else "-"
+                        parts.append(f"  {link.chunk_id},{line},{status}\n")
+                    parts.append("\n")
+
+                    # Snippets separately (not tabular - variable length)
+                    has_snippets = any(link.snippet and not link.stale for link in resolved)
+                    if has_snippets:
+                        parts.append("snippets:\n")
+                        for link in resolved:
+                            if link.snippet and not link.stale:
+                                # Use chunk_id as key, truncate snippet to first 5 lines
+                                snippet_lines = link.snippet.strip().split("\n")[:5]
+                                if len(link.snippet.strip().split("\n")) > 5:
+                                    snippet_lines.append("  ...")
+                                parts.append(f"  {link.chunk_id}:\n")
+                                for line in snippet_lines:
+                                    parts.append(f"    {line}\n")
+                        parts.append("\n")
+                else:
+                    parts.append(f"\n### Code [{n}]\n")
+                    for link in resolved:
+                        if "::" in link.chunk_id:
+                            link_file = link.chunk_id.rsplit("::", 1)[0]
+                        else:
+                            link_file = link.chunk_id
+
+                        if link.stale:
+                            icon = "[!]"
+                        elif link_file in git_changed_files:
+                            icon = "[~]"
+                        else:
+                            icon = "[+]"
+
+                        line_info = f":{link.line}" if link.line and not link.stale else ""
+                        parts.append(f"- {icon} `{link.chunk_id}{line_info}`\n")
+
+                        # Inline snippet (truncated)
+                        if link.snippet and not link.stale:
+                            snippet_lines = link.snippet.strip().split("\n")[:3]
+                            parts.append("  ```\n")
+                            for sl in snippet_lines:
+                                parts.append(f"  {sl}\n")
+                            if len(link.snippet.strip().split("\n")) > 3:
+                                parts.append("  ...\n")
+                            parts.append("  ```\n")
+                    parts.append("\n")
+
+    parts.append("---\n")
 
     return "".join(parts)
 

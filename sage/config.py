@@ -157,7 +157,7 @@ class SageConfig:
 
     # Embedding models
     embedding_model: str = "BAAI/bge-large-en-v1.5"  # For prose (knowledge, checkpoints)
-    code_embedding_model: str = "codesage/codesage-large"  # For code indexing
+    code_embedding_model: str = "BAAI/bge-large-en-v1.5"  # For code indexing (codesage has transformers compat issues)
 
     # Async settings (v2.0)
     async_enabled: bool = False  # Sync by default; use CLAUDE.md Task subagent for backgrounding
@@ -202,6 +202,11 @@ class SageConfig:
 
     # Caching settings (v3.1)
     knowledge_cache_ttl_seconds: float = 45.0  # TTL for knowledge index cache
+
+    # Output format settings (v3.2)
+    # TOON-style format: token-efficient, parseable output for checkpoints/knowledge
+    # Inspired by TOON (https://toon-format.org) by @mixeden
+    output_format: str = "toon"  # "toon" (compact) or "markdown" (verbose)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
