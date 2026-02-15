@@ -54,6 +54,21 @@ sage config set <key> <val>  # Set a value
 sage watcher start           # Start compaction watcher daemon
 sage watcher stop            # Stop watcher
 sage watcher status          # Check watcher status
+sage watcher autostart       # Enable/disable autostart
+sage continuity status       # Check continuity markers
+sage continuity inject       # Manually inject context
+
+# Templates
+sage templates list          # Show checkpoint templates
+sage templates show <name>   # View template details
+
+# Admin
+sage admin rebuild-embeddings  # Rebuild after model change
+sage admin clear-cache         # Clear embedding cache
+
+# UI
+sage ui                      # Start local web UI
+sage ui --api-only           # REST API only mode
 ```
 
 ## MCP Tools
@@ -63,6 +78,7 @@ sage watcher status          # Check watcher status
 | **System** | |
 | `sage_version()` | Get version + config info |
 | `sage_health()` | System diagnostics + continuity injection |
+| `sage_continuity_status()` | Check/inject session continuity |
 | `sage_get_config()` | Show all config values |
 | `sage_set_config(key, value)` | Set tuning parameter |
 | `sage_reload_config()` | Apply config changes |
@@ -81,10 +97,19 @@ sage watcher status          # Check watcher status
 | `sage_deprecate_knowledge(id, reason)` | Mark as outdated |
 | `sage_archive_knowledge(id)` | Hide from recall |
 | `sage_remove_knowledge(id)` | Delete item |
+| `sage_code_context(file, symbol)` | Find knowledge linking to code |
 | **Todos** | |
 | `sage_list_todos()` | List persistent todos |
 | `sage_mark_todo_done(id)` | Mark todo complete |
 | `sage_get_pending_todos()` | Get pending for injection |
+| **Code** *(requires `[code]` extra)* | |
+| `sage_index_code(path)` | Index codebase for search |
+| `sage_search_code(query)` | Semantic code search |
+| `sage_grep_symbol(name)` | Fast exact symbol lookup |
+| `sage_analyze_function(name)` | Get function source code |
+| `sage_mark_core(path)` | Mark file for context injection |
+| `sage_list_core()` | List core files |
+| `sage_unmark_core(path)` | Remove core marking |
 
 ## Architecture
 
@@ -176,7 +201,7 @@ pytest tests/ --cov=sage            # Coverage report
 
 ## Code Style
 
-- Python 3.11+ (`match` statements, type parameter syntax)
+- Python 3.12+ (`match` statements, type parameter syntax)
 - Frozen dataclasses for immutability
 - 100 char line length
 - Functional: pure functions, avoid mutable state

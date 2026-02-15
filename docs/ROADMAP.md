@@ -2,7 +2,7 @@
 
 Version timeline and planned features.
 
-## Current: v2.6.x (January 2026)
+## Current: v3.2.0 (February 2026)
 
 ### What's Shipped
 
@@ -20,12 +20,24 @@ Version timeline and planned features.
 - Hybrid retrieval (70% semantic + 30% keyword)
 - Skill-scoped knowledge
 - Automatic recall on query match
+- Code-linked knowledge with staleness detection
 
-**Hooks:**
-- Semantic detector (synthesis, branch_point, constraint, topic_shift)
-- Context threshold detector (70% usage)
-- Pre-compact hook (manual vs auto-compact handling)
-- Priority ordering and cooldown mechanisms
+**Code Intelligence (v3.1+):**
+- AST-aware code indexing (Python, TypeScript, Go, Rust, Solidity)
+- Semantic code search via embeddings
+- Symbol lookup and function analysis
+- Core files for session context injection
+- Knowledge → code linking with staleness markers
+
+**Git-Aware Features (v3.2):**
+- Git context capture in checkpoints (branch, commit, dirty state)
+- Code staleness detection via git diff
+- Local web UI for browsing checkpoints/knowledge
+
+**Session Continuity:**
+- Compaction watcher daemon
+- Continuity markers for state preservation
+- Auto-injection on session start
 
 **Configuration:**
 - SageConfig with tunable thresholds
@@ -33,7 +45,7 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 1025 tests covering all modules
+- 1517 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
@@ -290,6 +302,9 @@ See [docs/skills.md](skills.md) for architecture details.
 | v2.5.0 | Jan 2026 | Proactive recall, auto-injection on first tool call, 884 tests |
 | v2.6.0 | Jan 2026 | Skills architecture, methodology in skills, lean CLAUDE.md, 932 tests |
 | v2.7.0 | Jan 2026 | Skills refactor, 5 skills from source dir, removed hardcoded content, 1025 tests |
+| v3.0.0 | Feb 2026 | Plugin architecture, session tracking, watcher plugins, 1200 tests |
+| v3.1.0 | Feb 2026 | Code indexing, semantic code search, code-linked knowledge, 1400 tests |
+| v3.2.0 | Feb 2026 | Git context, local web UI, CoWork plugin structure, 1517 tests |
 
 ---
 

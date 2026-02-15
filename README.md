@@ -127,7 +127,7 @@ See [docs/ui.md](docs/ui.md) for details.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - [Claude Code](https://claude.ai/code) CLI
 
 ## Development
