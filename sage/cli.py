@@ -675,6 +675,44 @@ def context(skill):
     console.print(f"  [bold]Estimated Total: {total:>8} tokens[/bold]")
 
 
+@main.command()
+@click.option("--port", "-p", default=5555, help="Port to listen on")
+@click.option("--no-browser", is_flag=True, help="Don't open browser automatically")
+@click.option("--api-only", is_flag=True, help="Only serve REST API, no web UI")
+def ui(port, no_browser, api_only):
+    """Start local web UI for browsing checkpoints and knowledge.
+
+    Opens a web interface at http://localhost:5555 (default).
+    Works offline, no external dependencies.
+
+    Examples:
+        sage ui                  # Start on default port
+        sage ui --port 8080      # Custom port
+        sage ui --api-only       # REST API only (for custom frontends)
+
+    REST API endpoints:
+        GET  /api/health              - Health check
+        GET  /api/checkpoints         - List checkpoints
+        GET  /api/checkpoints/:id     - Get checkpoint details
+        GET  /api/checkpoints/search?q=  - Search checkpoints
+        GET  /api/knowledge           - List knowledge
+        GET  /api/knowledge/:id       - Get knowledge item
+        GET  /api/knowledge/recall?q= - Recall matching knowledge
+        POST /api/knowledge           - Add knowledge
+        PUT  /api/knowledge/:id       - Update knowledge
+        DELETE /api/knowledge/:id     - Remove knowledge
+    """
+    from sage.ui.server import run_server
+
+    project_path = detect_project_root()
+    run_server(
+        port=port,
+        project_path=project_path,
+        open_browser=not no_browser,
+        api_only=api_only,
+    )
+
+
 @main.group()
 def config():
     """Manage configuration.
