@@ -24,7 +24,7 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 
           # Update plugin.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" plugins/sage/.claude-plugin/plugin.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" .claude-plugin/plugin.json
 
           # Update marketplace.json
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" .claude-plugin/marketplace.json
@@ -35,7 +35,7 @@ jobs:
           # Show what changed
           echo "=== Updated versions ==="
           grep "^version" pyproject.toml
-          grep "version" plugins/sage/.claude-plugin/plugin.json
+          grep "version" .claude-plugin/plugin.json
           grep "version" .claude-plugin/marketplace.json
           grep "__version__" sage/__init__.py
 
