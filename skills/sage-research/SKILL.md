@@ -184,6 +184,53 @@ Before starting work, check what's already known:
 sage_recall_knowledge(query="what you're working on")
 ```
 
+## Presenting Checkpoints
+
+When loading or listing checkpoints, format them nicely for the user:
+
+### Single Checkpoint
+```markdown
+## 📍 Authentication Flow Analysis
+*Saved 2026-02-14 | Confidence: 85%*
+
+**Question:** How does the authentication flow work in this codebase?
+
+**Thesis:** Authentication uses JWT tokens with refresh rotation. The flow
+starts in auth/login.py, validates credentials against the user service,
+and issues tokens via auth/tokens.py.
+
+**Key Evidence:**
+- Access tokens expire in 15 minutes
+- Refresh tokens stored in httponly cookies
+
+**Open Questions:**
+- How does token revocation work?
+- Is there rate limiting on login attempts?
+
+**Sources:**
+- [+] auth/login.py — Entry point for login
+- [+] auth/tokens.py — JWT generation
+- [+] RFC 7519 — JWT standard followed
+```
+
+### Checkpoint List
+```markdown
+Found **3 checkpoints**:
+
+| Checkpoint | Confidence | When |
+|------------|------------|------|
+| authentication-flow | 85% | Feb 14 |
+| rate-limiting-design | 70% | Feb 13 |
+| api-structure | 90% | Feb 12 |
+
+Use `sage_load_checkpoint("authentication-flow")` to restore context.
+```
+
+### Relation Icons
+- `[+]` supports — Source confirms the thesis
+- `[-]` contradicts — Source challenges the thesis
+- `[~]` nuances — Source adds complexity/conditions
+
 ## Behavior
 
 - **Proactive**: Call autosave checks at trigger moments. Don't wait to be asked.

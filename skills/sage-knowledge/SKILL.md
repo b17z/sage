@@ -124,3 +124,56 @@ sage_remove_knowledge(knowledge_id="the-id")
 - **Additive**: Multiple items can be recalled if relevant (up to token limit)
 - **Scoped**: Skill-specific knowledge only appears when using that skill
 - **Transparent**: Always shows what was recalled and token cost
+
+## Presenting Output
+
+MCP tool results return structured data. **Always format Sage outputs nicely in your response** rather than relying on raw tool output.
+
+### Knowledge Items
+
+When presenting recalled knowledge:
+
+```markdown
+## 📚 jwt-auth-pattern
+*Source: auth system analysis*
+
+JWT authentication uses access/refresh token pairs. Access tokens are
+short-lived (15min), refresh tokens longer (7 days). Store refresh tokens
+in httponly cookies, access tokens in memory only.
+
+**Code References:**
+- `auth/tokens.py::create_access_token` — implements token generation
+- `auth/tokens.py::create_refresh_token` — implements refresh flow
+```
+
+### Code Links
+
+When knowledge links to code, show the chain:
+
+```markdown
+The rate limiting implementation is in `auth/middleware.py:RateLimiter`:
+- Uses sliding window algorithm
+- 5 attempts/minute per IP, 20/hour
+- Lockout triggers email notification
+```
+
+### Multiple Items
+
+For multiple items, use a compact summary first:
+
+```markdown
+Found **3 relevant items**: jwt-auth-pattern, rate-limiting, session-handling
+
+### jwt-auth-pattern
+[content]
+
+### rate-limiting
+[content]
+```
+
+### Staleness Indicators
+
+Watch for staleness indicators in code links:
+- `[!]` — Code has changed since knowledge was saved; may need review
+- `[+]` — Code supports the knowledge
+- `[~]` — Code provides context
