@@ -318,6 +318,405 @@
             color: var(--warning);
         }
 
+        /* Checkpoint detail styling */
+        .checkpoint-header {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+
+        .confidence-badge {
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .confidence-badge.high {
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--success);
+        }
+
+        .confidence-badge.medium {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--warning);
+        }
+
+        .confidence-badge.low {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .trigger-badge {
+            padding: 0.25rem 0.5rem;
+            background: var(--secondary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .timestamp {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .thesis-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .thesis-section h3 {
+            color: var(--primary);
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .thesis-content {
+            background: var(--bg);
+            border-left: 3px solid var(--primary);
+            padding: 1rem 1.25rem;
+            border-radius: 0 6px 6px 0;
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .evidence-section,
+        .questions-section,
+        .sources-section,
+        .tensions-section,
+        .reasoning-section,
+        .git-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .evidence-section h3,
+        .questions-section h3,
+        .sources-section h3,
+        .tensions-section h3,
+        .reasoning-section h3,
+        .git-section h3 {
+            color: var(--primary);
+            font-size: 0.85rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .evidence-list,
+        .questions-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .evidence-list li,
+        .questions-list li {
+            padding: 0.5rem 0.75rem;
+            background: var(--bg);
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            position: relative;
+            padding-left: 1.5rem;
+        }
+
+        .evidence-list li::before {
+            content: "✓";
+            position: absolute;
+            left: 0.5rem;
+            color: var(--success);
+        }
+
+        .questions-list li::before {
+            content: "?";
+            position: absolute;
+            left: 0.5rem;
+            color: var(--warning);
+            font-weight: bold;
+        }
+
+        .sources-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .source-card {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+        }
+
+        .source-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .source-id {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .source-type {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--secondary);
+            border-radius: 3px;
+            color: var(--text-muted);
+        }
+
+        .source-relation {
+            font-family: monospace;
+            font-size: 0.75rem;
+            margin-left: auto;
+        }
+
+        .source-relation.relation-supports { color: var(--success); }
+        .source-relation.relation-contradicts { color: #ef4444; }
+        .source-relation.relation-nuances { color: var(--warning); }
+
+        .source-take {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .tension-card {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--warning);
+        }
+
+        .tension-between {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+
+        .tension-nature {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .tension-resolution {
+            font-size: 0.85rem;
+            color: var(--success);
+            margin-top: 0.5rem;
+        }
+
+        .tension-unresolved {
+            font-size: 0.8rem;
+            color: var(--warning);
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        .reasoning-content {
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .git-section .git-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        .git-branch {
+            color: var(--success);
+            font-weight: 500;
+        }
+
+        .git-commit {
+            background: var(--secondary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .git-dirty {
+            color: var(--warning);
+            font-size: 0.8rem;
+        }
+
+        /* Knowledge content styling */
+        .knowledge-content {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.7;
+        }
+
+        .knowledge-content h2,
+        .knowledge-content h3,
+        .knowledge-content h4 {
+            color: var(--primary);
+            margin: 1.25rem 0 0.75rem;
+        }
+
+        .knowledge-content h2:first-child,
+        .knowledge-content h3:first-child,
+        .knowledge-content h4:first-child {
+            margin-top: 0;
+        }
+
+        .knowledge-content p {
+            margin-bottom: 0.75rem;
+            color: var(--text);
+        }
+
+        .knowledge-content ul {
+            margin: 0.75rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .knowledge-content li {
+            margin-bottom: 0.5rem;
+            color: var(--text-muted);
+        }
+
+        .knowledge-content code {
+            background: var(--secondary);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--primary);
+        }
+
+        .knowledge-content .code-block {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+
+        .knowledge-content .code-block code {
+            background: none;
+            padding: 0;
+            color: #c9d1d9;
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+
+        .knowledge-content strong {
+            color: var(--text);
+        }
+
+        .empty-content {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* Code links section */
+        .code-links {
+            margin-bottom: 1.5rem;
+        }
+
+        .code-links h3 {
+            font-size: 0.9rem;
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+        }
+
+        .code-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg);
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .code-link code {
+            background: var(--secondary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            color: var(--success);
+        }
+
+        .code-link .relation {
+            background: var(--secondary);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .code-link .note {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        /* Metadata section */
+        .metadata-section {
+            border-top: 1px solid var(--border);
+            padding-top: 1rem;
+            margin-top: 1rem;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1rem;
+        }
+
+        .metadata-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .metadata-item .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+
+        .metadata-item .value {
+            font-size: 0.85rem;
+            color: var(--text);
+        }
+
+        .metadata-item .value.status-active {
+            color: var(--success);
+        }
+
+        .metadata-item .value.status-deprecated {
+            color: var(--warning);
+        }
+
+        .metadata-item .value.status-archived {
+            color: var(--text-muted);
+        }
+
+        /* Deprecation warning */
+        .deprecation-warning {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid var(--warning);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1rem;
+            color: var(--warning);
+            font-size: 0.85rem;
+        }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -629,53 +1028,110 @@
 
                 document.getElementById('detail-title').textContent = cp.core_question || 'Checkpoint';
 
-                let gitHtml = '';
-                if (cp.git_context) {
-                    const gc = cp.git_context;
-                    gitHtml = `
-                        <h3>Git Context</h3>
-                        <p>
-                            <strong>Branch:</strong> ${escapeHtml(gc.branch || 'unknown')}<br>
-                            <strong>Commit:</strong> <code>${escapeHtml((gc.commit || '').substring(0, 7))}</code>
-                            ${gc.dirty ? '<span class="dirty"> (uncommitted changes)</span>' : ''}
-                        </p>
-                    `;
-                }
+                const conf = (cp.confidence || 0) * 100;
+                const confClass = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
 
                 document.getElementById('detail-content').innerHTML = `
-                    <h3>Thesis</h3>
-                    <p>${escapeHtml(cp.thesis)}</p>
-                    <p><strong>Confidence:</strong> ${((cp.confidence || 0) * 100).toFixed(0)}%</p>
+                    <div class="checkpoint-header">
+                        <span class="confidence-badge ${confClass}">${conf.toFixed(0)}% confidence</span>
+                        <span class="trigger-badge">${escapeHtml(cp.trigger || 'manual')}</span>
+                        ${cp.ts ? `<span class="timestamp">${formatDate(cp.ts)}</span>` : ''}
+                    </div>
+
+                    <div class="thesis-section">
+                        <h3>Thesis</h3>
+                        <div class="thesis-content">${renderMarkdown(cp.thesis)}</div>
+                    </div>
 
                     ${cp.key_evidence?.length ? `
-                        <h3>Key Evidence</h3>
-                        <ul>${cp.key_evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>
+                        <div class="evidence-section">
+                            <h3>Key Evidence</h3>
+                            <ul class="evidence-list">
+                                ${cp.key_evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                            </ul>
+                        </div>
                     ` : ''}
 
                     ${cp.open_questions?.length ? `
-                        <h3>Open Questions</h3>
-                        <ul>${cp.open_questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+                        <div class="questions-section">
+                            <h3>Open Questions</h3>
+                            <ul class="questions-list">
+                                ${cp.open_questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')}
+                            </ul>
+                        </div>
                     ` : ''}
 
                     ${cp.sources?.length ? `
-                        <h3>Sources</h3>
-                        <ul>${cp.sources.map(s => `
-                            <li><strong>${escapeHtml(s.id)}</strong> (${s.type}): ${escapeHtml(s.take)}</li>
-                        `).join('')}</ul>
+                        <div class="sources-section">
+                            <h3>Sources</h3>
+                            <div class="sources-grid">
+                                ${cp.sources.map(s => `
+                                    <div class="source-card">
+                                        <div class="source-header">
+                                            <span class="source-id">${escapeHtml(s.id)}</span>
+                                            <span class="source-type">${escapeHtml(s.type)}</span>
+                                            <span class="source-relation relation-${s.relation}">${relationIcon(s.relation)}</span>
+                                        </div>
+                                        <div class="source-take">${escapeHtml(s.take)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
                     ` : ''}
 
                     ${cp.tensions?.length ? `
-                        <h3>Tensions</h3>
-                        <ul>${cp.tensions.map(t => `
-                            <li><strong>${escapeHtml((t.between || []).join(' vs '))}</strong>: ${escapeHtml(t.nature)}
-                            ${t.resolution ? `— ${escapeHtml(t.resolution)}` : '— unresolved'}</li>
-                        `).join('')}</ul>
+                        <div class="tensions-section">
+                            <h3>Tensions</h3>
+                            ${cp.tensions.map(t => `
+                                <div class="tension-card">
+                                    <div class="tension-between">${escapeHtml((t.between || []).join(' vs '))}</div>
+                                    <div class="tension-nature">${escapeHtml(t.nature)}</div>
+                                    ${t.resolution ? `<div class="tension-resolution">→ ${escapeHtml(t.resolution)}</div>` : '<div class="tension-unresolved">Unresolved</div>'}
+                                </div>
+                            `).join('')}
+                        </div>
                     ` : ''}
 
-                    ${gitHtml}
+                    ${cp.reasoning_trace ? `
+                        <div class="reasoning-section">
+                            <h3>Reasoning Trace</h3>
+                            <div class="reasoning-content">${renderMarkdown(cp.reasoning_trace)}</div>
+                        </div>
+                    ` : ''}
 
-                    <h3>Formatted</h3>
-                    <pre>${escapeHtml(data.formatted || JSON.stringify(cp, null, 2))}</pre>
+                    ${cp.git_context ? `
+                        <div class="git-section">
+                            <h3>Git Context</h3>
+                            <div class="git-info">
+                                <span class="git-branch">${escapeHtml(cp.git_context.branch || 'unknown')}</span>
+                                <code class="git-commit">${escapeHtml((cp.git_context.commit || '').substring(0, 7))}</code>
+                                ${cp.git_context.dirty ? '<span class="git-dirty">uncommitted changes</span>' : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <div class="metadata-section">
+                        <div class="metadata-grid">
+                            ${cp.action_type ? `
+                            <div class="metadata-item">
+                                <span class="label">Action Type</span>
+                                <span class="value">${escapeHtml(cp.action_type)}</span>
+                            </div>
+                            ` : ''}
+                            ${cp.action_goal ? `
+                            <div class="metadata-item">
+                                <span class="label">Goal</span>
+                                <span class="value">${escapeHtml(cp.action_goal)}</span>
+                            </div>
+                            ` : ''}
+                            ${cp.skill ? `
+                            <div class="metadata-item">
+                                <span class="label">Skill</span>
+                                <span class="value">${escapeHtml(cp.skill)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
                 `;
                 openDetail();
             } catch (e) {
@@ -695,37 +1151,61 @@
                     `<span class="tag status-${k.status}">${k.status}</span>` : '';
 
                 document.getElementById('detail-content').innerHTML = `
-                    <div class="tags" style="margin-bottom: 1rem;">
+                    <div class="tags" style="margin-bottom: 1.5rem;">
                         ${(k.triggers || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
                         ${statusBadge}
                     </div>
 
-                    <h3>Content</h3>
-                    <p>${escapeHtml(k.content)}</p>
+                    <div class="knowledge-content">${renderMarkdown(k.content)}</div>
 
                     ${k.code_links?.length ? `
-                        <h3>Code Links</h3>
-                        <ul>${k.code_links.map(l => `
-                            <li>
-                                <code>${escapeHtml(l.chunk_id)}</code>
-                                ${l.relation ? `(${escapeHtml(l.relation)})` : ''}
-                                ${l.note ? `— ${escapeHtml(l.note)}` : ''}
-                            </li>
-                        `).join('')}</ul>
+                        <div class="code-links">
+                            <h3>Code Links</h3>
+                            ${k.code_links.map(l => `
+                                <div class="code-link">
+                                    <code>${escapeHtml(l.chunk_id)}</code>
+                                    ${l.relation ? `<span class="relation">${escapeHtml(l.relation)}</span>` : ''}
+                                    ${l.note ? `<span class="note">${escapeHtml(l.note)}</span>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
                     ` : ''}
 
-                    <h3>Metadata</h3>
-                    <p>
-                        <strong>Type:</strong> ${escapeHtml(k.item_type || 'knowledge')}<br>
-                        <strong>Status:</strong> ${escapeHtml(k.status || 'active')}<br>
-                        ${k.metadata?.source ? `<strong>Source:</strong> ${escapeHtml(k.metadata.source)}<br>` : ''}
-                        ${k.metadata?.added ? `<strong>Added:</strong> ${escapeHtml(k.metadata.added)}<br>` : ''}
-                        ${k.skill ? `<strong>Skill:</strong> ${escapeHtml(k.skill)}<br>` : ''}
-                    </p>
+                    <div class="metadata-section">
+                        <div class="metadata-grid">
+                            <div class="metadata-item">
+                                <span class="label">Type</span>
+                                <span class="value">${escapeHtml(k.item_type || 'knowledge')}</span>
+                            </div>
+                            <div class="metadata-item">
+                                <span class="label">Status</span>
+                                <span class="value status-${k.status || 'active'}">${escapeHtml(k.status || 'active')}</span>
+                            </div>
+                            ${k.metadata?.source ? `
+                            <div class="metadata-item">
+                                <span class="label">Source</span>
+                                <span class="value">${escapeHtml(k.metadata.source)}</span>
+                            </div>
+                            ` : ''}
+                            ${k.metadata?.added ? `
+                            <div class="metadata-item">
+                                <span class="label">Added</span>
+                                <span class="value">${escapeHtml(k.metadata.added)}</span>
+                            </div>
+                            ` : ''}
+                            ${k.skill ? `
+                            <div class="metadata-item">
+                                <span class="label">Skill</span>
+                                <span class="value">${escapeHtml(k.skill)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
 
                     ${k.deprecation_reason ? `
-                        <h3>Deprecation</h3>
-                        <p>${escapeHtml(k.deprecation_reason)}</p>
+                        <div class="deprecation-warning">
+                            <strong>Deprecated:</strong> ${escapeHtml(k.deprecation_reason)}
+                        </div>
                     ` : ''}
                 `;
                 openDetail();
@@ -751,6 +1231,70 @@
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
+        }
+
+        function formatDate(ts) {
+            if (!ts) return '';
+            try {
+                const date = new Date(ts);
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            } catch {
+                return ts.substring(0, 16).replace('T', ' ');
+            }
+        }
+
+        function relationIcon(relation) {
+            const icons = {
+                'supports': '[+]',
+                'contradicts': '[-]',
+                'nuances': '[~]',
+                'extends': '[→]',
+            };
+            return icons[relation] || `[${relation || '?'}]`;
+        }
+
+        function renderMarkdown(text) {
+            if (!text) return '<p class="empty-content">No content</p>';
+
+            let html = escapeHtml(text);
+
+            // Code blocks (```...```)
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+                return `<pre class="code-block"><code class="language-${lang}">${code.trim()}</code></pre>`;
+            });
+
+            // Inline code (`...`)
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Bold (**...**)
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            // Headers
+            html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+            html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+            // Lists (- item)
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+            // Numbered lists (1. item)
+            html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+            // Paragraphs (double newline)
+            html = html.replace(/\n\n+/g, '</p><p>');
+            html = '<p>' + html + '</p>';
+
+            // Clean up empty paragraphs
+            html = html.replace(/<p>\s*<\/p>/g, '');
+            html = html.replace(/<p>(<h[234]>)/g, '$1');
+            html = html.replace(/(<\/h[234]>)<\/p>/g, '$1');
+            html = html.replace(/<p>(<pre)/g, '$1');
+            html = html.replace(/(<\/pre>)<\/p>/g, '$1');
+            html = html.replace(/<p>(<ul>)/g, '$1');
+            html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+
+            return html;
         }
 
         function escapeAttr(str) {
