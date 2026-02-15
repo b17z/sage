@@ -556,6 +556,10 @@
       color: var(--text-primary);
     }
 
+    .terminal-comment {
+      color: var(--text-dim);
+    }
+
     .install-method-gets {
       font-size: 0.8rem;
       color: var(--text-secondary);
@@ -679,9 +683,9 @@
 
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">v3.1 — Code-Aware Memory</div>
+      <div class="hero-badge">v3.2 — Git-Aware Memory</div>
       <h1>Claude that <span>remembers</span><br>across sessions</h1>
-      <p class="hero-sub">Semantic memory for Claude Code. Watcher daemon detects compaction, checkpoints capture research state, knowledge persists across sessions.</p>
+      <p class="hero-sub">Semantic memory for Claude Code. Checkpoints capture research state, knowledge persists across sessions, context survives compaction.</p>
       <div class="cta-group">
         <a href="#install" class="btn btn-primary">Get Started</a>
         <a href="https://github.com/b17z/sage" class="btn btn-secondary">View Source</a>
@@ -768,24 +772,24 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon">&#x2699;</div>
-          <div class="feature-title">Plugin Architecture</div>
-          <div class="feature-desc">Watcher daemon with event-driven plugins. Session tracking, checkpoint queueing, TTL-based injection.</div>
-          <div class="feature-tag">v3.0+</div>
-        </div>
-
-        <div class="feature-card">
           <div class="feature-icon">&#x1F4BB;</div>
           <div class="feature-title">Code-Aware Memory</div>
-          <div class="feature-desc">Checkpoints track files_explored, files_changed, and code_refs. Dual embedding models—BGE for prose, CodeSage for code.</div>
+          <div class="feature-desc">Checkpoints track files explored/changed. AST-aware indexing. Dual embeddings—BGE for prose, CodeSage for code.</div>
           <div class="feature-tag">v3.1+</div>
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon">&#x1F9F9;</div>
-          <div class="feature-title">Storage Maintenance</div>
-          <div class="feature-desc">Automatic pruning by age and count. TTL-cached knowledge index. Configurable thresholds via tuning.yaml.</div>
-          <div class="feature-tag">v3.1+</div>
+          <div class="feature-icon">&#x1F500;</div>
+          <div class="feature-title">Git Context</div>
+          <div class="feature-desc">Checkpoints capture branch, commit, and dirty state. Knowledge staleness detection via git diff.</div>
+          <div class="feature-tag">v3.2+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F310;</div>
+          <div class="feature-title">Local Web UI</div>
+          <div class="feature-desc">Browse checkpoints and knowledge with <code>sage ui</code>. REST API for custom frontends. Obsidian-compatible markdown.</div>
+          <div class="feature-tag">v3.2+</div>
         </div>
       </div>
     </div>
@@ -812,7 +816,7 @@
         </div>
         <div class="skill-item">
           <div class="skill-name">sage-knowledge</div>
-          <div class="skill-desc">Recall and save insights using sage_recall_knowledge and sage_save_knowledge. Triggered by: recall, remember, knowledge, save insight</div>
+          <div class="skill-desc">Recall and save insights using sage_recall_knowledge and sage_save_knowledge. Triggered by: recall, remember, knowledge</div>
         </div>
         <div class="skill-item">
           <div class="skill-name">sage-knowledge-hygiene</div>
@@ -829,43 +833,35 @@
   <section class="architecture">
     <div class="container">
       <div class="section-label">Architecture</div>
-      <h2>Built on Claude Code primitives</h2>
+      <h2>How it integrates</h2>
 
       <div class="arch-grid">
         <div class="arch-card">
           <div class="arch-title">MCP Server</div>
           <div class="arch-subtitle">Model Context Protocol</div>
           <div class="arch-detail">
-            <code>20+ tools</code> for checkpoints, knowledge, todos, config, and debugging. Always available to Claude.
-          </div>
-        </div>
-        <div class="arch-card">
-          <div class="arch-title">Hooks</div>
-          <div class="arch-subtitle">Lifecycle events</div>
-          <div class="arch-detail">
-            Semantic detector, context threshold (70%), pre-compact checkpoint. Automatic trigger detection.
+            <code>30+ tools</code> for checkpoints, knowledge, code search, todos, and config. Always available to Claude.
           </div>
         </div>
         <div class="arch-card">
           <div class="arch-title">Skills</div>
-          <div class="arch-subtitle">On-demand methodology</div>
+          <div class="arch-subtitle">Claude Agent Skills</div>
           <div class="arch-detail">
-            <code>~/.claude/skills/sage/</code> — loaded when context matches triggers, not always present.
+            <code>~/.claude/skills/sage/</code> — methodology loaded on-demand when context matches triggers.
           </div>
         </div>
-        <div class="arch-card">
-          <div class="arch-title">Local Storage</div>
-          <div class="arch-subtitle">No cloud, fully local</div>
-          <div class="arch-detail">
-            <code>~/.sage/</code> — checkpoints, knowledge, config. Obsidian-compatible markdown format.
-          </div>
-        </div>
-
         <div class="arch-card">
           <div class="arch-title">Watcher Daemon</div>
-          <div class="arch-subtitle">Event-driven plugins</div>
+          <div class="arch-subtitle">Session continuity</div>
           <div class="arch-detail">
-            <code>sage watcher start</code> — session tracking, checkpoint queueing, compaction detection.
+            <code>sage watcher start</code> — detects compaction, queues checkpoints, injects context on restore.
+          </div>
+        </div>
+        <div class="arch-card">
+          <div class="arch-title">Storage</div>
+          <div class="arch-subtitle">Fully local, Obsidian-compatible</div>
+          <div class="arch-detail">
+            <code>~/.sage/</code> — checkpoints, knowledge, config. Markdown + YAML frontmatter format.
           </div>
         </div>
       </div>
@@ -875,37 +871,38 @@
   <section class="install" id="install">
     <div class="container">
       <h2>Get started</h2>
-      <p class="install-desc">Choose your installation method.</p>
+      <p class="install-desc">Install from PyPI, then set up the MCP server and skills.</p>
 
       <div class="install-methods">
-        <!-- Method 1: Claude Code Plugin (Recommended) -->
+        <!-- Method 1: Quick Start (Recommended) -->
         <div class="install-method recommended">
           <div class="install-method-header">
-            <span class="install-method-title">Claude Code Plugin</span>
+            <span class="install-method-title">Quick Start</span>
             <span class="install-method-badge">Recommended</span>
           </div>
           <div class="install-method-body">
-            <p class="install-method-desc">Primary method for Claude Code users. Installs MCP server and hooks automatically.</p>
+            <p class="install-method-desc">Install from PyPI and set up Claude Code integration.</p>
             <div class="install-method-commands">
-              <div class="terminal-line"><span class="terminal-prompt">/</span><span class="terminal-cmd">install-plugin b17z/sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage[mcp]</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install</span> <span class="terminal-comment"># Add MCP server to Claude</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage skills install</span> <span class="terminal-comment"># Install methodology skills</span></div>
             </div>
-            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + hooks + skills</p>
+            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + skills + CLI</p>
           </div>
         </div>
 
-        <!-- Method 2: PyPI -->
+        <!-- Method 2: With Code Indexing -->
         <div class="install-method">
           <div class="install-method-header">
-            <span class="install-method-title">PyPI</span>
+            <span class="install-method-title">With Code Indexing</span>
           </div>
           <div class="install-method-body">
-            <p class="install-method-desc">For standalone CLI usage or manual setup.</p>
+            <p class="install-method-desc">Include AST-aware code search and semantic indexing.</p>
             <div class="install-method-commands">
-              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage</span></div>
-              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install && sage hooks install</span></div>
-              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage skills install</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage[mcp,code]</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install && sage skills install</span></div>
             </div>
-            <p class="install-method-gets"><strong>Gets you:</strong> Full control over components</p>
+            <p class="install-method-gets"><strong>Gets you:</strong> Everything + code search with sage_search_code()</p>
           </div>
         </div>
 
@@ -918,9 +915,9 @@
             <p class="install-method-desc">For contributors or custom setups.</p>
             <div class="install-method-commands">
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">git clone https://github.com/b17z/sage</span></div>
-              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">cd sage && pip install -e ".[dev]"</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">cd sage && pip install -e ".[dev,mcp,code]"</span></div>
             </div>
-            <p class="install-method-note">Then: <code style="color: var(--accent);">sage mcp install && sage hooks install && sage skills install</code></p>
+            <p class="install-method-note">Then: <code style="color: var(--accent);">sage mcp install && sage skills install</code></p>
           </div>
         </div>
       </div>
@@ -930,7 +927,7 @@
   <footer>
     <div class="container">
       <div class="footer-content">
-        <div class="footer-logo">sage v3.1.0</div>
+        <div class="footer-logo">sage v3.2.0</div>
         <div class="footer-links">
           <a href="https://github.com/b17z/sage">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
