@@ -38,6 +38,10 @@ def serialize(obj: Any) -> Any:
         return {k: serialize(v) for k, v in asdict(obj).items()}
     if isinstance(obj, (list, tuple)):
         return [serialize(item) for item in obj]
+    if isinstance(obj, frozenset):
+        return sorted(serialize(item) for item in obj)
+    if isinstance(obj, set):
+        return sorted(serialize(item) for item in obj)
     if isinstance(obj, dict):
         return {k: serialize(v) for k, v in obj.items()}
     if isinstance(obj, Path):
@@ -184,6 +188,7 @@ class SageAPIHandler(BaseHTTPRequestHandler):
                         "confidence": cp.confidence,
                         "trigger": cp.trigger,
                         "ts": cp.ts,
+                        "git_context": cp.git_context,
                     }
                     for cp in checkpoints
                 ],
