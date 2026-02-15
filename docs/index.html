@@ -685,7 +685,7 @@
     <div class="container">
       <div class="hero-badge">v4.0 — Invisible Context Hydration</div>
       <h1>Claude that <span>remembers</span><br>across sessions</h1>
-      <p class="hero-sub">Semantic memory for Claude Code. Checkpoints capture research state, knowledge persists across sessions, context survives compaction.</p>
+      <p class="hero-sub">Semantic memory for Claude Code. Research checkpoints, persistent knowledge, failure tracking, and invisible context hydration—so Claude never forgets.</p>
       <div class="cta-group">
         <a href="#install" class="btn btn-primary">Get Started</a>
         <a href="https://github.com/b17z/sage" class="btn btn-secondary">View Source</a>
@@ -697,7 +697,7 @@
     <div class="container">
       <div class="section-label">The Sage Loop</div>
       <h2>Memory that persists</h2>
-      <p style="color: var(--text-secondary); max-width: 560px;">Checkpoints trigger at meaningful moments—synthesis, branch points, topic shifts—not when tokens run out. Context is automatically restored after compaction.</p>
+      <p style="color: var(--text-secondary); max-width: 560px;">Checkpoints trigger at meaningful moments—synthesis, branch points, topic shifts. Context auto-restores after compaction. System folder and failures are always available.</p>
 
       <div class="loop-diagram">
         <pre>
@@ -782,6 +782,34 @@
           <div class="feature-icon">&#x1F500;</div>
           <div class="feature-title">Git Context</div>
           <div class="feature-desc">Checkpoints capture branch, commit, and dirty state. Knowledge staleness detection via git diff.</div>
+          <div class="feature-tag">v3.2+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4C2;</div>
+          <div class="feature-title">System Folder</div>
+          <div class="feature-desc">Agent-managed pinned content in <code>.sage/system/</code>. Objectives, constraints, and context auto-injected every session.</div>
+          <div class="feature-tag">v4.0+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x274C;</div>
+          <div class="feature-title">Failure Memory</div>
+          <div class="feature-desc">Track what didn't work and why. Failures auto-recalled to avoid repeating mistakes.</div>
+          <div class="feature-tag">v4.0+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F517;</div>
+          <div class="feature-title">Knowledge Linking</div>
+          <div class="feature-desc">Connect related knowledge items for multi-hop reasoning. Related, supersedes, contradicts, extends.</div>
+          <div class="feature-tag">v4.0+</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4CE;</div>
+          <div class="feature-title">MCP Resources</div>
+          <div class="feature-desc">Direct <code>@sage://</code> syntax for checkpoints, knowledge, and system files. No tool calls needed.</div>
           <div class="feature-tag">v4.0+</div>
         </div>
 
@@ -789,7 +817,7 @@
           <div class="feature-icon">&#x1F310;</div>
           <div class="feature-title">Local Web UI</div>
           <div class="feature-desc">Browse checkpoints and knowledge with <code>sage ui</code>. REST API for custom frontends. Obsidian-compatible markdown.</div>
-          <div class="feature-tag">v4.0+</div>
+          <div class="feature-tag">v3.2+</div>
         </div>
       </div>
     </div>
@@ -861,7 +889,15 @@
           <div class="arch-title">Storage</div>
           <div class="arch-subtitle">Fully local, Obsidian-compatible</div>
           <div class="arch-detail">
-            <code>~/.sage/</code> — checkpoints, knowledge, config. Markdown + YAML frontmatter format.
+            <code>~/.sage/</code> — checkpoints, knowledge, failures, system folder. Markdown + YAML frontmatter.
+          </div>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-title">MCP Resources</div>
+          <div class="arch-subtitle">Direct context access</div>
+          <div class="arch-detail">
+            <code>@sage://checkpoint/id</code> — fetch data without tool calls. System files, knowledge, failures.
           </div>
         </div>
       </div>
