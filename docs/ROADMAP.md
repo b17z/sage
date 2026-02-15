@@ -2,9 +2,16 @@
 
 Version timeline and planned features.
 
-## Current: v3.2.0 (February 2026)
+## Current: v4.0.0 (February 2026)
 
 ### What's Shipped
+
+**Invisible Context Hydration (v4.0):**
+- System folder (`.sage/system/`) for agent-managed pinned content
+- Failure memory tracking — learn from what didn't work
+- MCP resources — direct `@sage://` access without tool calls
+- Knowledge linking — connect related items for multi-hop reasoning
+- Git versioning — every save creates a commit (optional)
 
 **Core Checkpointing:**
 - Manual and automatic checkpoint triggers
@@ -29,7 +36,7 @@ Version timeline and planned features.
 - Core files for session context injection
 - Knowledge → code linking with staleness markers
 
-**Git-Aware Features (v3.2):**
+**Git-Aware Features (v3.2+):**
 - Git context capture in checkpoints (branch, commit, dirty state)
 - Code staleness detection via git diff
 - Local web UI for browsing checkpoints/knowledge
@@ -45,10 +52,11 @@ Version timeline and planned features.
 - `tuning.yaml` for retrieval parameters
 
 **Infrastructure:**
-- 1517 tests covering all modules
+- 1624 tests covering all modules
 - Safe deserialization (yaml.safe_load, allow_pickle=False)
 - Path sanitization for security
 - File permissions (chmod 0o600) for sensitive data
+- API security hardening (CORS, input validation, body size limits)
 
 ---
 
@@ -305,6 +313,7 @@ See [docs/skills.md](skills.md) for architecture details.
 | v3.0.0 | Feb 2026 | Plugin architecture, session tracking, watcher plugins, 1200 tests |
 | v3.1.0 | Feb 2026 | Code indexing, semantic code search, code-linked knowledge, 1400 tests |
 | v3.2.0 | Feb 2026 | Git context, local web UI, CoWork plugin structure, 1517 tests |
+| v4.0.0 | Feb 2026 | System folder, failure memory, MCP resources, knowledge linking, 1624 tests |
 
 ---
 

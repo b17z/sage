@@ -39,12 +39,11 @@ AI tools can give false progress: "Look, I built this app!" (by copy-pasting AI 
 
 ### Configuration
 - [Configuration](./configuration.md) — Tunable thresholds and settings
-- [Storage Maintenance](./maintenance.md) — Pruning, caching, cleanup
+- [Storage Maintenance](../maintenance.md) — Pruning, caching, cleanup
 
 ### Advanced
-- [Trigger Detection](./triggers.md) — Automatic checkpoint moments
-- [Plugin Architecture](./plugins.md) — Watcher daemon extensibility
-- [Skills](./skills.md) — Methodology as progressive disclosure
+- [Plugin Architecture](../hooks.md) — Watcher daemon and hooks
+- [Skills](../skills.md) — Methodology as progressive disclosure
 
 ## Quick Links
 
@@ -59,7 +58,7 @@ AI tools can give false progress: "Look, I built this app!" (by copy-pasting AI 
 | Search code semantically | [Code Indexing](./code-indexing.md) |
 | Understand what files I explored | [Code Context Capture](./code-context.md) |
 | Configure Sage behavior | [Configuration](./configuration.md) |
-| Extend the watcher daemon | [Plugin Architecture](./plugins.md) |
+| Extend the watcher daemon | [Plugin Architecture](../hooks.md) |
 
 ## Design Philosophy
 

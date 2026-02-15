@@ -49,7 +49,7 @@ The same features serve both — checkpoints help agents resume after compaction
 | Feature | Purpose | Guide |
 |---------|---------|-------|
 | [Configuration](./features/configuration.md) | Tunable thresholds and settings | Project and user-level config |
-| [Storage Maintenance](./maintenance.md) | Pruning, caching, cleanup | Automatic housekeeping |
+| [Storage Maintenance](maintenance.md) | Pruning, caching, cleanup | Automatic housekeeping |
 
 ## The Sage Loop
 
