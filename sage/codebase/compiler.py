@@ -34,6 +34,40 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Path Matching
+# =============================================================================
+
+
+def matches_exclude_pattern(rel_path: str, pattern: str) -> bool:
+    """Check if a path matches an exclude pattern.
+
+    Supports **/ and /** glob patterns:
+    - **/dirname/** matches dirname anywhere in path
+    - dirname/** matches dirname at start
+    - Standard fnmatch patterns otherwise
+
+    Args:
+        rel_path: Relative file path
+        pattern: Glob pattern (may include **)
+
+    Returns:
+        True if path matches the exclude pattern
+    """
+    from fnmatch import fnmatch
+    from pathlib import PurePath
+
+    # Handle ** patterns by checking path parts
+    if "**" in pattern:
+        # Strip leading/trailing **/ and /**
+        core = pattern.replace("**/", "").replace("/**", "")
+        # Check if core appears as a path component
+        return core in PurePath(rel_path).parts
+
+    # For non-** patterns, use fnmatch
+    return fnmatch(rel_path, pattern)
+
+
+# =============================================================================
 # Compilation
 # =============================================================================
 
@@ -202,13 +236,10 @@ def compile_directory(
         for file_path in path.rglob(f"*{ext}"):
             # Check exclusions
             rel_path = str(file_path.relative_to(path))
-            excluded = False
-            for pattern in exclude_patterns:
-                from fnmatch import fnmatch
-
-                if fnmatch(rel_path, pattern):
-                    excluded = True
-                    break
+            excluded = any(
+                matches_exclude_pattern(rel_path, pattern)
+                for pattern in exclude_patterns
+            )
 
             if excluded:
                 continue

@@ -189,13 +189,15 @@ class TestPythonASTChunking:
     def test_extracts_functions(self, tmp_path: Path):
         """Functions are extracted as FUNCTION chunks."""
         test_file = tmp_path / "funcs.py"
+        # Functions need to be >50 chars (MIN_CHUNK_SIZE) to be indexed
         test_file.write_text(
             '''
 def add(a, b):
-    """Add two numbers."""
+    """Add two numbers together and return the result."""
     return a + b
 
 def multiply(a, b):
+    """Multiply two numbers together and return the result."""
     return a * b
 '''
         )
