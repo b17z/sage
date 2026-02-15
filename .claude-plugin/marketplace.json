@@ -10,7 +10,7 @@
     {
       "name": "sage",
       "description": "Semantic memory with checkpoints, knowledge base, and code context linking",
-      "version": "3.2.0",
+      "version": "4.0.0",
       "author": {
         "name": "be.nvy"
       },

@@ -1,6 +1,6 @@
 {
   "name": "sage",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "description": "Semantic memory for Claude - checkpoint research, persist knowledge, never lose context",
   "author": "be.nvy",
   "homepage": "https://pypi.org/project/claude-sage/",
