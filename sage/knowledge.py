@@ -1691,26 +1691,26 @@ def get_knowledge(
     knowledge_id: str, project_path: Path | None = None
 ) -> KnowledgeItem | None:
     """
-    Get a single knowledge item by ID.
+    Get a single knowledge item by ID, with content loaded.
 
     Args:
         knowledge_id: The ID of the knowledge item
         project_path: Optional project path
 
     Returns:
-        KnowledgeItem or None if not found
+        KnowledgeItem with content loaded, or None if not found
     """
     items = load_index(project_path=project_path)
 
     # Exact match first
     for item in items:
         if item.id == knowledge_id:
-            return item
+            return load_knowledge_content(item, project_path=project_path)
 
     # Partial match
     for item in items:
         if knowledge_id in item.id:
-            return item
+            return load_knowledge_content(item, project_path=project_path)
 
     return None
 
