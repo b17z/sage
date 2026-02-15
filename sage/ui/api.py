@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 def serialize(obj: Any) -> Any:
     """Serialize dataclasses and other objects to JSON-compatible format."""
+    from datetime import datetime
+
     if hasattr(obj, "__dataclass_fields__"):
         return {k: serialize(v) for k, v in asdict(obj).items()}
     if isinstance(obj, (list, tuple)):
@@ -40,6 +42,8 @@ def serialize(obj: Any) -> Any:
         return {k: serialize(v) for k, v in obj.items()}
     if isinstance(obj, Path):
         return str(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
     return obj
 
 
@@ -254,7 +258,37 @@ class SageAPIHandler(BaseHTTPRequestHandler):
             knowledge_id = parts[0]
             item = get_knowledge(knowledge_id, project_path=self.project_path)
             if item:
-                self._send_json({"knowledge": item})
+                # Check for deprecation info in source field
+                source = item.metadata.source
+                deprecation_reason = None
+                if source.startswith("DEPRECATED:"):
+                    deprecation_reason = source[11:].strip()
+                    source = ""
+
+                self._send_json({
+                    "knowledge": {
+                        "id": item.id,
+                        "triggers": list(item.triggers.keywords),
+                        "content": item.content,
+                        "item_type": item.item_type,
+                        "status": item.metadata.status or "active",
+                        "skill": item.scope.skills[0] if item.scope.skills else None,
+                        "code_links": [
+                            {
+                                "chunk_id": link.chunk_id,
+                                "relation": link.relation,
+                                "note": link.note,
+                            }
+                            for link in item.code_links
+                        ] if item.code_links else [],
+                        "metadata": {
+                            "added": item.metadata.added,
+                            "source": source,
+                            "tokens": item.metadata.tokens,
+                        },
+                        "deprecation_reason": deprecation_reason,
+                    }
+                })
             else:
                 self._send_error(404, f"Knowledge not found: {knowledge_id}")
 

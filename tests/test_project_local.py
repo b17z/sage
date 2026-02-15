@@ -280,7 +280,7 @@ class TestMCPProjectIntegration:
             # List should find it
             result = mcp_server.sage_list_checkpoints(limit=10)
 
-        assert "Found 1 checkpoint" in result
+        assert "Checkpoints [1]" in result
         assert "Checkpoint for listing" in result
 
     def test_mcp_load_checkpoint_uses_project_root(

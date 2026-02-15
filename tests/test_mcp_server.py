@@ -150,7 +150,7 @@ class TestListCheckpoints:
 
         result = sage_list_checkpoints()
 
-        assert "Found 1 checkpoint" in result
+        assert "Checkpoints [1]" in result
         assert "Test thesis" in result
         assert "70%" in result
 
@@ -169,8 +169,8 @@ class TestListCheckpoints:
 
         result = sage_list_checkpoints(limit=3)
 
-        # Should only show 3 (each checkpoint has **id** so count of "**" = 6)
-        assert "Found 3 checkpoint" in result
+        # Should only show 3
+        assert "Checkpoints [3]" in result
 
     def test_list_truncates_long_thesis(self, isolated_project):
         """Truncates long thesis in preview."""

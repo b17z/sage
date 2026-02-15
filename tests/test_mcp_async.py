@@ -123,7 +123,7 @@ class TestAsyncCheckpointSave:
 
         # Verify checkpoint was saved
         list_result = sage_list_checkpoints()
-        assert "Found 1 checkpoint" in list_result
+        assert "Checkpoints [1]" in list_result
 
     def test_checkpoint_validates_before_save(self, async_test_env, mock_async_enabled):
         """Invalid checkpoint data rejected before fire-and-forget save."""

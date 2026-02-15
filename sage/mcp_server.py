@@ -1593,14 +1593,27 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     if not checkpoints:
         return "No checkpoints found."
 
-    lines = [f"Found {len(checkpoints)} checkpoint(s):\n"]
-    for cp in checkpoints:
-        thesis_preview = cp.thesis[:60] + "..." if len(cp.thesis) > 60 else cp.thesis
-        thesis_preview = thesis_preview.replace("\n", " ")
-        lines.append(f"- **{cp.id}**")
-        lines.append(f"  Thesis: {thesis_preview}")
-        lines.append(f"  Confidence: {cp.confidence:.0%} | Trigger: {cp.trigger}")
+    lines = [f"## Checkpoints [{len(checkpoints)}]"]
+
+    if len(checkpoints) >= 3:
+        # Use table format for 3+ items (TOON principle)
         lines.append("")
+        lines.append("| ID | Thesis | Confidence | Trigger |")
+        lines.append("|----|---------|----|--------|")
+        for cp in checkpoints:
+            thesis_preview = cp.thesis[:45] + "..." if len(cp.thesis) > 45 else cp.thesis
+            thesis_preview = thesis_preview.replace("\n", " ").replace("|", "\\|")
+            lines.append(f"| `{cp.id}` | {thesis_preview} | {cp.confidence:.0%} | {cp.trigger} |")
+    else:
+        # Use list format for <3 items
+        lines.append("")
+        for cp in checkpoints:
+            thesis_preview = cp.thesis[:60] + "..." if len(cp.thesis) > 60 else cp.thesis
+            thesis_preview = thesis_preview.replace("\n", " ")
+            lines.append(f"**{cp.id}**")
+            lines.append(f"  Thesis: {thesis_preview}")
+            lines.append(f"  Confidence: {cp.confidence:.0%} | Trigger: {cp.trigger}")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -1804,18 +1817,35 @@ def sage_list_knowledge(skill: str | None = None) -> str:
     if not items:
         return "No knowledge items found."
 
-    lines = [f"Found {len(items)} knowledge item(s):\n"]
-    for item in items:
-        scope = f"skill:{','.join(item.scope.skills)}" if item.scope.skills else "global"
-        keywords = ", ".join(item.triggers.keywords[:5])
-        if len(item.triggers.keywords) > 5:
-            keywords += f" (+{len(item.triggers.keywords) - 5} more)"
-        type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
-        status_label = f" ({item.metadata.status})" if item.item_type == "todo" else ""
-        lines.append(f"- **{item.id}**{type_label}{status_label} ({scope})")
-        lines.append(f"  Keywords: {keywords}")
-        lines.append(f"  Tokens: ~{item.metadata.tokens}")
+    lines = [f"## Knowledge Items [{len(items)}]"]
+
+    if len(items) >= 3:
+        # Use table format for 3+ items (TOON principle)
         lines.append("")
+        lines.append("| ID | Type | Keywords | Scope |")
+        lines.append("|-----|--------|----------|--------|")
+        for item in items:
+            scope = f"skill:{','.join(item.scope.skills)}" if item.scope.skills else "global"
+            keywords = ", ".join(item.triggers.keywords[:3])
+            if len(item.triggers.keywords) > 3:
+                keywords += f" +{len(item.triggers.keywords) - 3}"
+            type_label = item.item_type if item.item_type != "knowledge" else "note"
+            keywords = keywords.replace("|", "\\|")
+            lines.append(f"| `{item.id}` | {type_label} | {keywords} | {scope} |")
+    else:
+        # Use list format for <3 items
+        lines.append("")
+        for item in items:
+            scope = f"skill:{','.join(item.scope.skills)}" if item.scope.skills else "global"
+            keywords = ", ".join(item.triggers.keywords[:5])
+            if len(item.triggers.keywords) > 5:
+                keywords += f" (+{len(item.triggers.keywords) - 5} more)"
+            type_label = f" [{item.item_type}]" if item.item_type != "knowledge" else ""
+            status_label = f" ({item.metadata.status})" if item.item_type == "todo" else ""
+            lines.append(f"**{item.id}**{type_label}{status_label} ({scope})")
+            lines.append(f"  Keywords: {keywords}")
+            lines.append(f"  Tokens: ~{item.metadata.tokens}")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -3071,16 +3101,32 @@ def sage_list_failures(
         if not failures:
             return "No failures recorded.\n\nUse sage_record_failure() to track what didn't work."
 
-        lines = [f"Failures ({len(failures)}):\n"]
+        lines = [f"## Failures [{len(failures)}]"]
 
-        for f in failures:
-            keywords = ", ".join(f.keywords[:3])
-            lines.append(f"## {f.id}")
-            lines.append(f"*Keywords: {keywords}*")
-            lines.append(f"**Approach:** {f.approach}")
-            lines.append(f"**Why failed:** {f.why_failed[:100]}{'...' if len(f.why_failed) > 100 else ''}")
-            lines.append(f"**Learned:** {f.learned[:100]}{'...' if len(f.learned) > 100 else ''}")
+        if len(failures) >= 3:
+            # Use table format for 3+ items (TOON principle)
             lines.append("")
+            lines.append("| ID | Approach | Why Failed | Learned |")
+            lines.append("|-----|----------|-----------|---------|")
+            for f in failures:
+                approach = f.approach[:25] + "..." if len(f.approach) > 25 else f.approach
+                why_failed = f.why_failed[:35] + "..." if len(f.why_failed) > 35 else f.why_failed
+                learned = f.learned[:35] + "..." if len(f.learned) > 35 else f.learned
+                approach = approach.replace("|", "\\|")
+                why_failed = why_failed.replace("|", "\\|")
+                learned = learned.replace("|", "\\|")
+                lines.append(f"| `{f.id}` | {approach} | {why_failed} | {learned} |")
+        else:
+            # Use detailed format for <3 items
+            lines.append("")
+            for f in failures:
+                keywords = ", ".join(f.keywords[:3])
+                lines.append(f"**{f.id}**")
+                lines.append(f"  Keywords: {keywords}")
+                lines.append(f"  Approach: {f.approach}")
+                lines.append(f"  Why failed: {f.why_failed[:100]}{'...' if len(f.why_failed) > 100 else ''}")
+                lines.append(f"  Learned: {f.learned[:100]}{'...' if len(f.learned) > 100 else ''}")
+                lines.append("")
 
         return "\n".join(lines)
 

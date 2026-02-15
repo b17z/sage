@@ -374,9 +374,14 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
         related_knowledge_raw = fm.get("related_knowledge", [])
         related_knowledge = tuple(related_knowledge_raw) if related_knowledge_raw else ()
 
+        # YAML auto-converts ISO timestamps to datetime, convert back to string
+        ts_value = fm.get("ts", "")
+        if hasattr(ts_value, "isoformat"):
+            ts_value = ts_value.isoformat()
+
         return Checkpoint(
             id=fm.get("id", ""),
-            ts=fm.get("ts", ""),
+            ts=ts_value,
             trigger=fm.get("trigger", ""),
             core_question=core_question,
             thesis=thesis,
@@ -952,9 +957,14 @@ def _load_checkpoint_file(file_path: Path) -> Checkpoint | None:
         meta = cp.get("metadata", {})
         action = cp.get("action", {})
 
+        # YAML auto-converts ISO timestamps to datetime, convert back to string
+        ts_value = cp["ts"]
+        if hasattr(ts_value, "isoformat"):
+            ts_value = ts_value.isoformat()
+
         return Checkpoint(
             id=cp["id"],
-            ts=cp["ts"],
+            ts=ts_value,
             trigger=cp["trigger"],
             core_question=cp["core_question"],
             thesis=cp["thesis"],
