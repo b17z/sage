@@ -147,8 +147,10 @@ def extract_with_claude(
 
     # Run Claude CLI
     try:
+        # Security: shell=False (default), command args are internal constants
+        # prompt content is passed as argument, not interpolated into shell
         result = subprocess.run(
-            [
+            [  # noqa: S603, S607
                 "claude",
                 "--dangerously-skip-permissions",
                 "--print",
@@ -188,8 +190,9 @@ def get_claude_version() -> str | None:
         return None
 
     try:
+        # Security: shell=False (default), command is hardcoded
         result = subprocess.run(
-            ["claude", "--version"],
+            ["claude", "--version"],  # noqa: S603, S607
             capture_output=True,
             text=True,
             timeout=5,

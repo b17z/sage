@@ -111,8 +111,9 @@ def _run_git(args: list[str], cwd: Path | None = None) -> str | None:
         Stdout string on success, None on failure
     """
     try:
+        # Security: shell=False (default), args are internal constants
         result = subprocess.run(
-            ["git", *args],
+            ["git", *args],  # noqa: S603, S607
             capture_output=True,
             text=True,
             timeout=5,

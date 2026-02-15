@@ -772,8 +772,9 @@ def _get_project_context() -> str | None:
 
     # 2. Git remote name (repo name)
     try:
+        # Security: shell=False (default), command is hardcoded
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
+            ["git", "remote", "get-url", "origin"],  # noqa: S603, S607
             capture_output=True,
             text=True,
             timeout=2,

@@ -382,8 +382,9 @@ def detect_project_name(path: Path) -> str:
 
     # Try git remote
     try:
+        # Security: shell=False (default), command is hardcoded
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
+            ["git", "remote", "get-url", "origin"],  # noqa: S603, S607
             capture_output=True,
             text=True,
             timeout=2,

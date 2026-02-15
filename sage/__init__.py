@@ -75,10 +75,12 @@ def check_for_updates() -> tuple[bool, str | None]:
             return True, latest
         return False, None
 
-    # Fetch from PyPI
+    # Fetch from PyPI (safe: _PYPI_URL is a hardcoded https:// constant)
     try:
         import urllib.request
-        with urllib.request.urlopen(_PYPI_URL, timeout=3) as resp:
+        if not _PYPI_URL.startswith("https://"):
+            return False, None  # Security: only allow HTTPS
+        with urllib.request.urlopen(_PYPI_URL, timeout=3) as resp:  # noqa: S310
             data = json.loads(resp.read().decode())
             latest = data.get("info", {}).get("version")
             if latest:
