@@ -36,6 +36,10 @@ VERSION_FILES = {
         "pattern": r'\*\*Current version:\*\* v[0-9]+\.[0-9]+\.[0-9]+',
         "replacement": "**Current version:** v{version}",
     },
+    "docs/index.html": {
+        "pattern": r'<div class="footer-logo">sage v[0-9]+\.[0-9]+\.[0-9]+</div>',
+        "replacement": '<div class="footer-logo">sage v{version}</div>',
+    },
 }
 
 
