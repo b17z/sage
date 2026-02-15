@@ -52,10 +52,14 @@ pnpm-debug.log*
 .env.production.local
 
 # Sage - project .sage/ is shareable, .sage/local/ is not
-.sage/local/
+# For THIS repo (Sage itself), we ignore .sage/ since it contains dev/test data
+# In user projects, .sage/ SHOULD be tracked (remove this line)
+.sage/
 
-# Audit reports (local, not shared)
+# Audit reports and research notes (local, not shared)
 docs/audit-*.md
+*_AUDIT.md
+*_RESEARCH.md
 
 # Private keys & certificates
 *.pem
@@ -66,4 +70,3 @@ docs/audit-*.md
 *.cer
 id_rsa*
 id_ed25519*
-.sage/

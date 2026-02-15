@@ -208,6 +208,20 @@ class SageConfig:
     # Inspired by TOON (https://toon-format.org) by @mixeden
     output_format: str = "toon"  # "toon" (compact) or "markdown" (verbose)
 
+    # System folder settings (v4.0)
+    # .sage/system/ contains agent-managed pinned content for auto-injection
+    system_folder_enabled: bool = True  # Auto-inject system folder on session start
+    system_folder_max_tokens: int = 2000  # Token budget for system folder content
+
+    # Git versioning settings (v4.0)
+    # Commit checkpoint/knowledge saves to git for history tracking
+    git_versioning_enabled: bool = False  # Off by default (opt-in)
+
+    # Failure memory settings (v4.0)
+    # Track what didn't work to avoid repeating mistakes
+    failure_memory_enabled: bool = True  # Track and inject relevant failures
+    failure_injection_limit: int = 3  # Max failures to inject per session
+
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         import logging

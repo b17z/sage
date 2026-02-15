@@ -14,6 +14,8 @@
 └─────────────┘    └─────────────┘
 ```
 
+**v4.0 — Invisible Context Hydration**: System folders, failure memory, MCP resources, knowledge linking.
+
 ## Quick Start
 
 ```bash
@@ -72,18 +74,18 @@ Checkpoints are Markdown files (Obsidian-compatible) in `~/.sage/checkpoints/` o
 │  sage-memory, sage-research, sage-session      │
 │  Load on-demand when context matches           │
 ├────────────────────────────────────────────────┤
-│  MCP Server (tools)                            │
+│  MCP Server (tools + resources)                │
 │  sage_save_checkpoint, sage_recall_knowledge   │
-│  Always available to Claude                    │
+│  @sage://system/objective.md (v4.0)            │
 ├────────────────────────────────────────────────┤
 │  Storage                                       │
 │  ~/.sage/checkpoints/, ~/.sage/knowledge/      │
-│  Markdown + YAML frontmatter                   │
+│  .sage/system/, .sage/failures/ (v4.0)         │
 └────────────────────────────────────────────────┘
 ```
 
 - **Skills** teach Claude *when* and *how* to checkpoint
-- **MCP** gives Claude the *tools* to save/load
+- **MCP** gives Claude the *tools* to save/load, *resources* for direct access
 - **Storage** persists everything as readable Markdown
 
 ## CLI Basics
@@ -99,7 +101,7 @@ sage watcher start            # Auto-detect compaction
 # Configuration
 sage config list              # View current settings
 sage config set checkpoint_max_age_days 30  # Customize storage
-sage config set checkpoint_max_count 100    # Cap checkpoints
+sage config set failure_memory_enabled true # Enable failure memory (v4.0)
 ```
 
 ## Visual Interface
@@ -119,7 +121,9 @@ See [docs/ui.md](docs/ui.md) for details.
 ## Learn More
 
 - **[Features](docs/FEATURES.md)** — Complete feature reference
+- **[What's New in v4.0](docs/features/README.md#invisible-context-hydration-v40)** — System folder, failures, resources
 - **[Architecture](docs/ARCHITECTURE.md)** — System design
+- **[Security](docs/security.md)** — Security measures and threat model
 - **[Skills](docs/skills.md)** — How methodology skills work
 - **[Continuity](docs/continuity.md)** — Session persistence deep-dive
 - **[Maintenance](docs/maintenance.md)** — Storage maintenance and caching
@@ -134,7 +138,7 @@ See [docs/ui.md](docs/ui.md) for details.
 
 ```bash
 pip install -e ".[dev,mcp]"
-pytest tests/ -v  # 1517 tests
+pytest tests/ -v  # 1624 tests
 ```
 
 ## Acknowledgments

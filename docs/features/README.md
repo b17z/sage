@@ -24,6 +24,13 @@ AI tools can give false progress: "Look, I built this app!" (by copy-pasting AI 
 - [Checkpointing](./checkpointing.md) — Save research state at meaningful moments
 - [Knowledge System](./knowledge.md) — Store and recall reusable insights
 - [Session Continuity](./continuity.md) — Survive context compaction
+- [Failure Memory](./failure-memory.md) — Learn from what didn't work *(v4.0)*
+
+### Invisible Context Hydration *(v4.0)*
+- [System Folder](./system-folder.md) — Agent-managed pinned content
+- [MCP Resources](./mcp-resources.md) — Direct `@sage://` access
+- [Knowledge Linking](./knowledge-linking.md) — Connect related items
+- [Git Versioning](./git-versioning.md) — Version history for research
 
 ### Code Awareness
 - [Code Context Capture](./code-context.md) — Track what code informed your research
@@ -45,6 +52,10 @@ AI tools can give false progress: "Look, I built this app!" (by copy-pasting AI 
 |--------------|-----|
 | Save my research progress | [Checkpointing](./checkpointing.md) |
 | Remember something for later | [Knowledge System](./knowledge.md) |
+| Track what didn't work | [Failure Memory](./failure-memory.md) |
+| Pin context for every session | [System Folder](./system-folder.md) |
+| Access Sage data with @sage:// | [MCP Resources](./mcp-resources.md) |
+| Connect related knowledge | [Knowledge Linking](./knowledge-linking.md) |
 | Search code semantically | [Code Indexing](./code-indexing.md) |
 | Understand what files I explored | [Code Context Capture](./code-context.md) |
 | Configure Sage behavior | [Configuration](./configuration.md) |
@@ -106,6 +117,9 @@ When you review old checkpoints, you're not just remembering conclusions — you
 |---------|---------------|-------|
 | Checkpointing | `sage/checkpoint.py` | `tests/test_checkpoint.py` |
 | Knowledge | `sage/knowledge.py` | `tests/test_knowledge.py` |
+| Failure Memory | `sage/failures.py` | `tests/test_failures.py` |
+| System Folder | `sage/system_context.py` | `tests/test_system_context.py` |
+| MCP Resources | `sage/mcp_server.py` | `tests/test_mcp_resources.py` |
 | Code Context | `sage/transcript.py` | `tests/test_transcript.py` |
 | Code Indexing | `sage/codebase/indexer.py` | `tests/test_codebase_indexer.py` |
 | Embeddings | `sage/embeddings.py` | `tests/test_embeddings.py` |

@@ -339,3 +339,165 @@ def check_index_freshness(
 
     changed = get_changed_files_since(indexed_at_commit, repo_path)
     return bool(changed), len(changed), changed
+
+
+# =============================================================================
+# Git Versioning for Sage Storage (v4.0)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class SageCommit:
+    """A Sage-related git commit."""
+
+    sha: str  # Short SHA
+    message: str  # Commit message
+    timestamp: str  # ISO timestamp
+    change_type: str  # checkpoint, knowledge, failure
+    item_id: str  # Item ID from message
+
+
+def commit_sage_change(
+    file_path: Path,
+    change_type: str,
+    item_id: str,
+    repo_path: Path | None = None,
+) -> bool:
+    """Commit a Sage storage change to git.
+
+    Creates a commit with message format: "sage: {change_type} {item_id}"
+    Only commits files within .sage/ subdirectory.
+
+    Args:
+        file_path: Path to the changed file
+        change_type: Type of change (checkpoint, knowledge, failure)
+        item_id: ID of the item being saved
+        repo_path: Repository path
+
+    Returns:
+        True if commit was created, False on failure
+
+    Note:
+        Uses --no-verify to skip hooks for speed.
+        Never auto-pushes (local only).
+    """
+    if not is_git_repo(repo_path):
+        logger.debug("Not a git repo, skipping sage commit")
+        return False
+
+    # Security: Ensure file is within .sage/ directory
+    try:
+        file_path = file_path.resolve()
+        if ".sage" not in str(file_path):
+            logger.warning(f"Refusing to commit non-.sage file: {file_path}")
+            return False
+    except Exception:
+        return False
+
+    # Stage the file
+    # Note: If .sage/ is in .gitignore, this will fail silently.
+    # Users must remove .sage/ from .gitignore to enable git versioning.
+    stage_result = _run_git(["add", str(file_path)], cwd=repo_path)
+    if stage_result is None:
+        logger.debug(f"Failed to stage file: {file_path}")
+        return False
+
+    # Commit with sage prefix
+    message = f"sage: {change_type} {item_id}"
+    commit_result = _run_git(
+        ["commit", "-m", message, "--no-verify"],
+        cwd=repo_path,
+    )
+
+    if commit_result is not None:
+        logger.debug(f"Created sage commit: {message}")
+        return True
+
+    # Check if there was nothing to commit (file unchanged)
+    status = _run_git(["status", "--porcelain", str(file_path)], cwd=repo_path)
+    if not status:
+        logger.debug("File unchanged, no commit needed")
+        return True  # Not an error
+
+    logger.debug(f"Failed to commit: {message}")
+    return False
+
+
+def get_sage_history(
+    repo_path: Path | None = None,
+    limit: int = 20,
+) -> list[SageCommit]:
+    """Get history of Sage-related commits.
+
+    Filters git log for commits with "sage:" prefix.
+
+    Args:
+        repo_path: Repository path
+        limit: Maximum commits to return
+
+    Returns:
+        List of SageCommit objects, most recent first
+    """
+    output = _run_git(
+        ["log", f"-{limit}", "--oneline", "--grep=^sage:", "--format=%h|%s|%aI"],
+        cwd=repo_path,
+    )
+
+    if not output:
+        return []
+
+    commits = []
+    for line in output.split("\n"):
+        if "|" not in line:
+            continue
+
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+
+        sha, message, timestamp = parts
+
+        # Parse message: "sage: {type} {id}"
+        if not message.startswith("sage: "):
+            continue
+
+        rest = message[6:]  # Remove "sage: " prefix
+        parts = rest.split(" ", 1)
+        change_type = parts[0] if parts else "unknown"
+        item_id = parts[1] if len(parts) > 1 else ""
+
+        commits.append(
+            SageCommit(
+                sha=sha,
+                message=message,
+                timestamp=timestamp,
+                change_type=change_type,
+                item_id=item_id,
+            )
+        )
+
+    return commits
+
+
+def is_sage_repo(project_path: Path | None = None) -> bool:
+    """Check if path is a git repo with .sage directory.
+
+    Args:
+        project_path: Repository path
+
+    Returns:
+        True if both git repo and .sage/ exists
+    """
+    if not is_git_repo(project_path):
+        return False
+
+    if project_path:
+        return (project_path / ".sage").exists()
+
+    from sage.config import detect_project_root
+
+    detected = detect_project_root()
+    if detected:
+        return (detected / ".sage").exists()
+
+    return False

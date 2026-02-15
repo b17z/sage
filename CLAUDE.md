@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v3.2.0 (git-aware intelligence)
-**Test count:** 1517 tests (maintain or increase)
+**Current version:** v4.0.0 (invisible context hydration)
+**Test count:** 1624 tests (maintain or increase)
 
 ---
 
@@ -98,6 +98,10 @@ sage ui --api-only           # REST API only mode
 | `sage_archive_knowledge(id)` | Hide from recall |
 | `sage_remove_knowledge(id)` | Delete item |
 | `sage_code_context(file, symbol)` | Find knowledge linking to code |
+| `sage_link_knowledge(src, tgt, relation)` | Link two knowledge items |
+| **Failures** *(v4.0)* | |
+| `sage_record_failure(...)` | Track what didn't work |
+| `sage_list_failures()` | List recorded failures |
 | **Todos** | |
 | `sage_list_todos()` | List persistent todos |
 | `sage_mark_todo_done(id)` | Mark todo complete |
@@ -135,8 +139,13 @@ skills/                      # Skill source files (edit here)
 └── sage-knowledge-hygiene/SKILL.md
 
 <project>/.sage/             # Project-level (shareable via git)
+├── system/                  # Agent-managed pinned context (v4.0)
+│   ├── objective.md         # Current goal (always first)
+│   ├── constraints.md       # Rules/restrictions
+│   └── pinned/              # Pinned checkpoints/knowledge
 ├── checkpoints/             # Research checkpoints (team context)
 ├── knowledge/               # Knowledge base (team insights)
+├── failures/                # Failure memory (v4.0)
 ├── tuning.yaml              # Project-specific thresholds
 └── local/                   # GITIGNORED - project-local overrides
 ```
@@ -145,11 +154,11 @@ skills/                      # Skill source files (edit here)
 
 | File | Purpose |
 |------|---------|
-| `sage/mcp_server.py` | MCP tools for Claude Code |
+| `sage/mcp_server.py` | MCP tools + resources for Claude Code |
 | `sage/checkpoint.py` | Checkpoint schema, save/load, maintenance |
-| `sage/knowledge.py` | Knowledge storage, retrieval, caching |
+| `sage/knowledge.py` | Knowledge storage, retrieval, linking |
 | `sage/embeddings.py` | Embedding model, similarity |
-| `sage/git.py` | Git context capture, staleness detection |
+| `sage/git.py` | Git context capture, versioning |
 | `sage/atomic.py` | Atomic file write utilities |
 | `sage/default_skills.py` | Sage methodology skill templates |
 | `sage/skill.py` | Research skill management |
@@ -158,6 +167,8 @@ skills/                      # Skill source files (edit here)
 | `sage/plugins/` | Watcher plugin system |
 | `sage/config.py` | Config management |
 | `sage/cli.py` | Click CLI |
+| `sage/system_context.py` | System folder auto-injection (v4.0) |
+| `sage/failures.py` | Failure memory tracking (v4.0) |
 | `sage/errors.py` | Result types (`Ok`/`Err`) |
 
 ## Development
@@ -198,6 +209,9 @@ pytest tests/ --cov=sage            # Coverage report
 3. **Config is user-tunable** — Thresholds should be configurable
 4. **Graceful degradation** — Features work without optional dependencies
 5. **Progressive disclosure** — Methodology in skills, not always-loaded docs
+6. **Security by default** — Path validation, safe deserialization, restrictive permissions
+
+See [docs/security.md](docs/security.md) for security guidelines.
 
 ## Code Style
 
@@ -236,10 +250,23 @@ def test_handles_empty_input():
 
 ## Presenting Sage Output
 
-MCP tool results return structured data. **Always format Sage outputs nicely** rather than showing raw JSON. See `sage-research` and `sage-knowledge` skills for presentation guidelines.
+MCP tool results return structured data. **Always format Sage outputs nicely** rather than showing raw JSON. Output formatting is inspired by [TOON](https://toon-format.org) (by [@mixeden](https://github.com/mixeden)) — a token-efficient notation format that emphasizes **structure hints** for human scanning and LLM parsing.
 
-Quick reference:
-- **Checkpoints**: Show as research summaries with thesis, evidence, sources
-- **Knowledge**: Show with source attribution and code links
+See `sage-research` and `sage-knowledge` skills for detailed presentation guidelines.
+
+### TOON-Inspired Presentation Principles
+
+When presenting checkpoints or knowledge:
+1. **Include counts in headers**: `## Sources [3]` not just `## Sources`
+2. **Use tables for 3+ uniform items**: Structured data is more scannable
+3. **Use relation icons**: `[+]` supports, `[-]` contradicts, `[~]` nuances
+4. **Compact code references**: `file.py::symbol (line 42)` format
+5. **Show staleness indicators**: `[!]` code changed, `[+]` code supports, `[~]` context
+
+### Quick Reference
+
+- **Checkpoints**: Show as research summaries with thesis, evidence, sources with relation icons
+- **Knowledge**: Show with source attribution and code links, use staleness indicators
 - **Code links**: Use `file.py:line` or `file.py::symbol` format
 - **Staleness**: `[!]` = code changed, `[+]` = supports, `[~]` = context
+- **Confidence**: Always show confidence level for checkpoints (e.g., "85%")

@@ -195,8 +195,8 @@ class SageAPIHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "query": query,
                 "results": [
-                    {"id": cp.id, "thesis": cp.thesis, "score": score}
-                    for cp, score in results
+                    {"id": r.checkpoint.id, "thesis": r.checkpoint.thesis, "score": r.similarity}
+                    for r in results
                 ],
             })
         else:
@@ -227,9 +227,10 @@ class SageAPIHandler(BaseHTTPRequestHandler):
                 "knowledge": [
                     {
                         "id": item.id,
-                        "triggers": list(item.triggers),
-                        "type": item.item_type,
-                        "scope": item.scope,
+                        "triggers": list(item.triggers.keywords),
+                        "content": item.content[:200] + "..." if len(item.content) > 200 else item.content,
+                        "item_type": item.item_type,
+                        "status": item.metadata.status if hasattr(item.metadata, 'status') else "active",
                     }
                     for item in items
                 ],

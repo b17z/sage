@@ -116,6 +116,10 @@ class Checkpoint:
     git_context: dict | None = None  # GitContext.to_dict() - branch, commit, dirty, recent_commits
     diff_summary: dict | None = None  # DiffSummary.to_dict() - uncommitted changes at save time
 
+    # Linking (v4.0) - connect related checkpoints and knowledge
+    continues_from: str | None = None  # Parent checkpoint ID (research continuation)
+    related_knowledge: tuple[str, ...] = ()  # Related knowledge item IDs
+
 
 def generate_checkpoint_id(description: str) -> CheckpointId:
     """Generate a checkpoint ID from timestamp and description."""
@@ -169,6 +173,9 @@ def _checkpoint_to_markdown(checkpoint: Checkpoint) -> str:
         # Git context (v1.4)
         "git_context": checkpoint.git_context,
         "diff_summary": checkpoint.diff_summary,
+        # Linking (v4.0)
+        "continues_from": checkpoint.continues_from,
+        "related_knowledge": list(checkpoint.related_knowledge) if checkpoint.related_knowledge else None,
     }
     # Remove None values for cleaner YAML
     frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
@@ -363,6 +370,10 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
         files_explored = frozenset(files_explored_raw) if files_explored_raw else frozenset()
         files_changed = frozenset(files_changed_raw) if files_changed_raw else frozenset()
 
+        # Linking (v4.0)
+        related_knowledge_raw = fm.get("related_knowledge", [])
+        related_knowledge = tuple(related_knowledge_raw) if related_knowledge_raw else ()
+
         return Checkpoint(
             id=fm.get("id", ""),
             ts=fm.get("ts", ""),
@@ -390,6 +401,9 @@ def _markdown_to_checkpoint(content: str) -> Checkpoint | None:
             # Git context (v1.4)
             git_context=fm.get("git_context"),
             diff_summary=fm.get("diff_summary"),
+            # Linking (v4.0)
+            continues_from=fm.get("continues_from"),
+            related_knowledge=related_knowledge,
         )
     except (yaml.YAMLError, KeyError, ValueError):
         return None
@@ -630,6 +644,71 @@ def is_duplicate_checkpoint(
 
 
 # ============================================================================
+# Checkpoint Search
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """A checkpoint search result with similarity score."""
+
+    checkpoint: Checkpoint
+    similarity: float
+
+
+def search_checkpoints(
+    query: str,
+    limit: int = 5,
+    project_path: Path | None = None,
+) -> list[SearchResult]:
+    """Search checkpoints by semantic similarity to a query.
+
+    Args:
+        query: Search query text
+        limit: Maximum results to return
+        project_path: Optional project path
+
+    Returns:
+        List of SearchResult objects sorted by similarity (highest first)
+    """
+    from sage import embeddings
+
+    if not embeddings.is_available():
+        return []
+
+    # Get query embedding
+    result = embeddings.get_query_embedding(query)
+    if result.is_err():
+        logger.warning(f"Failed to embed query: {result.unwrap_err().message}")
+        return []
+
+    query_embedding = result.unwrap()
+
+    # Load checkpoints and their embeddings
+    checkpoints = list_checkpoints(project_path=project_path, limit=50)
+    if not checkpoints:
+        return []
+
+    store = _get_checkpoint_embedding_store()
+    if len(store) == 0:
+        return []
+
+    # Score and rank
+    scored: list[SearchResult] = []
+    for cp in checkpoints:
+        cp_embedding = store.get(cp.id)
+        if cp_embedding is None:
+            continue
+        similarity = float(embeddings.cosine_similarity(query_embedding, cp_embedding))
+        scored.append(SearchResult(checkpoint=cp, similarity=similarity))
+
+    # Sort by similarity descending
+    scored.sort(key=lambda x: x.similarity, reverse=True)
+
+    return scored[:limit]
+
+
+# ============================================================================
 # Checkpoint Maintenance
 # ============================================================================
 
@@ -758,6 +837,7 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
 
     Uses atomic write (temp file + rename) to prevent data corruption on crash.
     Optionally runs maintenance to prune old checkpoints (if maintenance_on_save=True).
+    Optionally commits to git if git_versioning_enabled (v4.0).
     """
     from sage.atomic import atomic_write_text
 
@@ -784,6 +864,15 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
             run_checkpoint_maintenance(project_path)
         except Exception as e:
             logger.warning(f"Checkpoint maintenance failed: {e}")
+
+    # Git versioning (v4.0) - commit if enabled
+    if getattr(config, "git_versioning_enabled", False):
+        try:
+            from sage.git import commit_sage_change
+
+            commit_sage_change(file_path, "checkpoint", checkpoint.id, project_path)
+        except Exception as e:
+            logger.debug(f"Git versioning failed: {e}")
 
     return file_path
 

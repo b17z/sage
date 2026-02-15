@@ -1,9 +1,9 @@
 ---
 name: sage-knowledge
 description: Recall and save insights using sage_recall_knowledge and sage_save_knowledge MCP tools
-triggers: [recall, remember, what do we know, knowledge, save insight, prior knowledge]
+triggers: [recall, remember, what do we know, knowledge, save insight, prior knowledge, failure, didn't work, mistake]
 author: sage
-version: 1.1.0
+version: 2.0.0
 ---
 
 # Knowledge Management
@@ -177,3 +177,61 @@ Watch for staleness indicators in code links:
 - `[!]` — Code has changed since knowledge was saved; may need review
 - `[+]` — Code supports the knowledge
 - `[~]` — Code provides context
+
+## Failure Memory (v4.0)
+
+Track what didn't work to avoid repeating mistakes.
+
+### Recording Failures
+
+```python
+sage_record_failure(
+    failure_id="jwt-localstorage",
+    approach="Storing refresh tokens in localStorage",
+    why_failed="XSS vulnerability - any JS can read localStorage",
+    learned="Use httpOnly cookies for refresh tokens",
+    keywords=["jwt", "refresh", "token", "localstorage"],
+)
+```
+
+### Listing Failures
+
+```python
+sage_list_failures(limit=10)
+```
+
+### Presenting Failures
+
+```markdown
+## ⚠️ jwt-localstorage
+**Approach:** Storing refresh tokens in localStorage
+**Why failed:** XSS vulnerability - any JS can read localStorage
+**Learned:** Use httpOnly cookies for refresh tokens
+```
+
+Failures are automatically recalled at session start when relevant to the current context.
+
+## Knowledge Linking (v4.0)
+
+Connect related knowledge items:
+
+```python
+sage_link_knowledge(
+    source_id="auth-patterns",
+    target_id="jwt-security",
+    relation="related",  # related | supersedes | contradicts | extends
+    note="Both cover authentication best practices",
+    bidirectional=True,
+)
+```
+
+When recalling linked knowledge, show the connections:
+
+```markdown
+## auth-patterns
+[content]
+
+**Links:**
+- → jwt-security [related] — Both cover auth best practices
+- → oauth-integration [extends] — OAuth builds on these patterns
+```

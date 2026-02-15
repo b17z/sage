@@ -131,6 +131,24 @@ class CodeLink:
 
 
 @dataclass(frozen=True)
+class KnowledgeLink:
+    """Link between knowledge items (v4.0).
+
+    Enables multi-hop reasoning by connecting related items.
+    Links are followed during recall to provide additional context.
+
+    Attributes:
+        target_id: ID of the linked knowledge item
+        relation: How the items relate
+        note: Optional context about the relationship
+    """
+
+    target_id: str  # ID of linked knowledge item
+    relation: str = "related"  # related | supersedes | contradicts | extends
+    note: str = ""  # Optional context about the link
+
+
+@dataclass(frozen=True)
 class KnowledgeItem:
     """A single knowledge item."""
 
@@ -142,6 +160,7 @@ class KnowledgeItem:
     item_type: str = "knowledge"  # knowledge | preference | todo | reference
     content: str = ""  # loaded on demand
     code_links: tuple[CodeLink, ...] = ()  # links to code locations (v3.1)
+    knowledge_links: tuple[KnowledgeLink, ...] = ()  # links to other knowledge items (v4.0)
 
 
 @dataclass
@@ -839,6 +858,18 @@ def load_index(
             if cl.get("chunk_id")  # Skip entries without chunk_id
         )
 
+        # Parse knowledge_links (v4.0)
+        knowledge_links_data = item_data.get("knowledge_links", [])
+        knowledge_links = tuple(
+            KnowledgeLink(
+                target_id=kl.get("target_id", ""),
+                relation=kl.get("relation", "related"),
+                note=kl.get("note", ""),
+            )
+            for kl in knowledge_links_data
+            if kl.get("target_id")  # Skip entries without target_id
+        )
+
         items.append(
             KnowledgeItem(
                 id=item_data["id"],
@@ -860,6 +891,7 @@ def load_index(
                 ),
                 item_type=item_data.get("type", "knowledge"),
                 code_links=code_links,
+                knowledge_links=knowledge_links,
             )
         )
 
@@ -920,6 +952,21 @@ def save_index(items: list[KnowledgeItem], project_path: Path | None = None) -> 
                         ]
                     }
                     if item.code_links
+                    else {}
+                ),
+                # Knowledge links (v4.0) - only include if present
+                **(
+                    {
+                        "knowledge_links": [
+                            {
+                                "target_id": link.target_id,
+                                "relation": link.relation,
+                                **({"note": link.note} if link.note else {}),
+                            }
+                            for link in item.knowledge_links
+                        ]
+                    }
+                    if item.knowledge_links
                     else {}
                 ),
             }
@@ -1406,6 +1453,17 @@ def add_knowledge(
         except Exception as e:
             logger.warning(f"Knowledge maintenance failed: {e}")
 
+    # Git versioning (v4.0) - commit if enabled
+    if getattr(config, "git_versioning_enabled", False):
+        try:
+            from sage.git import commit_sage_change
+
+            knowledge_dir = _get_knowledge_dir(project_path)
+            file_path = knowledge_dir / item.file
+            commit_sage_change(file_path, "knowledge", safe_id, project_path)
+        except Exception as e:
+            logger.debug(f"Git versioning failed: {e}")
+
     return item
 
 
@@ -1627,6 +1685,34 @@ def list_knowledge(
 
     # Filter to items that apply to this skill
     return [item for item in items if not item.scope.skills or skill in item.scope.skills]
+
+
+def get_knowledge(
+    knowledge_id: str, project_path: Path | None = None
+) -> KnowledgeItem | None:
+    """
+    Get a single knowledge item by ID.
+
+    Args:
+        knowledge_id: The ID of the knowledge item
+        project_path: Optional project path
+
+    Returns:
+        KnowledgeItem or None if not found
+    """
+    items = load_index(project_path=project_path)
+
+    # Exact match first
+    for item in items:
+        if item.id == knowledge_id:
+            return item
+
+    # Partial match
+    for item in items:
+        if knowledge_id in item.id:
+            return item
+
+    return None
 
 
 def format_recalled_context(
@@ -1940,3 +2026,174 @@ def get_pending_todos(project_path: Path | None = None) -> list[KnowledgeItem]:
         project_path: Optional project path for project-scoped knowledge
     """
     return list_todos(status="pending", project_path=project_path)
+
+
+# =============================================================================
+# Knowledge Linking (v4.0)
+# =============================================================================
+
+
+def link_knowledge(
+    source_id: str,
+    target_id: str,
+    relation: str = "related",
+    note: str = "",
+    bidirectional: bool = False,
+    project_path: Path | None = None,
+) -> KnowledgeItem | None:
+    """Link two knowledge items.
+
+    Creates a link from source to target. Optionally creates a
+    reverse link for bidirectional relationships.
+
+    Args:
+        source_id: ID of the source knowledge item
+        target_id: ID of the target knowledge item
+        relation: Relationship type (related, supersedes, contradicts, extends)
+        note: Optional note about the relationship
+        bidirectional: If True, also create reverse link
+        project_path: Optional project path
+
+    Returns:
+        Updated source KnowledgeItem, or None if not found
+    """
+    items = load_index(project_path=project_path)
+
+    # Find source and target
+    source_item = None
+    target_item = None
+    for item in items:
+        if item.id == source_id:
+            source_item = item
+        if item.id == target_id:
+            target_item = item
+
+    if not source_item:
+        logger.warning(f"Source knowledge not found: {source_id}")
+        return None
+
+    if not target_item:
+        logger.warning(f"Target knowledge not found: {target_id}")
+        return None
+
+    # Create the link
+    new_link = KnowledgeLink(
+        target_id=target_id,
+        relation=relation,
+        note=note,
+    )
+
+    # Check if link already exists
+    existing_links = list(source_item.knowledge_links)
+    for link in existing_links:
+        if link.target_id == target_id:
+            # Update existing link
+            existing_links.remove(link)
+            break
+
+    existing_links.append(new_link)
+
+    # Create updated item
+    updated_item = KnowledgeItem(
+        id=source_item.id,
+        file=source_item.file,
+        triggers=source_item.triggers,
+        scope=source_item.scope,
+        metadata=source_item.metadata,
+        item_type=source_item.item_type,
+        content=source_item.content,
+        code_links=source_item.code_links,
+        knowledge_links=tuple(existing_links),
+    )
+
+    # Update index
+    items = [i for i in items if i.id != source_id]
+    items.append(updated_item)
+    save_index(items, project_path=project_path)
+
+    # Create reverse link if bidirectional
+    if bidirectional:
+        # Determine reverse relation
+        reverse_relations = {
+            "related": "related",
+            "supersedes": "superseded_by",
+            "contradicts": "contradicts",
+            "extends": "extended_by",
+        }
+        reverse_relation = reverse_relations.get(relation, "related")
+
+        # Recursive call for reverse link (non-bidirectional to avoid infinite loop)
+        link_knowledge(
+            source_id=target_id,
+            target_id=source_id,
+            relation=reverse_relation,
+            note=note,
+            bidirectional=False,
+            project_path=project_path,
+        )
+
+    return updated_item
+
+
+def get_linked_knowledge(
+    knowledge_id: str,
+    project_path: Path | None = None,
+    max_depth: int = 1,
+) -> list[KnowledgeItem]:
+    """Get knowledge items linked to the given item.
+
+    Follows links up to max_depth hops. Used during recall to
+    provide additional context.
+
+    Args:
+        knowledge_id: ID of the source knowledge item
+        project_path: Optional project path
+        max_depth: Maximum link hops to follow (default: 1)
+
+    Returns:
+        List of linked KnowledgeItem objects
+    """
+    if max_depth <= 0:
+        return []
+
+    items = load_index(project_path=project_path)
+
+    # Find source item
+    source_item = None
+    for item in items:
+        if item.id == knowledge_id:
+            source_item = item
+            break
+
+    if not source_item or not source_item.knowledge_links:
+        return []
+
+    # Collect linked items
+    linked_items = []
+    seen_ids = {knowledge_id}  # Avoid cycles
+
+    for link in source_item.knowledge_links:
+        if link.target_id in seen_ids:
+            continue
+
+        # Find target item
+        for item in items:
+            if item.id == link.target_id:
+                linked_items.append(item)
+                seen_ids.add(item.id)
+                break
+
+    # Follow deeper links if max_depth > 1
+    if max_depth > 1 and linked_items:
+        for linked_item in list(linked_items):  # Copy to avoid mutation during iteration
+            deeper_links = get_linked_knowledge(
+                linked_item.id,
+                project_path=project_path,
+                max_depth=max_depth - 1,
+            )
+            for deep_item in deeper_links:
+                if deep_item.id not in seen_ids:
+                    linked_items.append(deep_item)
+                    seen_ids.add(deep_item.id)
+
+    return linked_items

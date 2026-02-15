@@ -3,18 +3,20 @@ name: sage-session
 description: Session start ritual - continuity and context injection
 triggers: [session start, beginning, hello, good morning, context check, new session, starting fresh]
 author: sage
-version: 1.0.0
+version: 2.0.0
 ---
 
 # Sage Session Start
 
 On session start, Sage automatically injects context. Here's how to use it.
 
-## Automatic Injection (v2.5+)
+## Automatic Injection (v4.0)
 
 On your **first Sage tool call** each session, Sage automatically injects:
-- **Continuity context** from previous compacted sessions
-- **Proactive recall** of knowledge relevant to this project
+- **System folder** — `.sage/system/objective.md`, `constraints.md` (v4.0)
+- **Continuity context** — from previous compacted sessions
+- **Proactive recall** — knowledge relevant to this project
+- **Failure memory** — relevant past mistakes to avoid (v4.0)
 
 This happens automatically when you call `sage_health()`, `sage_version()`, `sage_list_knowledge()`, etc.
 
@@ -55,3 +57,16 @@ Review any persistent reminders from previous sessions.
 3. sage_load_checkpoint()  # Restore deep context (if needed)
 4. Begin work
 ```
+
+## MCP Resources (v4.0)
+
+Reference Sage data directly with `@sage://` syntax:
+
+```
+@sage://system/objective.md     # Current goal
+@sage://checkpoint/jwt-research # Checkpoint by ID
+@sage://knowledge/auth-patterns # Knowledge item
+@sage://failure/jwt-localstorage # Recorded failure
+```
+
+This works without tool calls in Claude Code's `@` mentions.

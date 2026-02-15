@@ -24,6 +24,16 @@ The same features serve both — checkpoints help agents resume after compaction
 | [Checkpointing](./features/checkpointing.md) | Save research state at meaningful moments | Thesis, evidence, reasoning trace |
 | [Knowledge](./features/knowledge.md) | Store and auto-recall reusable insights | Keywords trigger automatic injection |
 | [Continuity](./features/continuity.md) | Survive context compaction | Watcher daemon auto-restores |
+| [Failure Memory](./features/failure-memory.md) | Learn from what didn't work | Track mistakes, auto-recall *(v4.0)* |
+
+### Invisible Context Hydration (v4.0)
+
+| Feature | Purpose | Guide |
+|---------|---------|-------|
+| [System Folder](./features/system-folder.md) | Agent-managed pinned content | `.sage/system/` auto-injection |
+| [MCP Resources](./features/mcp-resources.md) | Direct `@sage://` data access | No tool calls needed |
+| [Knowledge Linking](./features/knowledge-linking.md) | Connect related items | Multi-hop reasoning |
+| [Git Versioning](./features/git-versioning.md) | Version history for research | Every save = commit |
 
 ### Code Awareness (v3.1)
 
@@ -180,6 +190,11 @@ Detailed documentation with code examples and implementation links:
 - [Checkpointing](./features/checkpointing.md) — Research state snapshots
 - [Knowledge](./features/knowledge.md) — Reusable insights
 - [Continuity](./features/continuity.md) — Compaction recovery
+- [Failure Memory](./features/failure-memory.md) — Learn from mistakes *(v4.0)*
+- [System Folder](./features/system-folder.md) — Pinned context *(v4.0)*
+- [MCP Resources](./features/mcp-resources.md) — Direct data access *(v4.0)*
+- [Knowledge Linking](./features/knowledge-linking.md) — Connect items *(v4.0)*
+- [Git Versioning](./features/git-versioning.md) — Version history *(v4.0)*
 - [Code Context](./features/code-context.md) — File tracking
 - [Code Indexing](./features/code-indexing.md) — Semantic code search
 - [Embeddings](./features/embeddings.md) — Prose vs code models
@@ -191,6 +206,9 @@ Detailed documentation with code examples and implementation links:
 |---------|---------------|-------|
 | Checkpointing | `sage/checkpoint.py` | `tests/test_checkpoint.py` |
 | Knowledge | `sage/knowledge.py` | `tests/test_knowledge.py` |
+| Failure Memory | `sage/failures.py` | `tests/test_failures.py` |
+| System Folder | `sage/system_context.py` | `tests/test_system_context.py` |
+| MCP Resources | `sage/mcp_server.py` | `tests/test_mcp_resources.py` |
 | Code Context | `sage/transcript.py` | `tests/test_transcript.py` |
 | Code Indexing | `sage/codebase/indexer.py` | `tests/test_codebase_indexer.py` |
 | Embeddings | `sage/embeddings.py` | `tests/test_embeddings.py` |
@@ -201,6 +219,8 @@ Detailed documentation with code examples and implementation links:
 
 ## Version History
 
+- **v4.0** — Invisible context hydration (system folder, failures, resources, linking)
+- **v3.2** — Git-aware intelligence, web UI improvements
 - **v3.1** — Code-aware features (code context, CodeSage embeddings)
 - **v3.0** — Plugin architecture, session tracking
 - **v2.5** — Proactive recall, skills system

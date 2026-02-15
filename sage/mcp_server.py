@@ -191,10 +191,17 @@ def _reset_session_state() -> None:
 
 
 def _get_session_start_context() -> str | None:
-    """Get session start context (continuity + proactive recall + watcher) on first call only.
+    """Get session start context (system + continuity + proactive + failures) on first call only.
 
     Returns context string on first call of the session, None on subsequent calls.
     This enables automatic context injection without requiring explicit sage_health() call.
+
+    Injection order:
+    1. System folder (objective.md, constraints.md, etc.)
+    2. Watcher autostart message
+    3. Continuity context (from compaction)
+    4. Failure memory (relevant past failures)
+    5. Proactive recall (project-relevant knowledge)
 
     Note: If continuity is pending (compaction happened mid-session), we reset the
     injection flag to ensure context is injected on the next tool call.
@@ -215,6 +222,12 @@ def _get_session_start_context() -> str | None:
 
     parts = []
 
+    # Get system folder context (v4.0) - always first
+    system_context = _get_system_context()
+    if system_context:
+        parts.append(system_context)
+        logger.info("Session start: system context found and will be injected")
+
     # Check watcher autostart
     watcher_msg = _check_watcher_autostart()
     if watcher_msg:
@@ -225,6 +238,12 @@ def _get_session_start_context() -> str | None:
     if continuity:
         parts.append(continuity)
         logger.info("Session start: continuity context found and will be injected")
+
+    # Get failure memory (v4.0) - relevant past failures
+    failure_context = _get_failure_context()
+    if failure_context:
+        parts.append(failure_context)
+        logger.info("Session start: failure context found and will be injected")
 
     # Get proactive recall (project-relevant knowledge)
     proactive = _get_proactive_recall()
@@ -825,6 +844,92 @@ def _get_project_context() -> str | None:
 
     # Combine signals into a query
     return " ".join(signals)
+
+
+def _get_system_context() -> str | None:
+    """Load and format system folder content for injection.
+
+    The .sage/system/ folder contains agent-managed pinned content:
+    - objective.md: Current goal (always first)
+    - constraints.md: Rules/restrictions
+    - pinned/*.md: Pinned checkpoints/knowledge
+    - Other .md files
+
+    Returns:
+        Formatted system context, or None if folder is empty/disabled
+    """
+    config = get_sage_config(_PROJECT_ROOT)
+
+    # Check if system folder is enabled
+    if not getattr(config, "system_folder_enabled", True):
+        return None
+
+    try:
+        from sage.system_context import format_system_context, load_system_files
+
+        files = load_system_files(project_path=_PROJECT_ROOT)
+
+        if not files:
+            return None
+
+        return format_system_context(files)
+    except Exception as e:
+        logger.warning(f"Failed to load system context: {e}")
+        return None
+
+
+def _get_failure_context() -> str | None:
+    """Load and format relevant failure memory for injection.
+
+    Recalls failures that match the current project context to avoid
+    repeating past mistakes.
+
+    Returns:
+        Formatted failure context, or None if no relevant failures
+    """
+    config = get_sage_config(_PROJECT_ROOT)
+
+    # Check if failure memory is enabled
+    if not getattr(config, "failure_memory_enabled", True):
+        return None
+
+    try:
+        from sage.failures import recall_failures
+
+        project_context = _get_project_context()
+        if not project_context:
+            return None
+
+        limit = getattr(config, "failure_injection_limit", 3)
+        failures = recall_failures(project_context, limit=limit, project_path=_PROJECT_ROOT)
+
+        if not failures:
+            return None
+
+        # Format failures for injection
+        lines = [
+            "═══ FAILURE MEMORY ═══",
+            "*Relevant past failures to avoid repeating:*",
+            "",
+        ]
+
+        for f in failures:
+            lines.append(f"## {f.id}")
+            lines.append(f"**Approach:** {f.approach}")
+            lines.append(f"**Why it failed:** {f.why_failed}")
+            lines.append(f"**Learned:** {f.learned}")
+            lines.append("")
+
+        lines.append("═══════════════════════")
+
+        logger.info(f"Failure recall: {len(failures)} relevant failure(s)")
+        return "\n".join(lines)
+    except ImportError:
+        # Failures module not yet implemented
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to load failure context: {e}")
+        return None
 
 
 def _get_proactive_recall() -> str | None:
@@ -1796,6 +1901,62 @@ def sage_update_knowledge(
 
 @mcp.tool()
 @with_session_context
+def sage_link_knowledge(
+    source_id: str,
+    target_id: str,
+    relation: str = "related",
+    note: str = "",
+    bidirectional: bool = False,
+) -> str:
+    """Link two knowledge items together.
+
+    Creates a semantic link between knowledge items for multi-hop reasoning.
+    Linked items are shown when the source is recalled.
+
+    Args:
+        source_id: ID of the source knowledge item
+        target_id: ID of the target knowledge item
+        relation: Relationship type - "related", "supersedes", "contradicts", "extends"
+        note: Optional note explaining the relationship
+        bidirectional: If True, also create reverse link
+
+    Returns:
+        Confirmation message
+    """
+    from sage.knowledge import link_knowledge
+
+    # Validate relation
+    valid_relations = ("related", "supersedes", "contradicts", "extends")
+    if relation not in valid_relations:
+        return f"Invalid relation '{relation}'. Valid values: {', '.join(valid_relations)}"
+
+    try:
+        result = link_knowledge(
+            source_id=source_id,
+            target_id=target_id,
+            relation=relation,
+            note=note,
+            bidirectional=bidirectional,
+            project_path=_PROJECT_ROOT,
+        )
+
+        if result is None:
+            return f"Failed to link: one or both items not found ({source_id}, {target_id})"
+
+        msg = f"✓ Linked {source_id} → {target_id} ({relation})"
+        if bidirectional:
+            msg += " (bidirectional)"
+        if note:
+            msg += f"\n  Note: {note}"
+
+        return msg
+
+    except Exception as e:
+        return f"Failed to link knowledge: {e}"
+
+
+@mcp.tool()
+@with_session_context
 def sage_deprecate_knowledge(
     knowledge_id: str,
     reason: str,
@@ -2650,6 +2811,281 @@ def sage_unmark_core(
 
     except Exception as e:
         return f"Failed to unmark file: {e}"
+
+
+# =============================================================================
+# MCP Resources (v4.0)
+# =============================================================================
+
+
+def _validate_sage_path(path: str) -> str | None:
+    """Validate that a path is safe for Sage resources.
+
+    Prevents path traversal attacks by ensuring:
+    - No '..' components
+    - No absolute paths
+    - Only alphanumeric, dash, underscore, dot characters
+
+    Args:
+        path: The path to validate
+
+    Returns:
+        Sanitized path or None if invalid
+    """
+    import re
+
+    # Block path traversal
+    if ".." in path or path.startswith("/") or path.startswith("\\"):
+        return None
+
+    # Allow only safe characters
+    if not re.match(r"^[a-zA-Z0-9_\-./]+$", path):
+        return None
+
+    # Remove leading/trailing slashes
+    return path.strip("/")
+
+
+@mcp.resource("sage://system/{filename}")
+def get_system_file_resource(filename: str) -> str:
+    """Get a system folder file as an MCP resource.
+
+    Enables @sage://system/objective.md syntax in Claude Code.
+
+    Args:
+        filename: Name of file in .sage/system/
+
+    Returns:
+        File content or error message
+    """
+    safe_name = _validate_sage_path(filename)
+    if not safe_name:
+        return f"Invalid filename: {filename}"
+
+    try:
+        from sage.system_context import get_system_folder
+
+        system_folder = get_system_folder(_PROJECT_ROOT)
+        file_path = system_folder / safe_name
+
+        # Ensure file is within system folder
+        try:
+            file_path = file_path.resolve()
+            if system_folder.resolve() not in file_path.parents and file_path != system_folder.resolve():
+                return f"File not in system folder: {filename}"
+        except Exception:
+            return f"Invalid path: {filename}"
+
+        if not file_path.exists():
+            return f"File not found: {filename}"
+
+        return file_path.read_text()
+
+    except Exception as e:
+        return f"Error reading {filename}: {e}"
+
+
+@mcp.resource("sage://checkpoint/{checkpoint_id}")
+def get_checkpoint_resource(checkpoint_id: str) -> str:
+    """Get a checkpoint as an MCP resource.
+
+    Enables @sage://checkpoint/jwt-research syntax in Claude Code.
+
+    Args:
+        checkpoint_id: Full or partial checkpoint ID
+
+    Returns:
+        Formatted checkpoint content
+    """
+    safe_id = _validate_sage_path(checkpoint_id)
+    if not safe_id:
+        return f"Invalid checkpoint ID: {checkpoint_id}"
+
+    try:
+        checkpoint = load_checkpoint(safe_id, project_path=_PROJECT_ROOT)
+        if not checkpoint:
+            return f"Checkpoint not found: {checkpoint_id}"
+
+        return format_checkpoint_for_context(checkpoint)
+
+    except Exception as e:
+        return f"Error loading checkpoint {checkpoint_id}: {e}"
+
+
+@mcp.resource("sage://knowledge/{knowledge_id}")
+def get_knowledge_resource(knowledge_id: str) -> str:
+    """Get a knowledge item as an MCP resource.
+
+    Enables @sage://knowledge/auth-patterns syntax in Claude Code.
+
+    Args:
+        knowledge_id: Knowledge item ID
+
+    Returns:
+        Knowledge content with metadata
+    """
+    safe_id = _validate_sage_path(knowledge_id)
+    if not safe_id:
+        return f"Invalid knowledge ID: {knowledge_id}"
+
+    try:
+        from sage.knowledge import format_recalled_context, list_knowledge
+
+        items = list_knowledge(project_path=_PROJECT_ROOT)
+        target_item = None
+
+        for item in items:
+            if item.id == safe_id:
+                target_item = item
+                break
+            # Partial match
+            if safe_id in item.id:
+                target_item = item
+                break
+
+        if not target_item:
+            return f"Knowledge not found: {knowledge_id}"
+
+        # Format as recalled context
+        from sage.knowledge import RecallResult
+
+        result = RecallResult(items=[target_item], total_tokens=0)
+        return format_recalled_context(result)
+
+    except Exception as e:
+        return f"Error loading knowledge {knowledge_id}: {e}"
+
+
+@mcp.resource("sage://failure/{failure_id}")
+def get_failure_resource(failure_id: str) -> str:
+    """Get a failure record as an MCP resource.
+
+    Enables @sage://failure/jwt-refresh-loop syntax in Claude Code.
+
+    Args:
+        failure_id: Failure ID (can be partial match)
+
+    Returns:
+        Formatted failure content
+    """
+    safe_id = _validate_sage_path(failure_id)
+    if not safe_id:
+        return f"Invalid failure ID: {failure_id}"
+
+    try:
+        from sage.failures import format_failure_for_context, load_failures
+
+        failures = load_failures(project_path=_PROJECT_ROOT)
+        target_failure = None
+
+        for failure in failures:
+            if failure.id == safe_id or safe_id in failure.id:
+                target_failure = failure
+                break
+
+        if not target_failure:
+            return f"Failure not found: {failure_id}"
+
+        return format_failure_for_context(target_failure)
+
+    except Exception as e:
+        return f"Error loading failure {failure_id}: {e}"
+
+
+# =============================================================================
+# Failure Memory Tools (v4.0)
+# =============================================================================
+
+
+@mcp.tool()
+@with_session_context
+def sage_record_failure(
+    failure_id: str,
+    approach: str,
+    why_failed: str,
+    learned: str,
+    keywords: list[str],
+    related_to: list[str] | None = None,
+) -> str:
+    """Record a failure to learn from.
+
+    Track what didn't work and why to avoid repeating mistakes.
+    Failures are automatically recalled at session start when relevant.
+
+    Args:
+        failure_id: Unique identifier (kebab-case, e.g., "jwt-refresh-loop")
+        approach: What was tried (e.g., "Using localStorage for refresh tokens")
+        why_failed: Why it didn't work (e.g., "XSS vulnerability")
+        learned: What to do instead (e.g., "Use httpOnly cookies")
+        keywords: Trigger keywords for matching
+        related_to: Optional list of related checkpoint/knowledge IDs
+
+    Returns:
+        Confirmation message
+    """
+    config = get_sage_config(_PROJECT_ROOT)
+    if not getattr(config, "failure_memory_enabled", True):
+        return "Failure memory is disabled in config."
+
+    try:
+        from sage.failures import save_failure
+
+        failure = save_failure(
+            failure_id=failure_id,
+            approach=approach,
+            why_failed=why_failed,
+            learned=learned,
+            keywords=keywords,
+            related_to=related_to,
+            project_path=_PROJECT_ROOT,
+        )
+
+        return f"Recorded failure: {failure.id}\n\nThis will be recalled in future sessions when relevant."
+
+    except Exception as e:
+        return f"Failed to record failure: {e}"
+
+
+@mcp.tool()
+@with_session_context
+def sage_list_failures(
+    limit: int = 10,
+) -> str:
+    """List recorded failures.
+
+    Args:
+        limit: Maximum number of failures to return
+
+    Returns:
+        Formatted list of failures
+    """
+    config = get_sage_config(_PROJECT_ROOT)
+    if not getattr(config, "failure_memory_enabled", True):
+        return "Failure memory is disabled in config."
+
+    try:
+        from sage.failures import list_failures
+
+        failures = list_failures(project_path=_PROJECT_ROOT, limit=limit)
+
+        if not failures:
+            return "No failures recorded.\n\nUse sage_record_failure() to track what didn't work."
+
+        lines = [f"Failures ({len(failures)}):\n"]
+
+        for f in failures:
+            keywords = ", ".join(f.keywords[:3])
+            lines.append(f"## {f.id}")
+            lines.append(f"*Keywords: {keywords}*")
+            lines.append(f"**Approach:** {f.approach}")
+            lines.append(f"**Why failed:** {f.why_failed[:100]}{'...' if len(f.why_failed) > 100 else ''}")
+            lines.append(f"**Learned:** {f.learned[:100]}{'...' if len(f.learned) > 100 else ''}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Failed to list failures: {e}"
 
 
 # =============================================================================
