@@ -12,10 +12,8 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import os
 import threading
 import webbrowser
-from functools import partial
 from http.server import HTTPServer
 from pathlib import Path
 
@@ -32,7 +30,7 @@ class SageUIHandler(SageAPIHandler):
 
     static_dir: Path = STATIC_DIR
 
-    def do_GET(self) -> None:
+    def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         """Handle GET - route to API or serve static files."""
         if self.path.startswith("/api/"):
             super().do_GET()

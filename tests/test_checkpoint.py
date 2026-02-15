@@ -1478,7 +1478,7 @@ class TestToonFormat:
 
     def test_toon_format_tabular_code_refs(self):
         """TOON format uses tabular layout for 3+ code refs."""
-        from sage.checkpoint import format_checkpoint_toon, CodeRef
+        from sage.checkpoint import CodeRef, format_checkpoint_toon
 
         cp = Checkpoint(
             id="test-toon-refs",
@@ -1523,7 +1523,7 @@ class TestToonFormat:
 
     def test_toon_format_smaller_than_markdown(self):
         """TOON format produces smaller output for structured data."""
-        from sage.checkpoint import format_checkpoint_toon, CodeRef
+        from sage.checkpoint import CodeRef, format_checkpoint_toon
 
         # Create checkpoint with lots of structured data
         cp = Checkpoint(

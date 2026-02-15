@@ -1401,7 +1401,10 @@ def sage_save_checkpoint(
     Returns:
         Confirmation message with checkpoint ID (queued for async save)
     """
-    from sage.checkpoint import enrich_checkpoint_with_code_context, enrich_checkpoint_with_git_context
+    from sage.checkpoint import (
+        enrich_checkpoint_with_code_context,
+        enrich_checkpoint_with_git_context,
+    )
     from sage.watcher import find_active_transcript
 
     # Validate confidence bounds (fast, sync)

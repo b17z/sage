@@ -225,7 +225,8 @@ def check_index_freshness(project_path: Path | None = None) -> dict:
             - changed_files: list[str] - Paths of changed files (first 10)
             - message: str - Human-readable status
     """
-    from sage.git import check_index_freshness as git_check_freshness, get_commit, is_git_repo
+    from sage.git import check_index_freshness as git_check_freshness
+    from sage.git import get_commit, is_git_repo
 
     meta = load_index_meta(project_path)
 

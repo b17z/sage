@@ -1192,7 +1192,7 @@ def format_checkpoint_toon(checkpoint: Checkpoint) -> str:
 
     # Action context (compact)
     if checkpoint.action_goal:
-        parts.append(f"## Action\n")
+        parts.append("## Action\n")
         parts.append(f"goal: {checkpoint.action_goal}\n")
         parts.append(f"type: {checkpoint.action_type}\n\n")
 
@@ -1253,7 +1253,7 @@ def format_checkpoint_toon(checkpoint: Checkpoint) -> str:
         branch = gc.get("branch", "?")
         commit = gc.get("commit", "?")[:7]
         dirty = "*" if gc.get("dirty") else ""
-        parts.append(f"## Git\n")
+        parts.append("## Git\n")
         parts.append(f"branch: {branch} @ {commit}{dirty}\n\n")
 
     return "".join(parts)

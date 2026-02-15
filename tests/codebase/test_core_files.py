@@ -3,17 +3,15 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from sage.codebase.core_files import (
-    mark_core,
-    unmark_core,
-    list_core,
-    get_core_file,
-    get_core_context,
-    get_core_files_path,
     _load_core_files,
     _save_core_files,
+    get_core_context,
+    get_core_file,
+    get_core_files_path,
+    list_core,
+    mark_core,
+    unmark_core,
 )
 from sage.codebase.models import CoreFile
 

@@ -273,7 +273,7 @@ def read_transcript_since(
     new_cursor = cursor
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             f.seek(cursor)
 
             # Use readline() instead of iteration to allow f.tell()
@@ -309,7 +309,7 @@ def read_transcript_since(
 
                 new_cursor = f.tell()
 
-    except (OSError, IOError) as e:
+    except OSError as e:
         logger.error(f"Failed to read transcript: {e}")
         return TranscriptWindow(entries=(), cursor_position=cursor)
 
@@ -469,7 +469,7 @@ def save_cursor(path: Path, cursor: CursorState) -> bool:
             json.dump(cursor.to_dict(), f)
         path.chmod(0o600)
         return True
-    except (OSError, IOError) as e:
+    except OSError as e:
         logger.error(f"Failed to save cursor: {e}")
         return False
 
@@ -490,7 +490,7 @@ def load_cursor(path: Path) -> CursorState | None:
         with open(path) as f:
             data = json.load(f)
         return CursorState.from_dict(data)
-    except (json.JSONDecodeError, OSError, IOError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to load cursor: {e}")
         return None
 

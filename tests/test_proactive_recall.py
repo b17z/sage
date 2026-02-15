@@ -1,7 +1,6 @@
 """Tests for proactive knowledge recall feature."""
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

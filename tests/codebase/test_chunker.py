@@ -1,13 +1,10 @@
 """Tests for sage.codebase.chunker module."""
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from sage.codebase.chunker import (
-    FALLBACK_CHUNK_SIZE,
-    FALLBACK_OVERLAP,
     MIN_CHUNK_SIZE,
     chunk_by_characters,
     chunk_file,

@@ -1,20 +1,18 @@
 """Tests for sage.codebase.indexer module."""
 
-import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
 from sage.codebase.indexer import (
+    detect_project_name,
     get_codebase_dir,
-    get_lancedb_path,
-    get_index_meta_path,
     get_compiled_dir,
+    get_index_meta_path,
+    get_lancedb_path,
     is_lancedb_available,
     load_index_meta,
     save_index_meta,
-    detect_project_name,
 )
 
 

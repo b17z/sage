@@ -6,7 +6,6 @@ Run with: pytest tests/test_integration.py -v
 Requires: pip install claude-sage[embeddings]
 """
 
-import asyncio
 import time
 from pathlib import Path
 

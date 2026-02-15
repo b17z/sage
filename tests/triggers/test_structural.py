@@ -1,26 +1,25 @@
 """Tests for structural trigger detection."""
 
-from unittest.mock import patch, MagicMock
-import numpy as np
-import pytest
+from unittest.mock import patch
 
+import numpy as np
+
+from sage.errors import Ok
 from sage.triggers.structural import (
+    MAX_BUFFER_SIZE,
+    MAX_MESSAGE_LENGTH,
+    MIN_BUFFER_FOR_DRIFT,
     StructuralDetector,
-    detect_topic_drift,
-    detect_convergence,
     _is_question,
     _truncate_message,
-    MAX_BUFFER_SIZE,
-    MIN_BUFFER_FOR_DRIFT,
-    MAX_MESSAGE_LENGTH,
+    detect_convergence,
+    detect_topic_drift,
 )
 from sage.triggers.types import (
-    TriggerType,
-    TriggerSource,
     MessageBuffer,
-    Confidence,
+    TriggerSource,
+    TriggerType,
 )
-from sage.errors import Ok
 
 
 class TestIsQuestion:

@@ -116,10 +116,9 @@ class TestExecuteQueueForInjection:
 
     def _start_session(self, temp_sage_dir: Path):
         """Helper to start a session for queue tests."""
-        from sage.session import start_session
-
         # Patch session module to use temp dir
         import sage.session
+        from sage.session import start_session
 
         sage.session.SESSION_FILE = temp_sage_dir / "session.json"
         sage.session.INJECTION_QUEUE_FILE = temp_sage_dir / "injection_queue.json"

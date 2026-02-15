@@ -3,17 +3,15 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from sage.headless import (
     EXTRACTION_PROMPT,
     EXTRACTION_TIMEOUT,
     MAX_CONTENT_LENGTH,
+    _parse_claude_response,
+    _sanitize_content,
     extract_with_claude,
     get_claude_version,
     is_claude_available,
-    _parse_claude_response,
-    _sanitize_content,
 )
 
 
@@ -155,7 +153,7 @@ class TestExtractWithClaude:
 
         with patch("sage.headless.is_claude_available", return_value=True):
             with patch("subprocess.run", return_value=mock_result) as mock_run:
-                result = extract_with_claude("test content")
+                extract_with_claude("test content")
 
                 mock_run.assert_called_once()
                 args = mock_run.call_args[0][0]

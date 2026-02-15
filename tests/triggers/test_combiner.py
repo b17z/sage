@@ -1,27 +1,24 @@
 """Tests for trigger signal combiner."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
+from sage.errors import Ok
 from sage.triggers.combiner import (
-    combine_signals,
     TriggerDetector,
-    should_checkpoint,
-    analyze_for_trigger,
     _select_best_trigger,
+    analyze_for_trigger,
+    combine_signals,
+    should_checkpoint,
 )
 from sage.triggers.types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
-    TriggerResult,
     Confidence,
-    EMBEDDING_WEIGHT,
-    KEYWORD_WEIGHT,
-    DEFAULT_TRIGGER_THRESHOLD,
+    Trigger,
+    TriggerSource,
+    TriggerType,
 )
-from sage.errors import Ok
 
 
 class TestCombineSignals:
@@ -268,7 +265,7 @@ class TestThresholdBehavior:
 
     def test_uses_default_threshold(self):
         """Uses default threshold when not specified."""
-        result = combine_signals(None, None)
+        combine_signals(None, None)
         # Implicitly uses DEFAULT_TRIGGER_THRESHOLD via config
 
     def test_custom_threshold_respected(self):

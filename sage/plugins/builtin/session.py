@@ -173,7 +173,7 @@ class SessionPlugin(BasePlugin):
             PluginAction(
                 action_type="log",
                 parameters={
-                    "message": f"Session plugin: new Claude Code session detected, marked for continuity injection",
+                    "message": "Session plugin: new Claude Code session detected, marked for continuity injection",
                     "level": "info",
                 },
             ),

@@ -8,28 +8,26 @@ Tests git integration functionality including:
 - Staleness checking
 """
 
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from sage.git import (
-    GitContext,
     DiffSummary,
-    is_git_repo,
-    get_branch,
-    get_commit,
-    is_dirty,
-    get_recent_commits,
-    get_changed_files_since,
-    get_file_commits_since,
-    get_diff_summary,
+    GitContext,
     capture_git_context,
     check_file_changed,
     check_index_freshness,
+    get_branch,
+    get_changed_files_since,
+    get_commit,
+    get_diff_summary,
+    get_file_commits_since,
+    get_recent_commits,
+    is_dirty,
+    is_git_repo,
 )
-
 
 # =============================================================================
 # GitContext Tests

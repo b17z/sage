@@ -5,6 +5,8 @@ import pytest
 from sage.salience import (
     SALIENCE_PATTERNS,
     SalientContent,
+    _extract_context,
+    _preprocess_text,
     categorize_content,
     extract_decisions,
     extract_open_threads,
@@ -13,8 +15,6 @@ from sage.salience import (
     get_max_salience,
     is_significant,
     summarize_salience,
-    _extract_context,
-    _preprocess_text,
 )
 
 

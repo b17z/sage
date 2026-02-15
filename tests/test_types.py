@@ -1,6 +1,5 @@
 """Tests for branded types."""
 
-import pytest
 
 from sage.types import CheckpointId, KnowledgeId, SkillName, TaskId, TemplateName
 

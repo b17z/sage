@@ -6,17 +6,16 @@ or mocks for CI environments.
 """
 
 from unittest.mock import patch
-import numpy as np
-import pytest
 
+import numpy as np
+
+from sage.errors import Ok
 from sage.triggers import (
     TriggerDetector,
     TriggerType,
-    TriggerSource,
     analyze_for_trigger,
     should_checkpoint,
 )
-from sage.errors import Ok
 
 
 class TestFullTriggerFlow:
@@ -212,8 +211,8 @@ class TestConsistencyWithKnowledgeRecall:
 
     def test_weights_match_knowledge(self):
         """Trigger weights match knowledge recall config defaults."""
-        from sage.triggers.types import EMBEDDING_WEIGHT, KEYWORD_WEIGHT
         from sage.config import SageConfig
+        from sage.triggers.types import EMBEDDING_WEIGHT, KEYWORD_WEIGHT
 
         # Knowledge recall uses embedding_weight and keyword_weight from config
         defaults = SageConfig()

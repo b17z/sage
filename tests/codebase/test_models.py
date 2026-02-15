@@ -15,7 +15,6 @@ from sage.codebase.models import (
     IndexStats,
     SearchResult,
     detect_language,
-    LANGUAGE_EXTENSIONS,
 )
 
 

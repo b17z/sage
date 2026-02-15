@@ -1,19 +1,15 @@
 """Tests for linguistic trigger detection."""
 
-import pytest
 
 from sage.triggers.linguistic import (
-    detect_linguistic_trigger,
-    get_all_patterns,
-    _strip_code_and_quotes,
+    TOPIC_SHIFT_PATTERNS,
     _is_meta_discussion,
     _match_patterns,
-    TOPIC_SHIFT_PATTERNS,
-    BRANCH_POINT_PATTERNS,
-    CONSTRAINT_PATTERNS,
-    SYNTHESIS_PATTERNS,
+    _strip_code_and_quotes,
+    detect_linguistic_trigger,
+    get_all_patterns,
 )
-from sage.triggers.types import TriggerType, TriggerSource
+from sage.triggers.types import TriggerSource, TriggerType
 
 
 class TestStripCodeAndQuotes:

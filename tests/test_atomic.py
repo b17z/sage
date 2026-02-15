@@ -5,7 +5,6 @@ import os
 import stat
 import threading
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import yaml

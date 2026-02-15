@@ -4,8 +4,6 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestCheckForUpdates:
     """Tests for check_for_updates function."""
@@ -164,6 +162,7 @@ class TestStartupCheck:
     def test_startup_check_logs_warning(self, tmp_path, monkeypatch, caplog):
         """Startup check should log warning when update available."""
         import logging
+
         from sage.mcp_server import _check_for_updates_on_startup
 
         with patch("sage.check_for_updates", return_value=(True, "99.0.0")):

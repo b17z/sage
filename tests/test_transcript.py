@@ -1,10 +1,8 @@
 """Tests for sage.transcript module."""
 
 import json
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +12,8 @@ from sage.transcript import (
     ToolCall,
     TranscriptEntry,
     TranscriptWindow,
+    _extract_text_content,
+    _extract_tool_calls,
     get_assistant_content,
     get_compaction_summary,
     get_files_touched,
@@ -25,8 +25,6 @@ from sage.transcript import (
     read_full_transcript,
     read_transcript_since,
     save_cursor,
-    _extract_text_content,
-    _extract_tool_calls,
 )
 
 

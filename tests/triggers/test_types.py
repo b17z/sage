@@ -4,15 +4,15 @@ import numpy as np
 import pytest
 
 from sage.triggers.types import (
-    Trigger,
-    TriggerType,
-    TriggerSource,
-    TriggerResult,
-    MessageBuffer,
-    Confidence,
+    DEFAULT_TRIGGER_THRESHOLD,
     EMBEDDING_WEIGHT,
     KEYWORD_WEIGHT,
-    DEFAULT_TRIGGER_THRESHOLD,
+    Confidence,
+    MessageBuffer,
+    Trigger,
+    TriggerResult,
+    TriggerSource,
+    TriggerType,
 )
 
 

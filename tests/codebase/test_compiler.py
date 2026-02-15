@@ -1,21 +1,20 @@
 """Tests for sage.codebase.compiler module."""
 
-import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
+from sage.codebase.chunker import is_treesitter_available
 from sage.codebase.compiler import (
-    compile_file,
-    compile_directory,
-    save_compiled_index,
-    load_compiled_index,
-    lookup_function,
-    lookup_class,
-    lookup_constant,
     _compiled_index_to_dict,
     _dict_to_compiled_index,
+    compile_directory,
+    compile_file,
+    load_compiled_index,
+    lookup_class,
+    lookup_constant,
+    lookup_function,
+    save_compiled_index,
 )
 from sage.codebase.models import (
     CompiledClass,
@@ -23,7 +22,6 @@ from sage.codebase.models import (
     CompiledFunction,
     CompiledIndex,
 )
-from sage.codebase.chunker import is_treesitter_available
 
 
 class TestCompiledIndexSerialization:

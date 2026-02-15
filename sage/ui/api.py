@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any

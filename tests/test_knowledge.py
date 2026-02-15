@@ -204,7 +204,7 @@ class TestUpdateKnowledge:
         """update_knowledge() updates content and re-embeds."""
         from sage.knowledge import update_knowledge
 
-        item = add_knowledge(
+        add_knowledge(
             content="Original content",
             knowledge_id="test-update",
             keywords=["test"],
@@ -1221,7 +1221,7 @@ class TestKnowledgeMaintenance:
 
         # Add items with different dates
         old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
-        recent_date = datetime.now().strftime("%Y-%m-%d")
+        datetime.now().strftime("%Y-%m-%d")
 
         add_knowledge(
             content="Recent content",
@@ -1268,7 +1268,6 @@ class TestKnowledgeMaintenance:
             KnowledgeMetadata,
             KnowledgeScope,
             KnowledgeTriggers,
-            load_index,
             run_knowledge_maintenance,
             save_index,
         )
@@ -1505,7 +1504,13 @@ class TestCodeLinkedKnowledge:
 
     def test_knowledge_item_with_code_links(self):
         """Test KnowledgeItem can hold code links."""
-        from sage.knowledge import CodeLink, KnowledgeItem, KnowledgeMetadata, KnowledgeScope, KnowledgeTriggers
+        from sage.knowledge import (
+            CodeLink,
+            KnowledgeItem,
+            KnowledgeMetadata,
+            KnowledgeScope,
+            KnowledgeTriggers,
+        )
 
         link = CodeLink(chunk_id="test.py::my_func")
         item = KnowledgeItem(

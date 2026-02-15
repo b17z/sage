@@ -20,7 +20,7 @@ from sage.recovery import (
     load_recovery_checkpoint,
     save_recovery_checkpoint,
 )
-from sage.transcript import TranscriptEntry, TranscriptWindow, ToolCall
+from sage.transcript import ToolCall, TranscriptEntry, TranscriptWindow
 
 
 @pytest.fixture

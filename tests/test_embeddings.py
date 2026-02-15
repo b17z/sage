@@ -288,7 +288,6 @@ class TestSaveLoadEmbeddings:
     def test_concurrent_saves_maintain_consistency(self, mock_embeddings_dir: Path, monkeypatch):
         """Concurrent saves don't corrupt the embedding store (file locking test)."""
         import concurrent.futures
-        import threading
 
         monkeypatch.setattr(
             "sage.embeddings.get_model_info",

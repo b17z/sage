@@ -1,21 +1,20 @@
 """Tests for sage.codebase.search module."""
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
-from sage.codebase.search import (
-    _generate_highlights,
-    grep_function,
-    grep_class,
-    grep_constant,
-)
 from sage.codebase.models import (
     CompiledClass,
     CompiledConstant,
     CompiledFunction,
     CompiledIndex,
+)
+from sage.codebase.search import (
+    _generate_highlights,
+    grep_class,
+    grep_constant,
+    grep_function,
 )
 
 
@@ -112,9 +111,9 @@ class TestGrepSymbol:
 
     def test_finds_function_first(self, tmp_path: Path):
         """grep_symbol checks functions first."""
-        from sage.codebase.search import grep_symbol
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import grep_symbol
 
         index = CompiledIndex(
             project="test",
@@ -132,9 +131,9 @@ class TestGrepSymbol:
 
     def test_falls_through_to_class(self, tmp_path: Path):
         """grep_symbol finds class if no matching function."""
-        from sage.codebase.search import grep_symbol
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import grep_symbol
 
         index = CompiledIndex(
             project="test",
@@ -152,9 +151,9 @@ class TestGrepSymbol:
 
     def test_falls_through_to_constant(self, tmp_path: Path):
         """grep_symbol finds constant if no function or class."""
-        from sage.codebase.search import grep_symbol
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import grep_symbol
 
         index = CompiledIndex(
             project="test",
@@ -172,9 +171,9 @@ class TestGrepSymbol:
 
     def test_returns_none_not_found(self, tmp_path: Path):
         """grep_symbol returns None if nothing found."""
-        from sage.codebase.search import grep_symbol
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import grep_symbol
 
         index = CompiledIndex(project="test", functions=(), classes=(), constants=())
 
@@ -189,9 +188,9 @@ class TestListFunctions:
 
     def test_lists_all_functions(self, tmp_path: Path):
         """list_functions returns all functions."""
-        from sage.codebase.search import list_functions
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import list_functions
 
         index = CompiledIndex(
             project="test",
@@ -211,9 +210,9 @@ class TestListFunctions:
 
     def test_filters_by_pattern(self, tmp_path: Path):
         """list_functions filters by pattern."""
-        from sage.codebase.search import list_functions
         from sage.codebase.compiler import save_compiled_index
         from sage.codebase.indexer import get_compiled_dir
+        from sage.codebase.search import list_functions
 
         index = CompiledIndex(
             project="test",
