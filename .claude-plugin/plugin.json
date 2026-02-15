@@ -1,0 +1,54 @@
+{
+  "name": "sage",
+  "version": "3.2.0",
+  "description": "Semantic memory for Claude - checkpoint research, persist knowledge, never lose context",
+  "author": "be.nvy",
+  "homepage": "https://pypi.org/project/claude-sage/",
+  "repository": "https://github.com/benvy/sage",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "checkpointing",
+    "knowledge-management",
+    "research",
+    "context-persistence"
+  ],
+  "capabilities": {
+    "skills": true,
+    "commands": true,
+    "connectors": true,
+    "subagents": false
+  },
+  "commands": [
+    {
+      "name": "checkpoint",
+      "description": "Save or list research checkpoints",
+      "file": "commands/checkpoint.md"
+    },
+    {
+      "name": "recall",
+      "description": "Recall relevant knowledge for current context",
+      "file": "commands/recall.md"
+    },
+    {
+      "name": "knowledge",
+      "description": "Manage the knowledge base",
+      "file": "commands/knowledge.md"
+    },
+    {
+      "name": "session",
+      "description": "Check session continuity and inject context",
+      "file": "commands/session.md"
+    }
+  ],
+  "skills": [
+    "skills/sage-memory",
+    "skills/sage-research",
+    "skills/sage-session",
+    "skills/sage-knowledge",
+    "skills/sage-knowledge-hygiene"
+  ],
+  "connectors": {
+    "mcp": ".claude-plugin/mcp.json"
+  }
+}

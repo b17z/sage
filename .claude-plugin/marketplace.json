@@ -1,21 +1,20 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sage",
-  "description": "Semantic checkpointing for Claude Code — auto-checkpoint at meaningful moments, recall across sessions",
+  "description": "Semantic memory for Claude \u2014 checkpoint research, persist knowledge, never lose context",
   "owner": {
-    "name": "b17z",
-    "email": "ben@b17z.io"
+    "name": "be.nvy",
+    "url": "https://github.com/benvy"
   },
   "plugins": [
     {
       "name": "sage",
-      "description": "Semantic checkpointing with hooks and MCP server for cross-session memory",
-      "version": "3.0.0",
+      "description": "Semantic memory with checkpoints, knowledge base, and code context linking",
+      "version": "3.2.0",
       "author": {
-        "name": "b17z",
-        "email": "ben@b17z.io"
+        "name": "be.nvy"
       },
-      "source": "./plugins/sage"
+      "source": "."
     }
   ]
 }
