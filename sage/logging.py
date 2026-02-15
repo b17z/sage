@@ -194,13 +194,18 @@ class SecureJSONFormatter(logging.Formatter):
 
 def _ensure_log_dir() -> None:
     """Create log directory with secure permissions."""
-    if not LOGS_DIR.exists():
-        LOGS_DIR.mkdir(parents=True, mode=0o700)
+    try:
+        if not LOGS_DIR.exists():
+            LOGS_DIR.mkdir(parents=True, mode=0o700)
 
-    # Ensure directory has correct permissions
-    current_mode = LOGS_DIR.stat().st_mode
-    if current_mode & 0o077:  # If group/other have any permissions
-        LOGS_DIR.chmod(0o700)
+        # Ensure directory has correct permissions
+        current_mode = LOGS_DIR.stat().st_mode
+        if current_mode & 0o077:  # If group/other have any permissions
+            LOGS_DIR.chmod(0o700)
+    except OSError:
+        # If we can't create/chmod the log dir, logging will fail gracefully
+        # when trying to write - this is acceptable for a logging setup
+        pass
 
 
 def _secure_file_handler() -> RotatingFileHandler:
@@ -216,8 +221,13 @@ def _secure_file_handler() -> RotatingFileHandler:
     handler.setFormatter(SecureJSONFormatter())
 
     # Set secure permissions on log file if it exists
-    if LOG_FILE.exists():
-        LOG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+    try:
+        if LOG_FILE.exists():
+            LOG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+    except OSError:
+        # Permission setting failed - continue without secure permissions
+        # This is a best-effort security measure
+        pass
 
     return handler
 

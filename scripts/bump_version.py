@@ -49,18 +49,25 @@ def get_current_versions() -> dict[str, str]:
             versions[file] = "NOT FOUND"
             continue
 
-        content = path.read_text()
+        try:
+            content = path.read_text()
+        except OSError as e:
+            versions[file] = f"READ ERROR: {e}"
+            continue
 
         if config.get("type") == "json":
-            data = json.loads(content)
-            key = config["key"]
-            if isinstance(key, list):
-                val = data
-                for k in key:
-                    val = val[k]
-                versions[file] = val
-            else:
-                versions[file] = data.get(key, "NOT FOUND")
+            try:
+                data = json.loads(content)
+                key = config["key"]
+                if isinstance(key, list):
+                    val = data
+                    for k in key:
+                        val = val[k]
+                    versions[file] = val
+                else:
+                    versions[file] = data.get(key, "NOT FOUND")
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+                versions[file] = f"JSON ERROR: {e}"
         else:
             match = re.search(config["pattern"], content, re.MULTILINE)
             if match:
@@ -76,6 +83,7 @@ def get_current_versions() -> dict[str, str]:
 def bump_version(new_version: str) -> list[str]:
     """Update version in all files. Returns list of updated files."""
     updated = []
+    errors = []
 
     for file, config in VERSION_FILES.items():
         path = ROOT / file
@@ -83,30 +91,45 @@ def bump_version(new_version: str) -> list[str]:
             print(f"  SKIP {file} (not found)")
             continue
 
-        content = path.read_text()
+        try:
+            content = path.read_text()
+        except OSError as e:
+            errors.append(f"  ERROR {file}: could not read - {e}")
+            continue
 
-        if config.get("type") == "json":
-            data = json.loads(content)
-            key = config["key"]
-            if isinstance(key, list):
-                # Navigate to nested key
-                obj = data
-                for k in key[:-1]:
-                    obj = obj[k]
-                obj[key[-1]] = new_version
+        try:
+            if config.get("type") == "json":
+                data = json.loads(content)
+                key = config["key"]
+                if isinstance(key, list):
+                    # Navigate to nested key
+                    obj = data
+                    for k in key[:-1]:
+                        obj = obj[k]
+                    obj[key[-1]] = new_version
+                else:
+                    data[key] = new_version
+                new_content = json.dumps(data, indent=2) + "\n"
             else:
-                data[key] = new_version
-            new_content = json.dumps(data, indent=2) + "\n"
-        else:
-            replacement = config["replacement"].format(version=new_version)
-            new_content = re.sub(config["pattern"], replacement, content, flags=re.MULTILINE)
+                replacement = config["replacement"].format(version=new_version)
+                new_content = re.sub(config["pattern"], replacement, content, flags=re.MULTILINE)
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+            errors.append(f"  ERROR {file}: could not parse - {e}")
+            continue
 
         if new_content != content:
-            path.write_text(new_content)
-            updated.append(file)
-            print(f"  OK   {file} -> {new_version}")
+            try:
+                path.write_text(new_content)
+                updated.append(file)
+                print(f"  OK   {file} -> {new_version}")
+            except OSError as e:
+                errors.append(f"  ERROR {file}: could not write - {e}")
         else:
             print(f"  SAME {file}")
+
+    # Print any errors at the end
+    for error in errors:
+        print(error)
 
     return updated
 
@@ -127,6 +150,8 @@ def main():
             print(f"  {file}: {ver}")
 
         unique = set(versions.values()) - {"NOT FOUND", "PARSE ERROR"}
+        # Filter out any error messages
+        unique = {v for v in unique if not v.startswith(("READ ERROR", "JSON ERROR"))}
         if len(unique) == 1:
             print(f"\n✓ All versions in sync: {unique.pop()}")
         else:

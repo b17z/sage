@@ -197,7 +197,7 @@ def get_claude_version() -> str | None:
 
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
-        pass
+    except Exception as e:  # Best-effort version check - don't crash on any error
+        logger.debug("Could not get Claude version: %s", e)
 
     return None

@@ -4,6 +4,7 @@ Skills are stored in ~/.claude/skills/ (standard Agent Skills location).
 Sage metadata is stored in ~/.sage/skills/.
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -14,6 +15,8 @@ import yaml
 from sage.config import SHARED_MEMORY_PATH, SKILLS_DIR, get_sage_skill_path, get_skill_path
 from sage.errors import Result, SageError, err, ok, skill_exists, skill_not_found
 from sage.history import read_history
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -85,10 +88,13 @@ def list_skills() -> list[str]:
         if skill_dir.is_dir():
             skill_md = skill_dir / "SKILL.md"
             if skill_md.exists():
-                # Check if Sage-managed
-                content = skill_md.read_text()
-                if "sage_managed: true" in content:
-                    skills.append(skill_dir.name)
+                try:
+                    content = skill_md.read_text()
+                    if "sage_managed: true" in content:
+                        skills.append(skill_dir.name)
+                except OSError as e:
+                    logger.warning("Could not read skill %s: %s", skill_dir.name, e)
+                    continue
 
     return sorted(skills)
 
@@ -108,7 +114,11 @@ def load_shared_memory() -> str:
     """Load shared memory content."""
     if not SHARED_MEMORY_PATH.exists():
         return ""
-    return SHARED_MEMORY_PATH.read_text()
+    try:
+        return SHARED_MEMORY_PATH.read_text()
+    except OSError as e:
+        logger.warning("Could not read shared memory: %s", e)
+        return ""
 
 
 def parse_skill_frontmatter(content: str) -> SkillMetadata | None:
@@ -127,7 +137,8 @@ def parse_skill_frontmatter(content: str) -> SkillMetadata | None:
             tags=tuple(data.get("tags", [])),
             sage_managed=data.get("sage_managed", False),
         )
-    except yaml.YAMLError:
+    except yaml.YAMLError as e:
+        logger.warning("Could not parse skill frontmatter: %s", e)
         return None
 
 
@@ -140,7 +151,17 @@ def load_skill(name: str) -> Result[Skill, SageError]:
         similar = find_similar_skills(name)
         return err(skill_not_found(name, similar))
 
-    content = skill_md.read_text()
+    try:
+        content = skill_md.read_text()
+    except OSError as e:
+        logger.error("Could not read skill %s: %s", name, e)
+        return err(
+            SageError(
+                code="skill_read_error",
+                message=f"Could not read skill '{name}': {e}",
+            )
+        )
+
     metadata = parse_skill_frontmatter(content)
     if not metadata:
         return err(
@@ -155,7 +176,11 @@ def load_skill(name: str) -> Result[Skill, SageError]:
     docs_dir = skill_path / "docs"
     if docs_dir.exists():
         for doc_path in sorted(docs_dir.glob("*.md")):
-            docs.append((doc_path.name, doc_path.read_text()))
+            try:
+                docs.append((doc_path.name, doc_path.read_text()))
+            except OSError as e:
+                logger.warning("Could not read doc %s: %s", doc_path.name, e)
+                continue
 
     # Load shared memory
     shared_memory = load_shared_memory()
@@ -186,24 +211,48 @@ def create_skill(
 
     # Create skill directory structure
     skill_path = get_skill_path(name)
-    skill_path.mkdir(parents=True, exist_ok=True)
-    (skill_path / "docs").mkdir(exist_ok=True)
-    (skill_path / "scripts").mkdir(exist_ok=True)
+    try:
+        skill_path.mkdir(parents=True, exist_ok=True)
+        (skill_path / "docs").mkdir(exist_ok=True)
+        (skill_path / "scripts").mkdir(exist_ok=True)
+    except OSError as e:
+        logger.error("Could not create skill directory %s: %s", skill_path, e)
+        return err(
+            SageError(
+                code="skill_create_error",
+                message=f"Could not create skill directory: {e}",
+            )
+        )
 
     # Create Sage metadata directory
     sage_path = get_sage_skill_path(name)
-    sage_path.mkdir(parents=True, exist_ok=True)
-    (sage_path / "sessions").mkdir(exist_ok=True)
-    (sage_path / "archive").mkdir(exist_ok=True)
+    try:
+        sage_path.mkdir(parents=True, exist_ok=True)
+        (sage_path / "sessions").mkdir(exist_ok=True)
+        (sage_path / "archive").mkdir(exist_ok=True)
+    except OSError as e:
+        logger.error("Could not create sage skill directory %s: %s", sage_path, e)
+        return err(
+            SageError(
+                code="skill_create_error",
+                message=f"Could not create sage skill metadata directory: {e}",
+            )
+        )
 
     # Generate expertise section
     if expertise_points:
         expertise = "\n".join(f"- {point}" for point in expertise_points)
     else:
-        expertise = f"- Deep knowledge of {description.lower()}\n- Current awareness of developments in this space\n- Ability to synthesize complex information"
+        expertise = (
+            f"- Deep knowledge of {description.lower()}\n"
+            f"- Current awareness of developments in this space\n"
+            f"- Ability to synthesize complex information"
+        )
 
     # Generate title (capitalize first letter of each word)
-    title = " ".join(word.capitalize() for word in name.replace("-", " ").replace("_", " ").split())
+    title = " ".join(
+        word.capitalize() for word in name.replace("-", " ").replace("_", " ").split()
+    )
 
     # Generate SKILL.md
     skill_content = SKILL_TEMPLATE.format(
@@ -215,7 +264,16 @@ def create_skill(
     )
 
     skill_md = skill_path / "SKILL.md"
-    skill_md.write_text(skill_content)
+    try:
+        skill_md.write_text(skill_content)
+    except OSError as e:
+        logger.error("Could not write skill file %s: %s", skill_md, e)
+        return err(
+            SageError(
+                code="skill_create_error",
+                message=f"Could not write skill file: {e}",
+            )
+        )
 
     return ok(skill_path)
 
