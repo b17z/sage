@@ -452,7 +452,7 @@ class TestFormatRecalledContext:
         )
         result = RecallResult(items=[item], total_tokens=100)
 
-        formatted = format_recalled_context(result)
+        formatted = format_recalled_context(result, use_toon=False)
 
         assert "📚 Recalled Knowledge (1 items" in formatted
         assert "## test-item" in formatted
@@ -1477,3 +1477,250 @@ class TestKnowledgeMaintenance:
         # Item should be kept (can't parse date)
         assert result.pruned_by_age == 0
         assert result.total_remaining == 1
+
+
+class TestCodeLinkedKnowledge:
+    """Tests for code-linked knowledge feature (v3.1)."""
+
+    def test_code_link_dataclass(self):
+        """Test CodeLink dataclass creation."""
+        from sage.knowledge import CodeLink
+
+        link = CodeLink(
+            chunk_id="sage/knowledge.py::add_knowledge",
+            relation="implements",
+            note="Main entry point",
+        )
+        assert link.chunk_id == "sage/knowledge.py::add_knowledge"
+        assert link.relation == "implements"
+        assert link.note == "Main entry point"
+
+    def test_code_link_default_values(self):
+        """Test CodeLink default values."""
+        from sage.knowledge import CodeLink
+
+        link = CodeLink(chunk_id="test.py::foo")
+        assert link.relation == "implements"
+        assert link.note == ""
+
+    def test_knowledge_item_with_code_links(self):
+        """Test KnowledgeItem can hold code links."""
+        from sage.knowledge import CodeLink, KnowledgeItem, KnowledgeMetadata, KnowledgeScope, KnowledgeTriggers
+
+        link = CodeLink(chunk_id="test.py::my_func")
+        item = KnowledgeItem(
+            id="test-item",
+            file="global/test-item.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added="2025-01-01"),
+            item_type="knowledge",
+            code_links=(link,),
+        )
+        assert len(item.code_links) == 1
+        assert item.code_links[0].chunk_id == "test.py::my_func"
+
+    def test_knowledge_item_default_empty_code_links(self):
+        """Test KnowledgeItem defaults to empty code_links."""
+        item = KnowledgeItem(
+            id="test-item",
+            file="global/test-item.md",
+            triggers=KnowledgeTriggers(keywords=("test",)),
+            scope=KnowledgeScope(),
+            metadata=KnowledgeMetadata(added="2025-01-01"),
+            item_type="knowledge",
+        )
+        assert item.code_links == ()
+
+    def test_add_knowledge_with_code_links(self, mock_knowledge_paths):
+        """Test adding knowledge with code links."""
+        from sage.knowledge import load_index
+
+        # add_knowledge expects dicts, not CodeLink objects
+        link = {"chunk_id": "sage/cli.py::main", "relation": "example"}
+        add_knowledge(
+            knowledge_id="cli-entry",
+            content="CLI entry point docs",
+            keywords=["cli", "entry"],
+            code_links=[link],
+        )
+
+        items = load_index()
+        item = next(i for i in items if i.id == "cli-entry")
+        assert len(item.code_links) == 1
+        assert item.code_links[0].chunk_id == "sage/cli.py::main"
+        assert item.code_links[0].relation == "example"
+
+    def test_code_links_serialization_roundtrip(self, mock_knowledge_paths):
+        """Test code links survive save/load cycle."""
+        from sage.knowledge import load_index
+
+        # add_knowledge expects dicts, not CodeLink objects
+        links = [
+            {"chunk_id": "a.py::func_a", "relation": "implements", "note": "Main impl"},
+            {"chunk_id": "b.py::func_b", "relation": "related"},
+        ]
+        add_knowledge(
+            knowledge_id="multi-link",
+            content="Multiple code links",
+            keywords=["multi"],
+            code_links=links,
+        )
+
+        # Force reload from disk
+        items = load_index(bypass_cache=True)
+        item = next(i for i in items if i.id == "multi-link")
+        assert len(item.code_links) == 2
+        assert item.code_links[0].chunk_id == "a.py::func_a"
+        assert item.code_links[0].note == "Main impl"
+        assert item.code_links[1].chunk_id == "b.py::func_b"
+
+    def test_resolved_code_link_dataclass(self):
+        """Test ResolvedCodeLink dataclass."""
+        from sage.knowledge import ResolvedCodeLink
+
+        resolved = ResolvedCodeLink(
+            chunk_id="test.py::func",
+            relation="implements",
+            note="Test note",
+            file="test.py",
+            snippet="def func(): pass",
+            line=10,
+            stale=False,
+        )
+        assert resolved.snippet == "def func(): pass"
+        assert resolved.file == "test.py"
+        assert resolved.line == 10
+        assert not resolved.stale
+
+    def test_resolve_code_link_without_code_index(self):
+        """Test resolving code link when code index is unavailable."""
+        from sage.knowledge import CodeLink, resolve_code_link
+
+        link = CodeLink(chunk_id="test.py::missing")
+        resolved = resolve_code_link(link, project_path=None)
+
+        # Should return stale result when index unavailable
+        assert resolved is None or resolved.stale
+
+    def test_stale_code_link_result(self):
+        """Test StaleCodeLinkResult dataclass."""
+        from sage.knowledge import StaleCodeLinkResult
+
+        result = StaleCodeLinkResult(
+            knowledge_id="test-item",
+            stale_links=("a.py::foo", "b.py::bar"),
+        )
+        assert result.knowledge_id == "test-item"
+        assert len(result.stale_links) == 2
+
+    def test_check_knowledge_staleness_empty(self, mock_knowledge_paths):
+        """Test staleness check with no code links."""
+        from sage.knowledge import check_knowledge_staleness
+
+        add_knowledge(
+            knowledge_id="no-links",
+            content="No code links",
+            keywords=["test"],
+        )
+
+        stale = check_knowledge_staleness()
+        assert stale == []
+
+    def test_find_knowledge_by_code_path(self, mock_knowledge_paths):
+        """Test finding knowledge items by code path pattern."""
+        from sage.knowledge import find_knowledge_by_code
+
+        add_knowledge(
+            knowledge_id="cli-docs",
+            content="CLI documentation",
+            keywords=["cli"],
+            code_links=[{"chunk_id": "sage/cli.py::main"}],
+        )
+        add_knowledge(
+            knowledge_id="other",
+            content="Other stuff",
+            keywords=["other"],
+        )
+
+        results = find_knowledge_by_code("sage/cli.py")
+        assert len(results) == 1
+        assert results[0].id == "cli-docs"
+
+    def test_find_knowledge_by_code_symbol(self, mock_knowledge_paths):
+        """Test finding knowledge items by symbol name."""
+        from sage.knowledge import find_knowledge_by_code
+
+        add_knowledge(
+            knowledge_id="func-docs",
+            content="Function documentation",
+            keywords=["func"],
+            code_links=[{"chunk_id": "module.py::process_data"}],
+        )
+
+        results = find_knowledge_by_code(symbol="process_data")
+        assert len(results) == 1
+        assert results[0].id == "func-docs"
+
+    def test_find_knowledge_by_code_both(self, mock_knowledge_paths):
+        """Test finding knowledge by both file and symbol."""
+        from sage.knowledge import find_knowledge_by_code
+
+        add_knowledge(
+            knowledge_id="specific",
+            content="Specific function",
+            keywords=["specific"],
+            code_links=[{"chunk_id": "module.py::target_func"}],
+        )
+        add_knowledge(
+            knowledge_id="other-module",
+            content="Different module same func name",
+            keywords=["other"],
+            code_links=[{"chunk_id": "other.py::target_func"}],
+        )
+
+        results = find_knowledge_by_code(file="module.py", symbol="target_func")
+        assert len(results) == 1
+        assert results[0].id == "specific"
+
+    def test_add_knowledge_accepts_code_link_objects(self, mock_knowledge_paths):
+        """Test add_knowledge accepts typed CodeLink objects, not just dicts."""
+        from sage.knowledge import CodeLink, load_index
+
+        # Pass CodeLink objects directly (not dicts)
+        links = [
+            CodeLink(chunk_id="typed.py::func_a", relation="implements"),
+            CodeLink(chunk_id="typed.py::func_b", relation="example", note="Example usage"),
+        ]
+        add_knowledge(
+            knowledge_id="typed-links",
+            content="Using typed CodeLink objects",
+            keywords=["typed"],
+            code_links=links,  # Pass CodeLink objects directly
+        )
+
+        items = load_index(bypass_cache=True)
+        item = next(i for i in items if i.id == "typed-links")
+        assert len(item.code_links) == 2
+        assert item.code_links[0].chunk_id == "typed.py::func_a"
+        assert item.code_links[1].note == "Example usage"
+
+    def test_add_knowledge_accepts_mixed_code_links(self, mock_knowledge_paths):
+        """Test add_knowledge accepts both dicts and CodeLink objects."""
+        from sage.knowledge import CodeLink, load_index
+
+        # Mixed: some dicts, some CodeLink objects
+        links = [
+            {"chunk_id": "dict.py::from_dict"},
+            CodeLink(chunk_id="typed.py::from_codelink"),
+        ]
+        add_knowledge(
+            knowledge_id="mixed-links",
+            content="Mixed code link types",
+            keywords=["mixed"],
+            code_links=links,
+        )
+
+        items = load_index(bypass_cache=True)
+        item = next(i for i in items if i.id == "mixed-links")
+        assert len(item.code_links) == 2

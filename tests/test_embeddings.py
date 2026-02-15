@@ -879,14 +879,14 @@ class TestGetConfiguredCodeModel:
             result = get_configured_code_model()
             assert result == "codesage/codesage-small"
 
-    def test_default_is_codesage_large(self):
-        """Default code model is codesage-large."""
+    def test_default_is_bge_large(self):
+        """Default code model is bge-large (codesage has transformers compat issues)."""
         from sage.config import SageConfig
 
         with patch("sage.config.get_sage_config") as mock_config:
             mock_config.return_value = SageConfig()  # Use defaults
             result = get_configured_code_model()
-            assert result == "codesage/codesage-large"
+            assert result == "BAAI/bge-large-en-v1.5"
 
 
 class TestCodeEmbeddingFunctions:

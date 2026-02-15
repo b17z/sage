@@ -215,8 +215,8 @@ class TestFormatCheckpointForContext:
     """Tests for format_checkpoint_for_context()."""
 
     def test_includes_key_sections(self, sample_checkpoint):
-        """Formatted context includes all key sections."""
-        formatted = format_checkpoint_for_context(sample_checkpoint)
+        """Formatted context includes all key sections (markdown format)."""
+        formatted = format_checkpoint_for_context(sample_checkpoint, use_toon=False)
 
         assert "Research Context" in formatted
         assert "Core Question" in formatted
@@ -737,15 +737,15 @@ Legacy thesis without new fields.
         assert parsed.reasoning_trace == ""
 
     def test_format_checkpoint_includes_key_evidence(self, checkpoint_with_hydration):
-        """format_checkpoint_for_context includes key_evidence."""
-        formatted = format_checkpoint_for_context(checkpoint_with_hydration)
+        """format_checkpoint_for_context includes key_evidence (markdown format)."""
+        formatted = format_checkpoint_for_context(checkpoint_with_hydration, use_toon=False)
 
         assert "## Key Evidence" in formatted
         assert "- Stripe supports 135+ currencies including USDC" in formatted
 
     def test_format_checkpoint_includes_reasoning_trace(self, checkpoint_with_hydration):
-        """format_checkpoint_for_context includes reasoning_trace."""
-        formatted = format_checkpoint_for_context(checkpoint_with_hydration)
+        """format_checkpoint_for_context includes reasoning_trace (markdown format)."""
+        formatted = format_checkpoint_for_context(checkpoint_with_hydration, use_toon=False)
 
         assert "## Reasoning Trace" in formatted
         assert "Started by evaluating major processors" in formatted
@@ -1350,7 +1350,7 @@ class TestFormatCheckpointCodeContext:
     """Tests for format_checkpoint_for_context with code context."""
 
     def test_format_includes_code_refs(self):
-        """format_checkpoint_for_context includes code refs."""
+        """format_checkpoint_for_context includes code refs (markdown format)."""
         from sage.checkpoint import CodeRef
 
         cp = Checkpoint(
@@ -1364,13 +1364,13 @@ class TestFormatCheckpointCodeContext:
                 CodeRef(file="/auth.py", relevance="supports"),
             ),
         )
-        formatted = format_checkpoint_for_context(cp)
+        formatted = format_checkpoint_for_context(cp, use_toon=False)
 
         assert "## Code References" in formatted
         assert "[+] `/auth.py`" in formatted
 
     def test_format_includes_files_changed(self):
-        """format_checkpoint_for_context includes files changed."""
+        """format_checkpoint_for_context includes files changed (markdown format)."""
         cp = Checkpoint(
             id="test-fmt-changed",
             ts="2026-01-20T12:00:00Z",
@@ -1380,14 +1380,14 @@ class TestFormatCheckpointCodeContext:
             confidence=0.8,
             files_changed=frozenset(["/edited.py", "/written.py"]),
         )
-        formatted = format_checkpoint_for_context(cp)
+        formatted = format_checkpoint_for_context(cp, use_toon=False)
 
         assert "## Files Changed" in formatted
         assert "`/edited.py`" in formatted
         assert "`/written.py`" in formatted
 
     def test_format_files_explored_shown_when_no_changes(self):
-        """format_checkpoint_for_context shows files explored when no changes."""
+        """format_checkpoint_for_context shows files explored when no changes (markdown format)."""
         cp = Checkpoint(
             id="test-fmt-explored",
             ts="2026-01-20T12:00:00Z",
@@ -1398,13 +1398,13 @@ class TestFormatCheckpointCodeContext:
             files_explored=frozenset(["/a.py", "/b.py"]),
             files_changed=frozenset(),  # No changes
         )
-        formatted = format_checkpoint_for_context(cp)
+        formatted = format_checkpoint_for_context(cp, use_toon=False)
 
         assert "## Files Explored" in formatted
         assert "`/a.py`" in formatted
 
     def test_format_files_explored_hidden_when_changes_exist(self):
-        """format_checkpoint_for_context hides files explored when changes exist."""
+        """format_checkpoint_for_context hides files explored when changes exist (markdown format)."""
         cp = Checkpoint(
             id="test-fmt-hide-explored",
             ts="2026-01-20T12:00:00Z",
@@ -1415,12 +1415,139 @@ class TestFormatCheckpointCodeContext:
             files_explored=frozenset(["/a.py"]),
             files_changed=frozenset(["/b.py"]),
         )
-        formatted = format_checkpoint_for_context(cp)
+        formatted = format_checkpoint_for_context(cp, use_toon=False)
 
         # Files Changed is shown
         assert "## Files Changed" in formatted
         # Files Explored is hidden (redundant when changes exist)
         assert "## Files Explored" not in formatted
+
+
+class TestToonFormat:
+    """Tests for TOON-style checkpoint formatting."""
+
+    def test_toon_format_uses_compact_headers(self):
+        """TOON format uses shorter section headers."""
+        from sage.checkpoint import format_checkpoint_toon
+
+        cp = Checkpoint(
+            id="test-toon",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Test question?",
+            thesis="Test thesis.",
+            confidence=0.8,
+            key_evidence=("Evidence 1", "Evidence 2"),
+            open_questions=("Question 1?",),
+        )
+        formatted = format_checkpoint_toon(cp)
+
+        # TOON uses compact headers
+        assert "## Question" in formatted
+        assert "## Thesis" in formatted
+        assert "## Evidence [2]" in formatted
+        assert "## Open [1]" in formatted
+        # Not the verbose markdown headers
+        assert "## Core Question" not in formatted
+        assert "## Key Evidence" not in formatted
+
+    def test_toon_format_tabular_sources(self):
+        """TOON format uses tabular layout for 3+ sources."""
+        from sage.checkpoint import format_checkpoint_toon
+
+        cp = Checkpoint(
+            id="test-toon-sources",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            sources=(
+                Source(id="s1", type="repo", take="Take 1", relation="supports"),
+                Source(id="s2", type="paper", take="Take 2", relation="contradicts"),
+                Source(id="s3", type="blog", take="Take 3", relation="nuances"),
+            ),
+        )
+        formatted = format_checkpoint_toon(cp)
+
+        # Tabular format with field hints
+        assert "sources[3]{id,type,take,rel}:" in formatted
+        assert "s1,repo,Take 1,+" in formatted
+        assert "s2,paper,Take 2,-" in formatted
+        assert "s3,blog,Take 3,~" in formatted
+
+    def test_toon_format_tabular_code_refs(self):
+        """TOON format uses tabular layout for 3+ code refs."""
+        from sage.checkpoint import format_checkpoint_toon, CodeRef
+
+        cp = Checkpoint(
+            id="test-toon-refs",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Q",
+            thesis="T",
+            confidence=0.8,
+            code_refs=(
+                CodeRef(file="a.py", lines=(1, 10), relevance="supports"),
+                CodeRef(file="b.py", lines=(20, 30), relevance="contradicts"),
+                CodeRef(file="c.py", lines=(40, 50), relevance="context"),
+            ),
+        )
+        formatted = format_checkpoint_toon(cp)
+
+        # Tabular format with field hints
+        assert "refs[3]{file,lines,rel}:" in formatted
+        assert "a.py,1-10,+" in formatted
+        assert "b.py,20-30,-" in formatted
+        assert "c.py,40-50,~" in formatted
+
+    def test_toon_format_config_default(self):
+        """format_checkpoint_for_context respects config.output_format."""
+        # When config says "toon", it should use TOON format
+        cp = Checkpoint(
+            id="test-config",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Test?",
+            thesis="Test.",
+            confidence=0.8,
+        )
+
+        # Explicit use_toon=True
+        toon = format_checkpoint_for_context(cp, use_toon=True)
+        assert "## Question" in toon
+
+        # Explicit use_toon=False
+        md = format_checkpoint_for_context(cp, use_toon=False)
+        assert "## Core Question" in md
+
+    def test_toon_format_smaller_than_markdown(self):
+        """TOON format produces smaller output for structured data."""
+        from sage.checkpoint import format_checkpoint_toon, CodeRef
+
+        # Create checkpoint with lots of structured data
+        cp = Checkpoint(
+            id="test-size",
+            ts="2026-01-20T12:00:00Z",
+            trigger="synthesis",
+            core_question="Big question?",
+            thesis="Big thesis.",
+            confidence=0.8,
+            sources=tuple(
+                Source(id=f"src-{i}", type="repo", take=f"Take {i}", relation="supports")
+                for i in range(10)
+            ),
+            code_refs=tuple(
+                CodeRef(file=f"file{i}.py", lines=(i*10, i*10+5), relevance="supports")
+                for i in range(10)
+            ),
+        )
+
+        toon = format_checkpoint_toon(cp)
+        md = format_checkpoint_for_context(cp, use_toon=False)
+
+        # TOON should be smaller
+        assert len(toon) < len(md)
 
 
 class TestCreateCheckpointFromDictCodeContext:

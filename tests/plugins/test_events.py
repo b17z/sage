@@ -7,6 +7,7 @@ from sage.plugins.events import (
     CompactionDetected,
     DaemonStarted,
     DaemonStopping,
+    SessionChanged,
 )
 
 
@@ -133,3 +134,54 @@ class TestCheckpointCreated:
         )
 
         assert event.checkpoint_type == "structured"
+
+
+class TestSessionChanged:
+    """Tests for SessionChanged event."""
+
+    def test_creates_with_all_fields(self):
+        """Event can be created with all required fields."""
+        event = SessionChanged(
+            timestamp="2024-01-01T00:00:00Z",
+            old_transcript_path="/path/to/old.jsonl",
+            new_transcript_path="/path/to/new.jsonl",
+            project_path="/path/to/project",
+        )
+
+        assert event.timestamp == "2024-01-01T00:00:00Z"
+        assert event.old_transcript_path == "/path/to/old.jsonl"
+        assert event.new_transcript_path == "/path/to/new.jsonl"
+        assert event.project_path == "/path/to/project"
+
+    def test_old_transcript_can_be_none(self):
+        """Old transcript path can be None on first detection."""
+        event = SessionChanged(
+            timestamp="2024-01-01T00:00:00Z",
+            old_transcript_path=None,
+            new_transcript_path="/path/to/new.jsonl",
+            project_path="/path/to/project",
+        )
+
+        assert event.old_transcript_path is None
+
+    def test_is_frozen(self):
+        """Event is immutable."""
+        event = SessionChanged(
+            timestamp="2024-01-01T00:00:00Z",
+            old_transcript_path="/path/to/old.jsonl",
+            new_transcript_path="/path/to/new.jsonl",
+            project_path="/path/to/project",
+        )
+
+        with pytest.raises(AttributeError):
+            event.new_transcript_path = "/different/path.jsonl"
+
+    def test_is_watcher_event(self):
+        """Event is a valid WatcherEvent type."""
+        event = SessionChanged(
+            timestamp="2024-01-01T00:00:00Z",
+            old_transcript_path=None,
+            new_transcript_path="/path/to/new.jsonl",
+            project_path="/path/to/project",
+        )
+        assert isinstance(event, SessionChanged)
