@@ -830,11 +830,20 @@ def _get_proactive_recall() -> str | None:
     """Proactively recall knowledge based on project context.
 
     Called at session start to inject relevant knowledge before user asks.
+    Skips if embedding model isn't loaded yet (will be available on next call
+    after warmup completes).
 
     Returns:
         Formatted recalled knowledge, or None if nothing relevant found
     """
+    from sage import embeddings
     from sage.knowledge import recall_knowledge
+
+    # Skip if embeddings aren't loaded yet - don't block on model load
+    # The async warmup will load it, and next session call will have it
+    if not embeddings.is_model_loaded():
+        logger.debug("Proactive recall skipped: embedding model not loaded yet")
+        return None
 
     try:
         context = _get_project_context()
@@ -983,6 +992,19 @@ def sage_health() -> str:
         knowledge = list_knowledge()
         k_count = len(knowledge)
         lines.append(f"✓ Knowledge: {k_count} items")
+
+        # Check for stale code links
+        try:
+            from sage.knowledge import check_knowledge_staleness
+
+            stale = check_knowledge_staleness(_PROJECT_ROOT)
+            if stale:
+                stale_count = len(stale)
+                total_links = sum(len(s.stale_links) for s in stale)
+                lines.append(f"! Stale code links: {total_links} in {stale_count} knowledge items")
+                issues.append("Some knowledge items have stale code links (code may have moved)")
+        except Exception:
+            pass  # Code index not available or other error - non-critical
     else:
         lines.append("○ Knowledge directory: not created yet")
 
@@ -996,6 +1018,26 @@ def sage_health() -> str:
             lines.append("✓ Pending tasks: none")
     else:
         lines.append("○ Tasks directory: not created yet")
+
+    # Check code index freshness (git-aware)
+    try:
+        from sage.codebase.indexer import check_index_freshness
+
+        freshness = check_index_freshness(_PROJECT_ROOT)
+        if freshness.get("stale"):
+            files_changed = freshness.get("files_changed", 0)
+            lines.append(f"! Code index stale: {files_changed} files changed since indexing")
+            issues.append("Run sage_index_code() to update the code index")
+        elif freshness.get("indexed_at_commit"):
+            commit = freshness.get("indexed_at_commit", "")[:7]
+            lines.append(f"✓ Code index: up-to-date @ {commit}")
+        elif freshness.get("message", "").startswith("Code index not built"):
+            lines.append("○ Code index: not built yet")
+        else:
+            lines.append("○ Code index: unknown status")
+    except Exception as e:
+        logger.debug(f"Code index check failed: {e}")
+        # Non-critical - don't fail health check
 
     # Check watcher status - auto-restart if enabled and not running
     watcher_status = get_watcher_status()
@@ -1359,7 +1401,7 @@ def sage_save_checkpoint(
     Returns:
         Confirmation message with checkpoint ID (queued for async save)
     """
-    from sage.checkpoint import enrich_checkpoint_with_code_context
+    from sage.checkpoint import enrich_checkpoint_with_code_context, enrich_checkpoint_with_git_context
     from sage.watcher import find_active_transcript
 
     # Validate confidence bounds (fast, sync)
@@ -1403,6 +1445,15 @@ def sage_save_checkpoint(
                 f"Enriched checkpoint with code context: "
                 f"{len(checkpoint.files_explored)} explored, {len(checkpoint.files_changed)} changed"
             )
+
+    # Auto-inject git context (v1.4)
+    checkpoint = enrich_checkpoint_with_git_context(checkpoint, _PROJECT_ROOT)
+    if checkpoint.git_context:
+        logger.debug(
+            f"Enriched checkpoint with git context: "
+            f"branch={checkpoint.git_context.get('branch')}, "
+            f"commit={checkpoint.git_context.get('commit')}"
+        )
 
     save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
@@ -1552,6 +1603,7 @@ def sage_save_knowledge(
     skill: str | None = None,
     source: str = "",
     item_type: str = "knowledge",
+    code_links: list[dict] | None = None,
 ) -> str:
     """Save an insight to the knowledge base for future recall.
 
@@ -1565,6 +1617,11 @@ def sage_save_knowledge(
         skill: Optional skill scope (None = global)
         source: Where this knowledge came from
         item_type: Type of knowledge (knowledge, preference, todo, reference)
+        code_links: Optional list of code links to associate with this knowledge.
+                   Each link should have: {chunk_id, relation?, note?}
+                   - chunk_id: "path/to/file.py::symbol_name" format
+                   - relation: "implements" | "example" | "related" | "deprecated_by"
+                   - note: Optional context about why this code is linked
 
     Returns:
         Confirmation message
@@ -1573,7 +1630,7 @@ def sage_save_knowledge(
     type_label = f" [{item_type}]" if item_type != "knowledge" else ""
 
     # Save knowledge synchronously (caller should wrap in background Task per sage-memory skill)
-    add_knowledge(
+    item = add_knowledge(
         content=content,
         knowledge_id=knowledge_id,
         keywords=keywords,
@@ -1581,9 +1638,15 @@ def sage_save_knowledge(
         source=source,
         item_type=item_type,
         project_path=_PROJECT_ROOT,
+        code_links=code_links,
     )
 
-    return f"📍 Knowledge saved: {knowledge_id}{type_label} ({scope})"
+    # Include code_links count in confirmation
+    links_info = ""
+    if item.code_links:
+        links_info = f" + {len(item.code_links)} code link(s)"
+
+    return f"📍 Knowledge saved: {knowledge_id}{type_label} ({scope}){links_info}"
 
 
 @mcp.tool()
@@ -1594,12 +1657,15 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
     **CALL THIS** before starting work on a topic to check what you already know.
     Returns previously saved knowledge that matches the query.
 
+    If knowledge items have code_links, the linked code is automatically
+    resolved from the code index and included in the output.
+
     Args:
         query: The query to match against (e.g., "what you're working on")
         skill: Current skill context (for scoped knowledge)
 
     Returns:
-        Formatted recalled knowledge or message if none found
+        Formatted recalled knowledge with resolved code links, or message if none found
     """
     from sage import embeddings
 
@@ -1610,7 +1676,7 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
             return "No relevant knowledge found.\n\n💡 *Tip: `pip install claude-sage[embeddings]` for semantic recall*"
         return "No relevant knowledge found."
 
-    return format_recalled_context(result)
+    return format_recalled_context(result, project_path=_PROJECT_ROOT)
 
 
 @mcp.tool()
@@ -1795,6 +1861,70 @@ def sage_archive_knowledge(knowledge_id: str) -> str:
         return f"Knowledge item not found: {knowledge_id}"
 
     return f"📦 Archived: {knowledge_id}\nRestore with: sage_update_knowledge('{knowledge_id}', status='active')"
+
+
+@mcp.tool()
+@with_session_context
+def sage_code_context(file: str, symbol: str | None = None) -> str:
+    """Find knowledge items that link to specific code.
+
+    Reverse lookup: given a file or symbol, find knowledge that references it.
+    Useful for understanding context before modifying code.
+
+    This helps agents and engineers answer: "What do we know about this code?"
+
+    Args:
+        file: File path (relative to project root)
+        symbol: Optional symbol name to narrow results
+
+    Returns:
+        List of knowledge items linking to this code, or message if none found
+    """
+    from sage.knowledge import load_index, load_knowledge_content
+
+    # Build the pattern to match
+    if symbol:
+        # Full chunk_id match: file::symbol
+        pattern = f"{file}::{symbol}"
+    else:
+        # File prefix match: any link starting with this file
+        pattern = file
+
+    items = load_index(project_path=_PROJECT_ROOT)
+    matches = []
+
+    for item in items:
+        if not item.code_links:
+            continue
+
+        for link in item.code_links:
+            # Check if this link matches our pattern
+            if pattern in link.chunk_id or link.chunk_id.startswith(pattern):
+                loaded = load_knowledge_content(item, _PROJECT_ROOT)
+                matches.append({
+                    "knowledge_id": item.id,
+                    "chunk_id": link.chunk_id,
+                    "relation": link.relation,
+                    "note": link.note,
+                    "content_preview": loaded.content[:200] if loaded.content else "",
+                })
+                break  # One match per item is enough
+
+    if not matches:
+        return f"No knowledge found linking to: {pattern}"
+
+    lines = [f"Found {len(matches)} knowledge item(s) linking to `{pattern}`:\n"]
+    for m in matches:
+        lines.append(f"**{m['knowledge_id']}** ({m['relation']})")
+        lines.append(f"  Link: `{m['chunk_id']}`")
+        if m.get("note"):
+            lines.append(f"  Note: {m['note']}")
+        if m.get("content_preview"):
+            preview = m["content_preview"].replace("\n", " ")[:100]
+            lines.append(f"  Preview: {preview}...")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 # =============================================================================
@@ -2265,7 +2395,7 @@ def sage_search_code(
     from sage.codebase import search_code
 
     try:
-        results = search_code(query, project=project, limit=limit, language=language)
+        results = search_code(query, project=project, project_path=_PROJECT_ROOT, limit=limit, language=language)
 
         if not results:
             return "No results found. Make sure the codebase is indexed with sage_index_code()."

@@ -53,6 +53,9 @@ POLL_INTERVAL = 0.2
 # Checkpoint directory poll interval (less frequent)
 CHECKPOINT_POLL_INTERVAL = 2.0
 
+# Session change poll interval (check for new transcript files)
+SESSION_POLL_INTERVAL = 1.0
+
 # Observation extraction interval (seconds of new content)
 OBSERVATION_INTERVAL = 30.0
 
@@ -444,28 +447,74 @@ def _emit_checkpoint_file_created(file_path: Path) -> None:
         _log_to_file(f"Failed to emit CheckpointFileCreated: {e}")
 
 
-def watch_transcript(transcript_path: Path) -> None:
-    """Tail the transcript and watch for compaction events.
+def _emit_session_changed(
+    old_transcript: Path | None,
+    new_transcript: Path,
+    project_path: Path,
+) -> None:
+    """Emit SessionChanged event to plugins.
 
-    Also watches the checkpoints directory for new files.
-    Runs indefinitely until interrupted. On SIGTERM/SIGINT,
-    exits cleanly.
+    Called when a new Claude Code session is detected in the same project.
+    This happens when the user kills Claude Code and starts fresh.
+    """
+    try:
+        from datetime import UTC, datetime
+
+        from sage.plugins import execute_actions, get_plugins_for_event
+        from sage.plugins.events import SessionChanged
+
+        event = SessionChanged(
+            timestamp=datetime.now(UTC).isoformat(),
+            old_transcript_path=str(old_transcript) if old_transcript else None,
+            new_transcript_path=str(new_transcript),
+            project_path=str(project_path),
+        )
+
+        _log_to_file(f"Session changed: {old_transcript} -> {new_transcript}")
+
+        for plugin in get_plugins_for_event(event):
+            result = plugin.handle(event)
+            execute_actions(result)
+
+    except ImportError:
+        pass  # Plugin system not available
+    except Exception as e:
+        _log_to_file(f"Failed to emit SessionChanged: {e}")
+
+
+def watch_transcript(
+    transcript_path: Path,
+    project_path: Path | None = None,
+) -> None:
+    """Tail the transcript and watch for compaction events and session changes.
+
+    Also watches:
+    - Checkpoints directory for new files
+    - Project directory for new transcript files (session changes)
+
+    Runs indefinitely until interrupted. On SIGTERM/SIGINT, exits cleanly.
+
+    When a new session is detected (new JSONL file in the project), emits
+    a SessionChanged event and switches to watching the new transcript.
+    This enables context injection on Claude Code restart.
 
     Args:
         transcript_path: Path to the JSONL transcript file
+        project_path: Path to the project directory (for session change detection)
 
     Security:
         - Validates JSON before processing
         - Limits line length to prevent memory exhaustion
         - No arbitrary code execution from transcript content
     """
-    _log_to_file(f"Watching: {transcript_path}")
+    current_transcript = transcript_path
+    _log_to_file(f"Watching: {current_transcript}")
 
     # Emit daemon started event
-    _emit_daemon_started(transcript_path)
+    _emit_daemon_started(current_transcript)
 
     # Set up checkpoint directory watcher
-    project_root = detect_project_root()
+    project_root = project_path or detect_project_root()
     if project_root:
         checkpoints_dir = project_root / ".sage" / "checkpoints"
     else:
@@ -474,6 +523,7 @@ def watch_transcript(transcript_path: Path) -> None:
     checkpoint_watcher = CheckpointWatcher(checkpoints_dir)
     checkpoint_watcher.initialize()
     last_checkpoint_poll = time.time()
+    last_session_poll = time.time()
 
     # Set up signal handlers for clean shutdown
     shutdown_requested = False
@@ -486,65 +536,97 @@ def watch_transcript(transcript_path: Path) -> None:
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
 
+    # Track current file handle
+    current_file = None
+
     try:
-        with open(transcript_path) as f:
-            # Seek to end - we only care about new events
-            f.seek(0, 2)
+        current_file = open(current_transcript)
+        # Seek to end - we only care about new events
+        current_file.seek(0, 2)
 
-            while not shutdown_requested:
-                line = f.readline()
+        while not shutdown_requested:
+            line = current_file.readline()
 
-                if not line:
-                    # No new transcript content - check for new checkpoints
-                    now = time.time()
-                    if now - last_checkpoint_poll >= CHECKPOINT_POLL_INTERVAL:
-                        last_checkpoint_poll = now
-                        for new_file in checkpoint_watcher.check_for_new_files():
-                            _log_to_file(f"New checkpoint detected: {new_file.name}")
-                            _emit_checkpoint_file_created(new_file)
+            if not line:
+                # No new transcript content - check for new checkpoints and sessions
+                now = time.time()
 
-                    time.sleep(POLL_INTERVAL)
-                    continue
+                # Check for new checkpoint files
+                if now - last_checkpoint_poll >= CHECKPOINT_POLL_INTERVAL:
+                    last_checkpoint_poll = now
+                    for new_file in checkpoint_watcher.check_for_new_files():
+                        _log_to_file(f"New checkpoint detected: {new_file.name}")
+                        _emit_checkpoint_file_created(new_file)
 
-                # Security: limit line length
-                if len(line) > MAX_LINE_LENGTH:
-                    _log_to_file(f"Skipping oversized line: {len(line)} bytes")
-                    continue
+                # Check for new session (new transcript file in project)
+                if project_root and now - last_session_poll >= SESSION_POLL_INTERVAL:
+                    last_session_poll = now
+                    newest_transcript = find_active_transcript(project_root)
 
-                try:
-                    data = json.loads(line)
+                    if newest_transcript and newest_transcript != current_transcript:
+                        # New session detected!
+                        _log_to_file(
+                            f"New session detected: {newest_transcript.name}"
+                        )
+                        _emit_session_changed(
+                            old_transcript=current_transcript,
+                            new_transcript=newest_transcript,
+                            project_path=project_root,
+                        )
 
-                    # Check for compaction signal
-                    # Only process if it has the expected structure
-                    if (
-                        isinstance(data, dict)
-                        and data.get("isCompactSummary") is True
-                        and isinstance(data.get("message"), dict)
-                    ):
-                        summary = data["message"].get("content", "")
+                        # Switch to watching the new transcript
+                        current_file.close()
+                        current_transcript = newest_transcript
+                        current_file = open(current_transcript)
+                        # Seek to end of new file
+                        current_file.seek(0, 2)
+                        _log_to_file(f"Now watching: {current_transcript}")
 
-                        # Validate summary is a string
-                        if isinstance(summary, str):
-                            _handle_compaction(summary, transcript_path)
-                        else:
-                            _log_to_file("Compaction summary not a string, skipping")
+                time.sleep(POLL_INTERVAL)
+                continue
 
-                except json.JSONDecodeError:
-                    # Normal for partial lines or non-JSON content
-                    continue
-                except (KeyError, TypeError) as e:
-                    _log_to_file(f"Unexpected data structure: {e}")
-                    continue
+            # Security: limit line length
+            if len(line) > MAX_LINE_LENGTH:
+                _log_to_file(f"Skipping oversized line: {len(line)} bytes")
+                continue
+
+            try:
+                data = json.loads(line)
+
+                # Check for compaction signal
+                # Only process if it has the expected structure
+                if (
+                    isinstance(data, dict)
+                    and data.get("isCompactSummary") is True
+                    and isinstance(data.get("message"), dict)
+                ):
+                    summary = data["message"].get("content", "")
+
+                    # Validate summary is a string
+                    if isinstance(summary, str):
+                        _handle_compaction(summary, current_transcript)
+                    else:
+                        _log_to_file("Compaction summary not a string, skipping")
+
+            except json.JSONDecodeError:
+                # Normal for partial lines or non-JSON content
+                continue
+            except (KeyError, TypeError) as e:
+                _log_to_file(f"Unexpected data structure: {e}")
+                continue
 
     except FileNotFoundError:
-        _log_to_file(f"Transcript file not found: {transcript_path}")
+        _log_to_file(f"Transcript file not found: {current_transcript}")
         _emit_daemon_stopping("file_not_found")
     except PermissionError:
-        _log_to_file(f"Permission denied reading transcript: {transcript_path}")
+        _log_to_file(f"Permission denied reading transcript: {current_transcript}")
         _emit_daemon_stopping("permission_denied")
     except OSError as e:
         _log_to_file(f"Error reading transcript: {e}")
         _emit_daemon_stopping("os_error")
+    finally:
+        if current_file:
+            current_file.close()
 
     # Emit stopping event for clean shutdown
     if shutdown_requested:
@@ -647,8 +729,8 @@ def start_daemon(project_path: Path | None = None, force_restart: bool = False) 
         os.dup2(log_fd, sys.stdout.fileno())
         os.dup2(log_fd, sys.stderr.fileno())
 
-        # Start watching
-        watch_transcript(transcript)
+        # Start watching (pass project_path for session change detection)
+        watch_transcript(transcript, project_path=project_path)
 
     except Exception as e:
         _log_to_file(f"Daemon startup failed: {e}")

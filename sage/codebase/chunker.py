@@ -214,7 +214,7 @@ def _extract_python_nodes(tree, source_bytes: bytes, source: str) -> list[Extrac
         while parent:
             if parent.type == "class_definition":
                 for child in parent.children:
-                    if child.type == "name":
+                    if child.type == "identifier":  # tree-sitter uses "identifier"
                         return _get_node_text(child, source_bytes)
             parent = parent.parent
         return ""
@@ -223,7 +223,7 @@ def _extract_python_nodes(tree, source_bytes: bytes, source: str) -> list[Extrac
         if node.type == "function_definition":
             name = ""
             for child in node.children:
-                if child.type == "name":
+                if child.type == "identifier":  # tree-sitter uses "identifier" not "name"
                     name = _get_node_text(child, source_bytes)
                     break
 
@@ -246,7 +246,7 @@ def _extract_python_nodes(tree, source_bytes: bytes, source: str) -> list[Extrac
         elif node.type == "class_definition":
             name = ""
             for child in node.children:
-                if child.type == "name":
+                if child.type == "identifier":  # tree-sitter uses "identifier" not "name"
                     name = _get_node_text(child, source_bytes)
                     break
 
@@ -579,8 +579,94 @@ def _extract_solidity_nodes(tree, source_bytes: bytes, source: str) -> list[Extr
     return nodes
 
 
+def _extract_python_nodes_stdlib(source: str) -> list[ExtractedNode]:
+    """Extract Python nodes using stdlib ast module (no deps).
+
+    Fallback when tree-sitter is unavailable. Handles Python only.
+    """
+    import ast as pyast
+
+    try:
+        tree = pyast.parse(source)
+    except SyntaxError:
+        return []
+
+    nodes = []
+    source_lines = source.splitlines()
+
+    class Visitor(pyast.NodeVisitor):
+        def __init__(self):
+            self.class_stack: list[str] = []
+
+        def visit_ClassDef(self, node: pyast.ClassDef):
+            # Get source lines for this node
+            start = node.lineno - 1
+            end = node.end_lineno or node.lineno
+            content = "\n".join(source_lines[start:end])
+
+            nodes.append(
+                ExtractedNode(
+                    name=node.name,
+                    content=content,
+                    chunk_type=ChunkType.CLASS,
+                    line_start=node.lineno,
+                    line_end=end,
+                    docstring=pyast.get_docstring(node) or "",
+                    signature=f"class {node.name}",
+                    parent="",
+                )
+            )
+
+            # Track class context for methods
+            self.class_stack.append(node.name)
+            self.generic_visit(node)
+            self.class_stack.pop()
+
+        def visit_FunctionDef(self, node: pyast.FunctionDef):
+            self._visit_function(node)
+
+        def visit_AsyncFunctionDef(self, node: pyast.AsyncFunctionDef):
+            self._visit_function(node, is_async=True)
+
+        def _visit_function(self, node, is_async: bool = False):
+            start = node.lineno - 1
+            end = node.end_lineno or node.lineno
+            content = "\n".join(source_lines[start:end])
+
+            parent = self.class_stack[-1] if self.class_stack else ""
+            chunk_type = ChunkType.METHOD if parent else ChunkType.FUNCTION
+
+            # Build signature
+            prefix = "async def" if is_async else "def"
+            args = pyast.unparse(node.args) if hasattr(pyast, "unparse") else "..."
+            sig = f"{prefix} {node.name}({args})"
+            if node.returns:
+                ret = pyast.unparse(node.returns) if hasattr(pyast, "unparse") else "..."
+                sig += f" -> {ret}"
+
+            nodes.append(
+                ExtractedNode(
+                    name=node.name,
+                    content=content,
+                    chunk_type=chunk_type,
+                    line_start=node.lineno,
+                    line_end=end,
+                    docstring=pyast.get_docstring(node) or "",
+                    signature=sig,
+                    parent=parent,
+                )
+            )
+
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    return nodes
+
+
 def extract_nodes_ast(source: str, language: str) -> list[ExtractedNode]:
-    """Extract semantic nodes from source code using tree-sitter.
+    """Extract semantic nodes from source code.
+
+    Uses tree-sitter when available, falls back to stdlib ast for Python.
 
     Args:
         source: Source code content
@@ -589,11 +675,19 @@ def extract_nodes_ast(source: str, language: str) -> list[ExtractedNode]:
     Returns:
         List of extracted nodes, or empty list if parsing fails
     """
+    # Python fallback: use stdlib ast if tree-sitter unavailable
+    if language == "python" and not is_treesitter_available():
+        return _extract_python_nodes_stdlib(source)
+
     if not is_treesitter_available():
         return []
 
     parser = get_parser(language)
     if parser is None:
+        # Tree-sitter available but parser failed (version mismatch, etc.)
+        # Try stdlib fallback for Python
+        if language == "python":
+            return _extract_python_nodes_stdlib(source)
         return []
 
     try:
@@ -615,6 +709,9 @@ def extract_nodes_ast(source: str, language: str) -> list[ExtractedNode]:
 
     except Exception as e:
         logger.warning(f"AST parsing failed for {language}: {e}")
+        # Last resort: try stdlib for Python
+        if language == "python":
+            return _extract_python_nodes_stdlib(source)
         return []
 
 

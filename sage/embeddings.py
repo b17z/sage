@@ -170,6 +170,15 @@ def is_available() -> bool:
         return False
 
 
+def is_model_loaded() -> bool:
+    """Check if the embedding model is currently loaded in memory.
+
+    Use this to skip operations that require embeddings if the model
+    hasn't been loaded yet (e.g., during session warmup).
+    """
+    return _model is not None
+
+
 def get_configured_model() -> str:
     """Get the configured embedding model from SageConfig (for prose)."""
     from sage.config import get_sage_config
@@ -265,7 +274,7 @@ def get_model(model_name: str | None = None) -> Result[SentenceTransformer, Sage
             _show_download_warning(model_name)
 
             logger.info(f"Loading embedding model: {model_name}")
-            _model = SentenceTransformer(model_name)
+            _model = SentenceTransformer(model_name, trust_remote_code=True)
             _model_name = model_name
             logger.info(
                 f"Model loaded successfully (dim={_model.get_sentence_embedding_dimension()})"

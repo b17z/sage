@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 def search_code(
     query: str,
     project: str | None = None,
+    project_path: Path | None = None,
     limit: int = 10,
     language: str | None = None,
     chunk_types: list[ChunkType] | None = None,
@@ -55,6 +56,7 @@ def search_code(
     Args:
         query: Natural language query (e.g., "how does authentication work")
         project: Optional project filter
+        project_path: Project root for project-local database
         limit: Maximum results
         language: Optional language filter
         chunk_types: Optional chunk type filter
@@ -72,7 +74,7 @@ def search_code(
         logger.warning("Embeddings not available")
         return []
 
-    db = get_db()
+    db = get_db(project_path)
     if db is None:
         return []
 
@@ -415,7 +417,7 @@ def search_all(
         project = detect_project_name(project_path)
 
     # Semantic search
-    semantic_results = search_code(query, project=project, limit=limit)
+    semantic_results = search_code(query, project=project, project_path=project_path, limit=limit)
 
     # Try exact lookup (in case query is a symbol name)
     exact_match = grep_symbol(query, project_path)

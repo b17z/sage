@@ -97,6 +97,30 @@ class CheckpointFileCreated:
     checkpoint_type: str
 
 
+@dataclass(frozen=True)
+class SessionChanged:
+    """Emitted when Claude Code starts a new session in the same project.
+
+    This happens when the user kills Claude Code and starts fresh (not /compact,
+    not --continue). Detected by watching for new JSONL transcript files in
+    the project directory.
+
+    Used to trigger context injection on restart - the most recent checkpoint
+    is queued for injection so the next sage_health() call can restore context.
+
+    Attributes:
+        timestamp: ISO format timestamp when session change was detected
+        old_transcript_path: Previous transcript file (may be None on first detection)
+        new_transcript_path: New transcript file being watched
+        project_path: Path to the project directory
+    """
+
+    timestamp: str
+    old_transcript_path: str | None
+    new_transcript_path: str
+    project_path: str
+
+
 # Union type for all events
 WatcherEvent = (
     DaemonStarted
@@ -104,4 +128,5 @@ WatcherEvent = (
     | CompactionDetected
     | CheckpointCreated
     | CheckpointFileCreated
+    | SessionChanged
 )

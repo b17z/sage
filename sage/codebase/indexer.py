@@ -4,11 +4,8 @@ Provides incremental indexing with mtime tracking, project isolation,
 and efficient vector search. Uses Sage's embeddings module for vectors.
 
 Storage layout:
-    ~/.sage/codebase/
-        lancedb/           # Vector database
-        index_meta.json    # File mtimes for incremental updates
-
     <project>/.sage/codebase/
+        lancedb/           # Vector database (project-local)
         compiled/          # Compiled JSON (fast lookup)
         index_meta.json    # Project index state
 """
@@ -52,9 +49,16 @@ def get_codebase_dir(project_path: Path | None = None) -> Path:
     return SAGE_DIR / "codebase"
 
 
-def get_lancedb_path() -> Path:
-    """Get path to LanceDB storage (global)."""
-    return SAGE_DIR / "codebase" / "lancedb"
+def get_lancedb_path(project_path: Path | None = None) -> Path:
+    """Get path to LanceDB storage (project-local).
+
+    Args:
+        project_path: Project root. Required for project-local storage.
+
+    Returns:
+        Path to LanceDB directory
+    """
+    return get_codebase_dir(project_path) / "lancedb"
 
 
 def get_index_meta_path(project_path: Path | None = None) -> Path:
@@ -82,8 +86,11 @@ def is_lancedb_available() -> bool:
         return False
 
 
-def get_db():
+def get_db(project_path: Path | None = None):
     """Get LanceDB connection.
+
+    Args:
+        project_path: Project root for project-local database.
 
     Returns:
         LanceDB connection or None if unavailable
@@ -93,7 +100,7 @@ def get_db():
 
     import lancedb
 
-    db_path = get_lancedb_path()
+    db_path = get_lancedb_path(project_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     return lancedb.connect(str(db_path))
@@ -198,6 +205,90 @@ def save_index_meta(meta: dict, project_path: Path | None = None) -> None:
     meta_path = get_index_meta_path(project_path)
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(meta, indent=2))
+
+
+def check_index_freshness(project_path: Path | None = None) -> dict:
+    """Check if the code index is behind the current git HEAD.
+
+    Uses git to compare indexed_at_commit with current HEAD and
+    reports files that have changed.
+
+    Args:
+        project_path: Project root
+
+    Returns:
+        Dict with:
+            - stale: bool - True if index is behind HEAD
+            - indexed_at_commit: str - Commit when index was built
+            - current_commit: str - Current HEAD
+            - files_changed: int - Number of files changed
+            - changed_files: list[str] - Paths of changed files (first 10)
+            - message: str - Human-readable status
+    """
+    from sage.git import check_index_freshness as git_check_freshness, get_commit, is_git_repo
+
+    meta = load_index_meta(project_path)
+
+    # Not a git repo
+    if not is_git_repo(project_path):
+        return {
+            "stale": False,
+            "indexed_at_commit": None,
+            "current_commit": None,
+            "files_changed": 0,
+            "changed_files": [],
+            "message": "Not a git repository",
+        }
+
+    indexed_at_commit = meta.get("indexed_at_commit")
+    current_commit = get_commit(project_path)
+
+    # No index exists
+    if not meta.get("indexed_at"):
+        return {
+            "stale": True,
+            "indexed_at_commit": None,
+            "current_commit": current_commit,
+            "files_changed": 0,
+            "changed_files": [],
+            "message": "Code index not built yet. Run sage_index_code() to index.",
+        }
+
+    # No commit recorded (legacy index)
+    if not indexed_at_commit:
+        return {
+            "stale": False,  # Can't determine, assume fresh
+            "indexed_at_commit": None,
+            "current_commit": current_commit,
+            "files_changed": 0,
+            "changed_files": [],
+            "message": f"Index built at {meta.get('indexed_at', 'unknown')} (pre-git tracking)",
+        }
+
+    # Check if index is behind HEAD
+    is_stale, files_changed, changed_files = git_check_freshness(
+        indexed_at_commit, project_path
+    )
+
+    if is_stale:
+        return {
+            "stale": True,
+            "indexed_at_commit": indexed_at_commit,
+            "current_commit": current_commit,
+            "files_changed": files_changed,
+            "changed_files": list(changed_files[:10]),  # Limit to 10
+            "message": f"Code index stale: {files_changed} files changed since {indexed_at_commit}. "
+            "Run sage_index_code() to update.",
+        }
+
+    return {
+        "stale": False,
+        "indexed_at_commit": indexed_at_commit,
+        "current_commit": current_commit,
+        "files_changed": 0,
+        "changed_files": [],
+        "message": f"Code index up-to-date at {indexed_at_commit}",
+    }
 
 
 # =============================================================================
@@ -412,13 +503,12 @@ def index_directory(
         for file_path in path.rglob(f"*{ext}"):
             # Check exclusions
             rel_path = str(file_path.relative_to(path))
-            excluded = False
-            for pattern in exclude_patterns:
-                from fnmatch import fnmatch
+            from sage.codebase.compiler import matches_exclude_pattern
 
-                if fnmatch(rel_path, pattern):
-                    excluded = True
-                    break
+            excluded = any(
+                matches_exclude_pattern(rel_path, pattern)
+                for pattern in exclude_patterns
+            )
 
             if excluded:
                 continue
@@ -448,18 +538,42 @@ def index_directory(
     if all_chunks:
         all_chunks = embed_chunks(all_chunks)
 
-    # Store in LanceDB
+    # Store in LanceDB (project-local)
     if is_lancedb_available() and all_chunks:
-        _store_chunks(all_chunks, project)
+        _store_chunks(all_chunks, project, path)
 
     # Compile index for fast lookup
     compiled = compile_directory(path, project, extensions, exclude_patterns)
     save_compiled_index(compiled, get_compiled_dir(path))
 
-    # Update metadata
+    # Warn if tree-sitter not working (indexed files but no symbols)
+    has_python = ".py" in extensions and any(f.suffix == ".py" for f in files_to_index)
+    if has_python and len(compiled.functions) == 0 and len(files_to_index) > 0:
+        from sage.codebase.chunker import is_treesitter_available
+
+        if not is_treesitter_available():
+            logger.warning(
+                "No functions extracted - tree-sitter-languages not installed. "
+                "Install with: pip install 'tree-sitter-languages>=1.9,<1.10' 'tree-sitter>=0.21,<0.22'"
+            )
+        else:
+            logger.warning(
+                "No functions extracted despite tree-sitter available. "
+                "Check tree-sitter version compatibility."
+            )
+
+    # Update metadata (including git commit for staleness tracking)
     meta["files"] = current_files
     meta["indexed_at"] = datetime.now(UTC).isoformat()
     meta["project"] = project
+
+    # Capture git commit at index time for staleness detection
+    from sage.git import get_commit
+
+    indexed_at_commit = get_commit(path)
+    if indexed_at_commit:
+        meta["indexed_at_commit"] = indexed_at_commit
+
     save_index_meta(meta, path)
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -477,17 +591,18 @@ def index_directory(
     )
 
 
-def _store_chunks(chunks: list[CodeChunk], project: str) -> None:
+def _store_chunks(chunks: list[CodeChunk], project: str, project_path: Path) -> None:
     """Store chunks in LanceDB.
 
     Args:
         chunks: Chunks to store (with embeddings)
         project: Project identifier
+        project_path: Project root for project-local database
     """
     if not is_lancedb_available():
         return
 
-    db = get_db()
+    db = get_db(project_path)
     if db is None:
         return
 
@@ -525,12 +640,14 @@ def _store_chunks(chunks: list[CodeChunk], project: str) -> None:
 def remove_file(
     file_path: str,
     project: str,
+    project_path: Path | None = None,
 ) -> bool:
     """Remove a file from the index.
 
     Args:
         file_path: Relative file path
         project: Project identifier
+        project_path: Project root for project-local database
 
     Returns:
         True if file was removed
@@ -538,7 +655,7 @@ def remove_file(
     if not is_lancedb_available():
         return False
 
-    db = get_db()
+    db = get_db(project_path)
     if db is None:
         return False
 
@@ -555,11 +672,12 @@ def remove_file(
         return False
 
 
-def remove_project(project: str) -> bool:
+def remove_project(project: str, project_path: Path | None = None) -> bool:
     """Remove all chunks for a project.
 
     Args:
         project: Project identifier
+        project_path: Project root for project-local database
 
     Returns:
         True if project was removed
@@ -567,7 +685,7 @@ def remove_project(project: str) -> bool:
     if not is_lancedb_available():
         return False
 
-    db = get_db()
+    db = get_db(project_path)
     if db is None:
         return False
 
@@ -584,11 +702,12 @@ def remove_project(project: str) -> bool:
         return False
 
 
-def get_indexed_stats(project: str | None = None) -> dict:
+def get_indexed_stats(project: str | None = None, project_path: Path | None = None) -> dict:
     """Get statistics about indexed code.
 
     Args:
         project: Optional project filter
+        project_path: Project root for project-local database
 
     Returns:
         Dict with chunk counts, files, languages
@@ -596,7 +715,7 @@ def get_indexed_stats(project: str | None = None) -> dict:
     if not is_lancedb_available():
         return {"available": False}
 
-    db = get_db()
+    db = get_db(project_path)
     if db is None:
         return {"available": False}
 
