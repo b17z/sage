@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sage - Research Memory</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --primary: #e94560;
+            --secondary: #0f3460;
+            --text: #eaeaea;
+            --text-muted: #888;
+            --border: #2a2a4a;
+            --success: #4ade80;
+            --warning: #fbbf24;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        h1 span {
+            color: var(--primary);
+        }
+
+        .stats {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        nav button {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        nav button:hover {
+            border-color: var(--primary);
+        }
+
+        nav button.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .search {
+            margin-bottom: 1.5rem;
+        }
+
+        .search input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 1rem;
+        }
+
+        .search input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+        }
+
+        .card-title {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .card-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .card-body {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .confidence {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .confidence.high {
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--success);
+        }
+
+        .confidence.medium {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--warning);
+        }
+
+        .confidence.low {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
+        .tag {
+            background: var(--secondary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .detail-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100vh;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            padding: 2rem;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .detail-panel.open {
+            transform: translateX(0);
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .detail-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .detail-content h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .detail-content h3 {
+            font-size: 1rem;
+            color: var(--primary);
+            margin: 1.5rem 0 0.75rem;
+        }
+
+        .detail-content p, .detail-content ul {
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .detail-content ul {
+            padding-left: 1.5rem;
+        }
+
+        .detail-content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 768px) {
+            .detail-panel {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><span>Sage</span> Research Memory</h1>
+            <div class="stats">
+                <div class="stat">
+                    <span>Checkpoints:</span>
+                    <span class="stat-value" id="checkpoint-count">-</span>
+                </div>
+                <div class="stat">
+                    <span>Knowledge:</span>
+                    <span class="stat-value" id="knowledge-count">-</span>
+                </div>
+            </div>
+        </header>
+
+        <nav>
+            <button class="active" data-view="checkpoints">Checkpoints</button>
+            <button data-view="knowledge">Knowledge</button>
+        </nav>
+
+        <div class="search">
+            <input type="text" id="search" placeholder="Search...">
+        </div>
+
+        <div class="list" id="list">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <div class="detail-panel" id="detail-panel">
+        <div class="detail-header">
+            <h2 id="detail-title">Details</h2>
+            <button class="detail-close" onclick="closeDetail()">&times;</button>
+        </div>
+        <div class="detail-content" id="detail-content"></div>
+    </div>
+
+    <script>
+        const API = '/api';
+        let currentView = 'checkpoints';
+        let checkpoints = [];
+        let knowledge = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadHealth();
+            loadCheckpoints();
+
+            // Nav buttons
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentView = btn.dataset.view;
+                    if (currentView === 'checkpoints') {
+                        renderCheckpoints();
+                    } else {
+                        loadKnowledge();
+                    }
+                });
+            });
+
+            // Search
+            document.getElementById('search').addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                if (currentView === 'checkpoints') {
+                    renderCheckpoints(query);
+                } else {
+                    renderKnowledge(query);
+                }
+            });
+        });
+
+        async function loadHealth() {
+            try {
+                const res = await fetch(`${API}/health`);
+                const data = await res.json();
+                document.getElementById('checkpoint-count').textContent = data.checkpoints;
+                document.getElementById('knowledge-count').textContent = data.knowledge;
+            } catch (e) {
+                console.error('Failed to load health:', e);
+            }
+        }
+
+        async function loadCheckpoints() {
+            try {
+                const res = await fetch(`${API}/checkpoints?limit=100`);
+                const data = await res.json();
+                checkpoints = data.checkpoints || [];
+                renderCheckpoints();
+            } catch (e) {
+                console.error('Failed to load checkpoints:', e);
+                document.getElementById('list').innerHTML = '<div class="empty">Failed to load checkpoints</div>';
+            }
+        }
+
+        async function loadKnowledge() {
+            try {
+                const res = await fetch(`${API}/knowledge`);
+                const data = await res.json();
+                knowledge = data.knowledge || [];
+                renderKnowledge();
+            } catch (e) {
+                console.error('Failed to load knowledge:', e);
+                document.getElementById('list').innerHTML = '<div class="empty">Failed to load knowledge</div>';
+            }
+        }
+
+        function renderCheckpoints(filter = '') {
+            const list = document.getElementById('list');
+            const filtered = checkpoints.filter(cp =>
+                cp.thesis.toLowerCase().includes(filter) ||
+                cp.id.toLowerCase().includes(filter)
+            );
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="empty">No checkpoints found</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(cp => {
+                const conf = cp.confidence * 100;
+                const confClass = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+                const date = new Date(cp.ts).toLocaleDateString();
+
+                return `
+                    <div class="card" onclick="showCheckpoint('${cp.id}')">
+                        <div class="card-header">
+                            <span class="card-title">${escapeHtml(cp.id.split('_').slice(1).join('_') || cp.id)}</span>
+                            <span class="confidence ${confClass}">${conf.toFixed(0)}%</span>
+                        </div>
+                        <div class="card-body">${escapeHtml(cp.thesis)}</div>
+                        <div class="card-meta">${date} · ${cp.trigger}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderKnowledge(filter = '') {
+            const list = document.getElementById('list');
+            const filtered = knowledge.filter(k =>
+                k.id.toLowerCase().includes(filter) ||
+                k.triggers.some(t => t.toLowerCase().includes(filter))
+            );
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="empty">No knowledge found</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(k => `
+                <div class="card" onclick="showKnowledge('${k.id}')">
+                    <div class="card-header">
+                        <span class="card-title">${escapeHtml(k.id)}</span>
+                        <span class="tag">${k.type}</span>
+                    </div>
+                    <div class="tags">
+                        ${k.triggers.slice(0, 5).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function showCheckpoint(id) {
+            try {
+                const res = await fetch(`${API}/checkpoints/${encodeURIComponent(id)}`);
+                const data = await res.json();
+                const cp = data.checkpoint;
+
+                document.getElementById('detail-title').textContent = cp.core_question || 'Checkpoint';
+                document.getElementById('detail-content').innerHTML = `
+                    <h3>Thesis</h3>
+                    <p>${escapeHtml(cp.thesis)}</p>
+                    <p><strong>Confidence:</strong> ${(cp.confidence * 100).toFixed(0)}%</p>
+
+                    ${cp.key_evidence?.length ? `
+                        <h3>Key Evidence</h3>
+                        <ul>${cp.key_evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>
+                    ` : ''}
+
+                    ${cp.open_questions?.length ? `
+                        <h3>Open Questions</h3>
+                        <ul>${cp.open_questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+                    ` : ''}
+
+                    ${cp.sources?.length ? `
+                        <h3>Sources</h3>
+                        <ul>${cp.sources.map(s => `
+                            <li><strong>${escapeHtml(s.id)}</strong> (${s.type}): ${escapeHtml(s.take)}</li>
+                        `).join('')}</ul>
+                    ` : ''}
+
+                    <h3>Raw</h3>
+                    <pre style="background: var(--bg); padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.75rem;">${escapeHtml(data.formatted)}</pre>
+                `;
+                openDetail();
+            } catch (e) {
+                console.error('Failed to load checkpoint:', e);
+            }
+        }
+
+        async function showKnowledge(id) {
+            try {
+                const res = await fetch(`${API}/knowledge/${encodeURIComponent(id)}`);
+                const data = await res.json();
+                const k = data.knowledge;
+
+                document.getElementById('detail-title').textContent = k.id;
+                document.getElementById('detail-content').innerHTML = `
+                    <div class="tags" style="margin-bottom: 1rem;">
+                        ${k.triggers.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
+                    </div>
+
+                    <h3>Content</h3>
+                    <p>${escapeHtml(k.content)}</p>
+
+                    ${k.code_links?.length ? `
+                        <h3>Code Links</h3>
+                        <ul>${k.code_links.map(l => `
+                            <li><code>${escapeHtml(l.chunk_id)}</code> (${l.relation})</li>
+                        `).join('')}</ul>
+                    ` : ''}
+
+                    <h3>Metadata</h3>
+                    <p><strong>Type:</strong> ${k.item_type}</p>
+                    <p><strong>Source:</strong> ${k.metadata?.source || 'Unknown'}</p>
+                    <p><strong>Added:</strong> ${k.metadata?.added || 'Unknown'}</p>
+                `;
+                openDetail();
+            } catch (e) {
+                console.error('Failed to load knowledge:', e);
+            }
+        }
+
+        function openDetail() {
+            document.getElementById('detail-panel').classList.add('open');
+        }
+
+        function closeDetail() {
+            document.getElementById('detail-panel').classList.remove('open');
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>
