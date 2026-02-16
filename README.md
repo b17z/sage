@@ -25,7 +25,7 @@
 /plugin marketplace add b17z/sage
 
 # 2. Install the plugin
-/plugin install sage@b17z/sage
+/plugin install sage@sage
 ```
 
 Or run `/plugin` and use the interactive UI to browse and install.
