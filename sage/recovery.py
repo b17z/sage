@@ -78,7 +78,7 @@ class RecoveryCheckpoint:
 
     id: str
     type: Literal["recovery"] = "recovery"
-    trigger: str = "pre_compact"
+    trigger: str = "compaction"
     extracted_at: str = ""
     extraction_method: str = "local"
 
@@ -185,10 +185,47 @@ def extract_topic(assistant_content: str, user_content: str) -> str:
     return "Unknown topic"
 
 
+def _extract_topic_from_summary(summary: str) -> str:
+    """Extract a topic from compaction summary.
+
+    Takes the first meaningful line or sentence from the summary.
+
+    Args:
+        summary: Claude's compaction summary
+
+    Returns:
+        Extracted topic string
+    """
+    if not summary:
+        return ""
+
+    # Split into lines and find first non-empty, non-header line
+    lines = summary.strip().split("\n")
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines and markdown headers
+        if not line or line.startswith("#"):
+            continue
+        # Skip bullet points prefix, keep content
+        if line.startswith("- "):
+            line = line[2:]
+        elif line.startswith("* "):
+            line = line[2:]
+        # Take first sentence or first 100 chars
+        sentences = re.split(r"[.!?]", line)
+        if sentences and sentences[0].strip():
+            return sentences[0].strip()[:100]
+        if line:
+            return line[:100]
+
+    return summary[:100] if summary else ""
+
+
 def extract_recovery_checkpoint(
     window: TranscriptWindow,
     trigger: str = "pre_compact",
     use_claude: bool = False,
+    compaction_summary: str | None = None,
 ) -> RecoveryCheckpoint:
     """Extract a recovery checkpoint from a transcript window.
 
@@ -199,10 +236,15 @@ def extract_recovery_checkpoint(
     - Problems resolved
     - Files and tools used
 
+    When compaction_summary is provided (from Claude Code's compaction),
+    it's used directly as the thesis, providing high-quality context
+    without needing a separate LLM call.
+
     Args:
         window: TranscriptWindow to extract from
         trigger: What triggered this extraction
         use_claude: Whether to use headless Claude for summary
+        compaction_summary: Claude's compaction summary (if available)
 
     Returns:
         RecoveryCheckpoint with extracted content
@@ -219,8 +261,15 @@ def extract_recovery_checkpoint(
     user_content = get_user_content(window)
     all_content = f"{assistant_content}\n\n{user_content}"
 
-    # Extract topic
-    topic = extract_topic(assistant_content, user_content)
+    # Extract topic - prefer compaction summary if available
+    if compaction_summary:
+        topic = _extract_topic_from_summary(compaction_summary)
+    else:
+        topic = ""
+
+    # Fallback to heuristic extraction if no good topic yet
+    if not topic:
+        topic = extract_topic(assistant_content, user_content)
 
     # Extract salient content
     salient = extract_salient_content(all_content)
@@ -235,12 +284,23 @@ def extract_recovery_checkpoint(
     files_touched = tuple(get_files_touched(window))
     tools_used = tuple(get_tools_used(window))
 
-    # Optional: use Claude for high-quality extraction
+    # Use compaction summary as thesis if available (best case - no LLM needed)
     summary = None
+    thesis = ""
+    core_question = ""
+    confidence = 0.0
     extraction_method = "local"
     claude_extraction = None
 
-    if use_claude:
+    if compaction_summary:
+        # Compaction summary is Claude-generated, use it directly
+        thesis = compaction_summary
+        extraction_method = "compaction"
+        # Set a reasonable confidence since this is Claude-generated
+        confidence = 0.7
+
+    # Optional: use headless Claude for even richer extraction
+    elif use_claude:
         try:
             from sage.headless import extract_with_claude, is_claude_available
 
@@ -266,11 +326,7 @@ def extract_recovery_checkpoint(
         except Exception as e:
             logger.warning(f"Claude extraction failed: {e}")
 
-    # Extract structured fields from Claude result
-    core_question = ""
-    thesis = ""
-    confidence = 0.0
-
+    # Extract structured fields from Claude result (only if we used headless)
     if claude_extraction:
         core_question = claude_extraction.get("core_question", "")
         thesis = claude_extraction.get("thesis", "")

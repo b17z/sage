@@ -1454,13 +1454,16 @@ def add_knowledge(
             logger.warning(f"Knowledge maintenance failed: {e}")
 
     # Git versioning (v4.0) - commit if enabled
+    # Use .sage/ directory as repo_path (it may have its own git repo)
     if getattr(config, "git_versioning_enabled", False):
         try:
             from sage.git import commit_sage_change
 
             knowledge_dir = _get_knowledge_dir(project_path)
             file_path = knowledge_dir / item.file
-            commit_sage_change(file_path, "knowledge", safe_id, project_path)
+            # Pass .sage/ directory as repo_path - it may have its own git repo
+            sage_dir = knowledge_dir.parent  # knowledge_dir is .sage/knowledge, parent is .sage
+            commit_sage_change(file_path, "knowledge", safe_id, sage_dir)
         except Exception as e:
             logger.debug(f"Git versioning failed: {e}")
 

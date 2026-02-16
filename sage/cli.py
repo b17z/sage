@@ -1423,16 +1423,17 @@ def checkpoint_rm(checkpoint_id, force):
         console.print(f"[red]Checkpoint '{checkpoint_id}' not found[/red]")
 
 
-@checkpoint.command("emergency")
+@checkpoint.command("post-compact")
 @click.option("--project", "-p", type=click.Path(exists=True), help="Project directory")
-def checkpoint_emergency(project):
-    """Save emergency checkpoint before compaction.
+@click.option(
+    "--transcript", "-t", type=click.Path(exists=True), help="Transcript file path"
+)
+def checkpoint_post_compact(project, transcript):
+    """Save recovery checkpoint after compaction with the summary.
 
-    Called automatically by PreCompact hook. Extracts context from the
-    current session transcript to preserve before compaction.
-
-    This uses the same recovery checkpoint system as the watcher daemon,
-    extracting topic, decisions, open threads, and files touched.
+    Called automatically by SessionStart hook when source is 'compact'.
+    Reads the compaction summary from the transcript and uses it as the
+    checkpoint thesis for high-quality context restoration.
     """
     import sys
     from pathlib import Path
@@ -1442,10 +1443,14 @@ def checkpoint_emergency(project):
 
     project_path = Path(project) if project else detect_project_root()
 
-    # Find the current transcript
-    transcript_path = find_active_transcript(project_path)
+    # Use provided transcript or find active one
+    if transcript:
+        transcript_path = Path(transcript)
+    else:
+        transcript_path = find_active_transcript(project_path)
+
     if not transcript_path or not transcript_path.exists():
-        print("No transcript found, skipping emergency checkpoint", file=sys.stderr)
+        print("No transcript found, skipping post-compact checkpoint", file=sys.stderr)
         return
 
     try:
@@ -1453,30 +1458,44 @@ def checkpoint_emergency(project):
             extract_recovery_checkpoint,
             save_recovery_checkpoint,
         )
-        from sage.transcript import read_full_transcript
+        from sage.transcript import get_compaction_summary, read_full_transcript
 
-        # Read transcript for full context
+        # Read transcript to find compaction summary
         window = read_full_transcript(transcript_path, max_entries=500)
 
         if window.is_empty:
-            print("Empty transcript, skipping emergency checkpoint", file=sys.stderr)
+            print("Empty transcript, skipping post-compact checkpoint", file=sys.stderr)
             return
 
-        # Extract recovery checkpoint
+        # Get the compaction summary
+        compaction_summary = get_compaction_summary(window)
+
+        if not compaction_summary:
+            print(
+                "No compaction summary found in transcript, skipping", file=sys.stderr
+            )
+            return
+
+        # Extract recovery checkpoint with the summary
         checkpoint = extract_recovery_checkpoint(
             window=window,
-            trigger="precompact",
-            use_claude=False,  # Fast local extraction
+            trigger="postcompact",
+            use_claude=False,  # Use the summary directly, no LLM needed
+            compaction_summary=compaction_summary,
         )
 
         # Save to project-local
         save_recovery_checkpoint(checkpoint, project_path=project_path)
-        print(f"Emergency checkpoint saved: {checkpoint.id}", file=sys.stderr)
+        print(
+            f"Post-compact checkpoint saved: {checkpoint.id} "
+            f"(summary: {len(compaction_summary)} chars)",
+            file=sys.stderr,
+        )
 
     except ImportError as e:
         print(f"Recovery modules not available: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"Failed to save emergency checkpoint: {e}", file=sys.stderr)
+        print(f"Failed to save post-compact checkpoint: {e}", file=sys.stderr)
 
 
 @main.group()

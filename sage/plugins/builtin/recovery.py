@@ -64,7 +64,8 @@ class RecoveryPlugin(BasePlugin):
                 action_type="save_recovery",
                 parameters={
                     "transcript_path": event.transcript_path,
-                    "trigger": "pre_compact",
+                    "trigger": "compaction",
+                    "compaction_summary": event.summary,
                 },
             ),
             # Then write the continuity marker

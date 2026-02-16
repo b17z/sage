@@ -69,9 +69,11 @@ def _execute_save_recovery(params: dict[str, Any]) -> None:
     Parameters:
         transcript_path (str): Path to transcript file
         trigger (str, optional): What triggered the recovery
+        compaction_summary (str, optional): Claude's compaction summary
     """
     transcript_path = params.get("transcript_path")
     trigger = params.get("trigger", "pre_compact")
+    compaction_summary = params.get("compaction_summary")
 
     if not transcript_path:
         logger.warning("save_recovery action: missing 'transcript_path' parameter")
@@ -98,11 +100,12 @@ def _execute_save_recovery(params: dict[str, Any]) -> None:
         config = get_sage_config()
         use_claude = getattr(config, "recovery_use_claude", False)
 
-        # Extract and save
+        # Extract and save - pass compaction summary for better extraction
         checkpoint = extract_recovery_checkpoint(
             window=window,
             trigger=trigger,
             use_claude=use_claude,
+            compaction_summary=compaction_summary,
         )
 
         project_root = detect_project_root()

@@ -363,17 +363,23 @@ def detect_project_root(start_path: Path | None = None) -> Path | None:
     """Detect project root by traversing up from start_path looking for markers.
 
     Looks for (in order of priority):
-    1. A .sage directory (explicit Sage project)
-    2. A .git directory (git repository root)
+    1. CLAUDE_PROJECT_DIR env var (set by Claude Code)
+    2. A .sage directory (explicit Sage project)
+    3. A .git directory (git repository root)
 
     Args:
-        start_path: Starting path for traversal. Defaults to cwd.
+        start_path: Starting path for traversal. Defaults to CLAUDE_PROJECT_DIR or cwd.
 
     Returns:
         Project root path, or None if no project markers found.
     """
     if start_path is None:
-        start_path = Path.cwd()
+        # Check for Claude Code's project dir env var first
+        claude_project = os.environ.get("CLAUDE_PROJECT_DIR")
+        if claude_project:
+            start_path = Path(claude_project)
+        else:
+            start_path = Path.cwd()
 
     current = start_path.resolve()
     home = Path.home()

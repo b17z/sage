@@ -77,19 +77,19 @@ from sage.checkpoint import (
     create_checkpoint_from_dict,
     format_checkpoint_for_context,
     is_duplicate_checkpoint,
-    list_checkpoints,
-    load_checkpoint,
-    save_checkpoint,
+    list_checkpoints as _list_checkpoints,
+    load_checkpoint as _load_checkpoint,
+    save_checkpoint as _save_checkpoint,
 )
 from sage.knowledge import (
-    add_knowledge,
+    add_knowledge as _add_knowledge,
     format_recalled_context,
-    get_pending_todos,
-    list_knowledge,
-    list_todos,
-    mark_todo_done,
-    recall_knowledge,
-    remove_knowledge,
+    get_pending_todos as _get_pending_todos,
+    list_knowledge as _list_knowledge,
+    list_todos as _list_todos,
+    mark_todo_done as _mark_todo_done,
+    recall_knowledge as _recall_knowledge,
+    remove_knowledge as _remove_knowledge,
 )
 
 # =============================================================================
@@ -147,7 +147,7 @@ def _format_poll_instructions(task_id: str) -> str:
     Uses a background Task agent to poll for completion and return results.
     Agent type and model are configurable via SageConfig (poll_agent_type, poll_agent_model).
 
-    Use `sage_reload_config` to pick up changes without restarting Claude Code.
+    Use `reload_config` to pick up changes without restarting Claude Code.
     """
     config = get_sage_config(_PROJECT_ROOT)
     paths = get_task_paths(task_id)
@@ -194,7 +194,7 @@ def _get_session_start_context() -> str | None:
     """Get session start context (system + continuity + proactive + failures) on first call only.
 
     Returns context string on first call of the session, None on subsequent calls.
-    This enables automatic context injection without requiring explicit sage_health() call.
+    This enables automatic context injection without requiring explicit health() call.
 
     Injection order:
     1. System folder (objective.md, constraints.md, etc.)
@@ -277,7 +277,7 @@ def with_session_context(func: Callable[..., str]) -> Callable[..., str]:
     Usage:
         @mcp.tool()
         @with_session_context
-        def sage_my_tool(...) -> str:
+        def my_tool(...) -> str:
             return "result"
     """
     import functools
@@ -489,7 +489,7 @@ def _sync_save_checkpoint(task: Task) -> TaskResult:
                 token_estimate=data.get("token_estimate", 0),
             )
 
-        save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+        _save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
         template = data.get("template", "default")
         template_info = f" (template: {template})" if template != "default" else ""
@@ -522,7 +522,7 @@ def _sync_save_knowledge(task: Task) -> TaskResult:
     try:
         data = task.data
 
-        item = add_knowledge(
+        item = _add_knowledge(
             content=data["content"],
             knowledge_id=data["knowledge_id"],
             keywords=data["keywords"],
@@ -701,7 +701,7 @@ def _get_continuity_context() -> str | None:
 
         # Inject SUBSTANTIVE checkpoint first (richer context from earlier)
         if bundle.substantive_checkpoint_id:
-            substantive = load_checkpoint(bundle.substantive_checkpoint_id, project_path=_PROJECT_ROOT)
+            substantive = _load_checkpoint(bundle.substantive_checkpoint_id, project_path=_PROJECT_ROOT)
             if substantive:
                 lines.append("**Research Context:**")
                 lines.append(format_checkpoint_for_context(substantive))
@@ -721,7 +721,7 @@ def _get_continuity_context() -> str | None:
                 bundle_injected_any = True
             else:
                 # Fall back to structured checkpoint
-                structured = load_checkpoint(bundle.recovery_checkpoint_id, project_path=_PROJECT_ROOT)
+                structured = _load_checkpoint(bundle.recovery_checkpoint_id, project_path=_PROJECT_ROOT)
                 if structured:
                     lines.append("**Recent Checkpoint:**")
                     lines.append(format_checkpoint_for_context(structured))
@@ -760,7 +760,7 @@ def _get_continuity_context() -> str | None:
         checkpoint_id = marker.get("checkpoint_id") if marker else None
 
         if checkpoint_id:
-            checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
+            checkpoint = _load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
             if checkpoint:
                 lines.append("**Last Checkpoint:**")
                 lines.append(format_checkpoint_for_context(checkpoint))
@@ -777,7 +777,7 @@ def _get_continuity_context() -> str | None:
         for entry in queued_checkpoints[:3]:
             if entry.checkpoint_id in injected_ids:
                 continue  # Already injected from marker
-            checkpoint = load_checkpoint(entry.checkpoint_id, project_path=_PROJECT_ROOT)
+            checkpoint = _load_checkpoint(entry.checkpoint_id, project_path=_PROJECT_ROOT)
             if checkpoint:
                 lines.append(f"*[{entry.checkpoint_type}]*")
                 lines.append(format_checkpoint_for_context(checkpoint))
@@ -1052,7 +1052,7 @@ def _get_proactive_recall() -> str | None:
 
         # Recall knowledge matching project context
         # Use lower threshold (0.4) since project name queries are less specific
-        result = recall_knowledge(context, skill_name="", threshold=0.4)
+        result = _recall_knowledge(context, skill_name="", threshold=0.4)
 
         if result.count == 0:
             logger.debug(f"No knowledge matched project context: {context}")
@@ -1089,7 +1089,7 @@ def _get_proactive_recall() -> str | None:
 
 @mcp.tool()
 @with_session_context
-def sage_version() -> str:
+def version() -> str:
     """Get Sage version and configuration info.
 
     Returns version number, embedding model, and key thresholds.
@@ -1117,7 +1117,7 @@ def sage_version() -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_health() -> str:
+def health() -> str:
     """Check Sage system health and diagnostics.
 
     **CALL THIS ON SESSION START** to check for continuity from previous sessions.
@@ -1180,7 +1180,7 @@ def sage_health() -> str:
 
     # Check checkpoints
     if CHECKPOINTS_DIR.exists():
-        checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=1000)
+        checkpoints = _list_checkpoints(project_path=_PROJECT_ROOT, limit=1000)
         cp_count = len(checkpoints)
         lines.append(f"✓ Checkpoints: {cp_count} saved")
     else:
@@ -1188,7 +1188,7 @@ def sage_health() -> str:
 
     # Check knowledge
     if KNOWLEDGE_DIR.exists():
-        knowledge = list_knowledge()
+        knowledge = _list_knowledge()
         k_count = len(knowledge)
         lines.append(f"✓ Knowledge: {k_count} items")
 
@@ -1226,7 +1226,7 @@ def sage_health() -> str:
         if freshness.get("stale"):
             files_changed = freshness.get("files_changed", 0)
             lines.append(f"! Code index stale: {files_changed} files changed since indexing")
-            issues.append("Run sage_index_code() to update the code index")
+            issues.append("Run index_code() to update the code index")
         elif freshness.get("indexed_at_commit"):
             commit = freshness.get("indexed_at_commit", "")[:7]
             lines.append(f"✓ Code index: up-to-date @ {commit}")
@@ -1282,7 +1282,7 @@ def sage_health() -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_continuity_status() -> str:
+def continuity_status() -> str:
     """Check session continuity status and inject pending context.
 
     Call this at the start of a new session to:
@@ -1356,7 +1356,7 @@ def sage_continuity_status() -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_get_config() -> str:
+def get_config() -> str:
     """Get current Sage configuration values.
 
     Shows both runtime config and tuning parameters with their
@@ -1409,7 +1409,7 @@ def sage_get_config() -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -> str:
+def debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -> str:
     """Debug what knowledge and checkpoints would match a query.
 
     Shows detailed scoring breakdown to understand why items were/weren't recalled.
@@ -1508,7 +1508,7 @@ def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = Tr
         if not embeddings.is_available():
             lines.append("Embeddings not available for checkpoint search.")
         else:
-            checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
+            checkpoints = _list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
             if not checkpoints:
                 lines.append("No checkpoints found.")
             else:
@@ -1559,7 +1559,7 @@ def sage_debug_query(query: str, skill: str = "", include_checkpoints: bool = Tr
 
 @mcp.tool()
 @with_session_context
-def sage_save_checkpoint(
+def save_checkpoint(
     core_question: str,
     thesis: str,
     confidence: float,
@@ -1638,6 +1638,37 @@ def sage_save_checkpoint(
     # Save checkpoint synchronously (caller should wrap in background Task per sage-memory skill)
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger, template=template)
 
+    # Auto-chain: link to most recent non-recovery checkpoint (v4.0)
+    from sage.checkpoint import get_most_recent_checkpoint
+
+    continues_from = None
+    recent = get_most_recent_checkpoint(project_path=_PROJECT_ROOT, exclude_recovery=True)
+    if recent and recent.id != checkpoint.id:
+        continues_from = recent.id
+        # Rebuild checkpoint with continues_from
+        checkpoint = Checkpoint(
+            id=checkpoint.id,
+            ts=checkpoint.ts,
+            trigger=checkpoint.trigger,
+            core_question=checkpoint.core_question,
+            thesis=checkpoint.thesis,
+            confidence=checkpoint.confidence,
+            open_questions=checkpoint.open_questions,
+            sources=checkpoint.sources,
+            tensions=checkpoint.tensions,
+            unique_contributions=checkpoint.unique_contributions,
+            key_evidence=checkpoint.key_evidence,
+            reasoning_trace=checkpoint.reasoning_trace,
+            action_goal=checkpoint.action_goal,
+            action_type=checkpoint.action_type,
+            skill=checkpoint.skill,
+            project=checkpoint.project,
+            parent_checkpoint=checkpoint.parent_checkpoint,
+            message_count=checkpoint.message_count,
+            token_estimate=checkpoint.token_estimate,
+            continues_from=continues_from,
+        )
+
     # Auto-inject code context from transcript (v1.3)
     if auto_code_context:
         transcript_path = find_active_transcript()
@@ -1657,7 +1688,7 @@ def sage_save_checkpoint(
             f"commit={checkpoint.git_context.get('commit')}"
         )
 
-    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+    _save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
     # Include code context info in response if present
     code_info = ""
@@ -1666,12 +1697,13 @@ def sage_save_checkpoint(
     elif checkpoint.files_explored:
         code_info = f" [{len(checkpoint.files_explored)} files explored]"
 
-    return f"📍 Checkpoint saved{template_info}{code_info}: {thesis_preview}"
+    chain_info = f" [→ {continues_from[:30]}...]" if continues_from else ""
+    return f"📍 Checkpoint saved{template_info}{code_info}{chain_info}: {thesis_preview}"
 
 
 @mcp.tool()
 @with_session_context
-def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
+def list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     """List saved research checkpoints.
 
     Args:
@@ -1681,7 +1713,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     Returns:
         Formatted list of checkpoints with ID, thesis, confidence, and date
     """
-    checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
+    checkpoints = _list_checkpoints(project_path=_PROJECT_ROOT, skill=skill, limit=limit)
 
     if not checkpoints:
         return "No checkpoints found."
@@ -1713,7 +1745,7 @@ def sage_list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_load_checkpoint(checkpoint_id: str) -> str:
+def load_checkpoint(checkpoint_id: str) -> str:
     """Load a checkpoint for context injection.
 
     Retrieves a checkpoint by ID (supports partial matching) and formats it
@@ -1725,7 +1757,7 @@ def sage_load_checkpoint(checkpoint_id: str) -> str:
     Returns:
         Formatted checkpoint context ready for injection
     """
-    checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
+    checkpoint = _load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
 
     if not checkpoint:
         return f"Checkpoint not found: {checkpoint_id}"
@@ -1735,7 +1767,7 @@ def sage_load_checkpoint(checkpoint_id: str) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_search_checkpoints(query: str, limit: int = 5) -> str:
+def search_checkpoints(query: str, limit: int = 5) -> str:
     """Search checkpoints by semantic similarity to a query.
 
     Finds checkpoints whose thesis is semantically similar to your query.
@@ -1765,7 +1797,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
     query_embedding = result.unwrap()
 
     # Load checkpoints and their embeddings
-    checkpoints = list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
+    checkpoints = _list_checkpoints(project_path=_PROJECT_ROOT, limit=50)
     if not checkpoints:
         return "No checkpoints found."
 
@@ -1799,7 +1831,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
         lines.append(f"   _Confidence: {cp.confidence:.0%} | {cp.trigger}_")
         lines.append("")
 
-    lines.append("Use `sage_load_checkpoint(id)` to inject a checkpoint into context.")
+    lines.append("Use `load_checkpoint(id)` to inject a checkpoint into context.")
 
     return "\n".join(lines)
 
@@ -1811,7 +1843,7 @@ def sage_search_checkpoints(query: str, limit: int = 5) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_save_knowledge(
+def save_knowledge(
     knowledge_id: str,
     content: str,
     keywords: list[str],
@@ -1845,7 +1877,7 @@ def sage_save_knowledge(
     type_label = f" [{item_type}]" if item_type != "knowledge" else ""
 
     # Save knowledge synchronously (caller should wrap in background Task per sage-memory skill)
-    item = add_knowledge(
+    item = _add_knowledge(
         content=content,
         knowledge_id=knowledge_id,
         keywords=keywords,
@@ -1866,7 +1898,7 @@ def sage_save_knowledge(
 
 @mcp.tool()
 @with_session_context
-def sage_recall_knowledge(query: str, skill: str = "") -> str:
+def recall_knowledge(query: str, skill: str = "") -> str:
     """Recall relevant knowledge for a query.
 
     **CALL THIS** before starting work on a topic to check what you already know.
@@ -1884,7 +1916,7 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
     """
     from sage import embeddings
 
-    result = recall_knowledge(query, skill, project_path=_PROJECT_ROOT)
+    result = _recall_knowledge(query, skill, project_path=_PROJECT_ROOT)
 
     if result.count == 0:
         if not embeddings.is_available():
@@ -1896,7 +1928,7 @@ def sage_recall_knowledge(query: str, skill: str = "") -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_list_knowledge(skill: str | None = None) -> str:
+def list_knowledge(skill: str | None = None) -> str:
     """List stored knowledge items.
 
     Args:
@@ -1905,7 +1937,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
     Returns:
         List of knowledge items with IDs and keywords
     """
-    items = list_knowledge(skill, project_path=_PROJECT_ROOT)
+    items = _list_knowledge(skill, project_path=_PROJECT_ROOT)
 
     if not items:
         return "No knowledge items found."
@@ -1945,7 +1977,7 @@ def sage_list_knowledge(skill: str | None = None) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_remove_knowledge(knowledge_id: str) -> str:
+def remove_knowledge(knowledge_id: str) -> str:
     """Remove a knowledge item.
 
     Args:
@@ -1954,14 +1986,14 @@ def sage_remove_knowledge(knowledge_id: str) -> str:
     Returns:
         Confirmation or error message
     """
-    if remove_knowledge(knowledge_id, project_path=_PROJECT_ROOT):
+    if _remove_knowledge(knowledge_id, project_path=_PROJECT_ROOT):
         return f"✓ Removed knowledge item: {knowledge_id}"
     return f"Knowledge item not found: {knowledge_id}"
 
 
 @mcp.tool()
 @with_session_context
-def sage_update_knowledge(
+def update_knowledge(
     knowledge_id: str,
     content: str | None = None,
     keywords: list[str] | None = None,
@@ -2024,7 +2056,7 @@ def sage_update_knowledge(
 
 @mcp.tool()
 @with_session_context
-def sage_link_knowledge(
+def link_knowledge(
     source_id: str,
     target_id: str,
     relation: str = "related",
@@ -2080,7 +2112,7 @@ def sage_link_knowledge(
 
 @mcp.tool()
 @with_session_context
-def sage_deprecate_knowledge(
+def deprecate_knowledge(
     knowledge_id: str,
     reason: str,
     replacement_id: str | None = None,
@@ -2124,13 +2156,13 @@ def sage_deprecate_knowledge(
 
 @mcp.tool()
 @with_session_context
-def sage_archive_knowledge(knowledge_id: str) -> str:
+def archive_knowledge(knowledge_id: str) -> str:
     """Archive a knowledge item (hide from recall).
 
     Archived items are preserved but excluded from retrieval.
     Use for obsolete items you want to keep for reference.
 
-    To restore: sage_update_knowledge(id, status='active')
+    To restore: update_knowledge(id, status='active')
 
     Args:
         knowledge_id: ID of item to archive
@@ -2148,12 +2180,12 @@ def sage_archive_knowledge(knowledge_id: str) -> str:
     if result is None:
         return f"Knowledge item not found: {knowledge_id}"
 
-    return f"📦 Archived: {knowledge_id}\nRestore with: sage_update_knowledge('{knowledge_id}', status='active')"
+    return f"📦 Archived: {knowledge_id}\nRestore with: update_knowledge('{knowledge_id}', status='active')"
 
 
 @mcp.tool()
 @with_session_context
-def sage_code_context(file: str, symbol: str | None = None) -> str:
+def code_context(file: str, symbol: str | None = None) -> str:
     """Find knowledge items that link to specific code.
 
     Reverse lookup: given a file or symbol, find knowledge that references it.
@@ -2222,7 +2254,7 @@ def sage_code_context(file: str, symbol: str | None = None) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_list_todos(status: str = "") -> str:
+def list_todos(status: str = "") -> str:
     """List todo items.
 
     Args:
@@ -2232,7 +2264,7 @@ def sage_list_todos(status: str = "") -> str:
         Formatted list of todos
     """
     status_filter = status if status else None
-    todos = list_todos(status=status_filter, project_path=_PROJECT_ROOT)
+    todos = _list_todos(status=status_filter, project_path=_PROJECT_ROOT)
 
     if not todos:
         return "No todos found."
@@ -2251,7 +2283,7 @@ def sage_list_todos(status: str = "") -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_mark_todo_done(todo_id: str) -> str:
+def mark_todo_done(todo_id: str) -> str:
     """Mark a todo as done.
 
     Args:
@@ -2260,20 +2292,20 @@ def sage_mark_todo_done(todo_id: str) -> str:
     Returns:
         Confirmation or error message
     """
-    if mark_todo_done(todo_id, project_path=_PROJECT_ROOT):
+    if _mark_todo_done(todo_id, project_path=_PROJECT_ROOT):
         return f"✓ Marked todo as done: {todo_id}"
     return f"Todo not found: {todo_id}"
 
 
 @mcp.tool()
 @with_session_context
-def sage_get_pending_todos() -> str:
+def get_pending_todos() -> str:
     """Get pending todos for session-start injection.
 
     Returns:
         Formatted list of pending todos or message if none
     """
-    todos = get_pending_todos(project_path=_PROJECT_ROOT)
+    todos = _get_pending_todos(project_path=_PROJECT_ROOT)
 
     if not todos:
         return "No pending todos."
@@ -2282,7 +2314,7 @@ def sage_get_pending_todos() -> str:
     for todo in todos:
         lines.append(f"- **{todo.id}**: {todo.content[:100] if todo.content else '(no content)'}")
     lines.append("")
-    lines.append("_Use `sage_mark_todo_done(id)` when completed._")
+    lines.append("_Use `mark_todo_done(id)` when completed._")
 
     return "\n".join(lines)
 
@@ -2294,13 +2326,13 @@ def sage_get_pending_todos() -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
+def set_config(key: str, value: str, project_level: bool = False) -> str:
     """Set a Sage tuning configuration value.
 
-    Allows tuning thresholds based on debug output. Use with sage_debug_query
+    Allows tuning thresholds based on debug output. Use with debug_query
     to see near-misses, then adjust thresholds to include/exclude items.
 
-    After setting, call sage_reload_config() to apply changes.
+    After setting, call reload_config() to apply changes.
 
     Args:
         key: Config key (recall_threshold, embedding_weight, keyword_weight, etc.)
@@ -2311,10 +2343,10 @@ def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
         Confirmation message
 
     Example workflow:
-        1. sage_debug_query("my topic") → see near-misses at score 2.8
-        2. sage_set_config("recall_threshold", "0.25") → lower threshold
-        3. sage_reload_config() → apply changes
-        4. sage_debug_query("my topic") → verify items now included
+        1. debug_query("my topic") → see near-misses at score 2.8
+        2. set_config("recall_threshold", "0.25") → lower threshold
+        3. reload_config() → apply changes
+        4. debug_query("my topic") → verify items now included
     """
     from pathlib import Path
 
@@ -2363,12 +2395,12 @@ def sage_set_config(key: str, value: str, project_level: bool = False) -> str:
     new_tuning.save(sage_dir)
 
     location = "project" if project_level else "user"
-    return f"✓ Set {key} = {typed_value} ({location}-level)\n\nCall sage_reload_config() to apply."
+    return f"✓ Set {key} = {typed_value} ({location}-level)\n\nCall reload_config() to apply."
 
 
 @mcp.tool()
 @with_session_context
-def sage_reload_config() -> str:
+def reload_config() -> str:
     """Reload Sage configuration and clear cached models.
 
     Call this after changing Sage config (e.g., embedding_model) to pick up
@@ -2436,7 +2468,7 @@ AUTOSAVE_TRIGGERS = {
 
 @mcp.tool()
 @with_session_context
-def sage_autosave_check(
+def autosave_check(
     trigger_event: str,
     core_question: str,
     current_thesis: str,
@@ -2555,7 +2587,16 @@ def sage_autosave_check(
 
     # Save checkpoint synchronously (caller should wrap in background Task per sage-memory skill)
     checkpoint = create_checkpoint_from_dict(data, trigger=trigger_event)
-    # Add depth metadata
+
+    # Auto-chain: link to most recent non-recovery checkpoint (v4.0)
+    from sage.checkpoint import get_most_recent_checkpoint
+
+    continues_from = None
+    recent = get_most_recent_checkpoint(project_path=_PROJECT_ROOT, exclude_recovery=True)
+    if recent and recent.id != checkpoint.id:
+        continues_from = recent.id
+
+    # Add depth metadata and chaining
     checkpoint = Checkpoint(
         id=checkpoint.id,
         ts=checkpoint.ts,
@@ -2576,10 +2617,12 @@ def sage_autosave_check(
         parent_checkpoint=checkpoint.parent_checkpoint,
         message_count=message_count,
         token_estimate=token_estimate,
+        continues_from=continues_from,
     )
-    save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
+    _save_checkpoint(checkpoint, project_path=_PROJECT_ROOT)
 
-    return f"📍 Checkpoint saved: {thesis_preview}"
+    chain_info = f" [→ {continues_from[:30]}...]" if continues_from else ""
+    return f"📍 Checkpoint saved{chain_info}: {thesis_preview}"
 
 
 # =============================================================================
@@ -2604,7 +2647,7 @@ def _check_code_deps() -> str | None:
 
 @mcp.tool()
 @with_session_context
-def sage_index_code(
+def index_code(
     path: str = ".",
     project: str | None = None,
     incremental: bool = True,
@@ -2656,7 +2699,7 @@ def sage_index_code(
 
 @mcp.tool()
 @with_session_context
-def sage_search_code(
+def search_code(
     query: str,
     project: str | None = None,
     limit: int = 10,
@@ -2686,7 +2729,7 @@ def sage_search_code(
         results = search_code(query, project=project, project_path=_PROJECT_ROOT, limit=limit, language=language)
 
         if not results:
-            return "No results found. Make sure the codebase is indexed with sage_index_code()."
+            return "No results found. Make sure the codebase is indexed with index_code()."
 
         lines = [f"Found {len(results)} result(s) for \"{query}\":\n"]
 
@@ -2709,7 +2752,7 @@ def sage_search_code(
 
 @mcp.tool()
 @with_session_context
-def sage_grep_symbol(
+def grep_symbol(
     name: str,
     project_path: str | None = None,
 ) -> str:
@@ -2737,7 +2780,7 @@ def sage_grep_symbol(
         result = grep_symbol(name, path)
 
         if result is None:
-            return f"Symbol not found: {name}\n\nMake sure the codebase is indexed with sage_index_code()."
+            return f"Symbol not found: {name}\n\nMake sure the codebase is indexed with index_code()."
 
         # Format based on type
         from sage.codebase import CompiledClass, CompiledConstant, CompiledFunction
@@ -2782,7 +2825,7 @@ def sage_grep_symbol(
 
 @mcp.tool()
 @with_session_context
-def sage_analyze_function(
+def analyze_function(
     name: str,
     project_path: str | None = None,
 ) -> str:
@@ -2810,7 +2853,7 @@ def sage_analyze_function(
         result = analyze_function(name, path)
 
         if result is None:
-            return f"Function not found: {name}\n\nMake sure the codebase is indexed with sage_index_code()."
+            return f"Function not found: {name}\n\nMake sure the codebase is indexed with index_code()."
 
         lines = [
             f"**{result['name']}**",
@@ -2839,7 +2882,7 @@ def sage_analyze_function(
 
 @mcp.tool()
 @with_session_context
-def sage_mark_core(
+def mark_core(
     path: str,
     summary: str = "",
 ) -> str:
@@ -2871,7 +2914,7 @@ def sage_mark_core(
 
 @mcp.tool()
 @with_session_context
-def sage_list_core(
+def list_core(
     project: str | None = None,
 ) -> str:
     """List all marked core files.
@@ -2892,7 +2935,7 @@ def sage_list_core(
         files = list_core(_PROJECT_ROOT, project)
 
         if not files:
-            return "No core files marked.\n\nUse sage_mark_core(path, summary) to mark important files."
+            return "No core files marked.\n\nUse mark_core(path, summary) to mark important files."
 
         lines = [f"Core files ({len(files)}):\n"]
         for f in files:
@@ -2910,7 +2953,7 @@ def sage_list_core(
 
 @mcp.tool()
 @with_session_context
-def sage_unmark_core(
+def unmark_core(
     path: str,
 ) -> str:
     """Remove a file's core marking.
@@ -3025,7 +3068,7 @@ def get_checkpoint_resource(checkpoint_id: str) -> str:
         return f"Invalid checkpoint ID: {checkpoint_id}"
 
     try:
-        checkpoint = load_checkpoint(safe_id, project_path=_PROJECT_ROOT)
+        checkpoint = _load_checkpoint(safe_id, project_path=_PROJECT_ROOT)
         if not checkpoint:
             return f"Checkpoint not found: {checkpoint_id}"
 
@@ -3122,7 +3165,7 @@ def get_failure_resource(failure_id: str) -> str:
 
 @mcp.tool()
 @with_session_context
-def sage_record_failure(
+def record_failure(
     failure_id: str,
     approach: str,
     why_failed: str,
@@ -3171,7 +3214,7 @@ def sage_record_failure(
 
 @mcp.tool()
 @with_session_context
-def sage_list_failures(
+def list_failures(
     limit: int = 10,
 ) -> str:
     """List recorded failures.
@@ -3192,7 +3235,7 @@ def sage_list_failures(
         failures = list_failures(project_path=_PROJECT_ROOT, limit=limit)
 
         if not failures:
-            return "No failures recorded.\n\nUse sage_record_failure() to track what didn't work."
+            return "No failures recorded.\n\nUse record_failure() to track what didn't work."
 
         lines = [f"## Failures [{len(failures)}]"]
 

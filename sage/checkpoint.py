@@ -871,11 +871,14 @@ def save_checkpoint(checkpoint: Checkpoint, project_path: Path | None = None) ->
             logger.warning(f"Checkpoint maintenance failed: {e}")
 
     # Git versioning (v4.0) - commit if enabled
+    # Use .sage/ directory as repo_path (it may have its own git repo)
     if getattr(config, "git_versioning_enabled", False):
         try:
             from sage.git import commit_sage_change
 
-            commit_sage_change(file_path, "checkpoint", checkpoint.id, project_path)
+            # Pass .sage/ directory as repo_path - it may have its own git repo
+            sage_dir = file_path.parent.parent  # file is in .sage/checkpoints/, parent.parent is .sage
+            commit_sage_change(file_path, "checkpoint", checkpoint.id, sage_dir)
         except Exception as e:
             logger.debug(f"Git versioning failed: {e}")
 
@@ -1031,6 +1034,27 @@ def list_checkpoints(
     return checkpoints
 
 
+def get_most_recent_checkpoint(
+    project_path: Path | None = None,
+    exclude_recovery: bool = True,
+) -> Checkpoint | None:
+    """Get the most recent checkpoint for chaining.
+
+    Args:
+        project_path: Project path
+        exclude_recovery: If True, skip recovery checkpoints (default True)
+
+    Returns:
+        Most recent checkpoint or None
+    """
+    checkpoints = list_checkpoints(project_path=project_path, limit=5)
+    for cp in checkpoints:
+        if exclude_recovery and "_recovery-" in cp.id:
+            continue
+        return cp
+    return None
+
+
 def delete_checkpoint(checkpoint_id: str, project_path: Path | None = None) -> bool:
     """Delete a checkpoint by ID. Supports both .md and .yaml formats."""
     checkpoints_dir = get_checkpoints_dir(project_path)
@@ -1082,10 +1106,15 @@ def format_checkpoint_for_context(checkpoint: Checkpoint, use_toon: bool | None 
     if use_toon:
         return format_checkpoint_toon(checkpoint)
 
+    # Build header with optional chain info
+    chain_info = ""
+    if checkpoint.continues_from:
+        chain_info = f" | Continues: {checkpoint.continues_from[:40]}..."
+
     parts = [
         "# Research Context (Restored from Checkpoint)\n",
         f"*Checkpoint: {checkpoint.id}*\n",
-        f"*Saved: {checkpoint.ts[:16].replace('T', ' ')} | Confidence: {checkpoint.confidence:.0%}*\n\n",  # noqa: E501
+        f"*Saved: {checkpoint.ts[:16].replace('T', ' ')} | Confidence: {checkpoint.confidence:.0%}{chain_info}*\n\n",  # noqa: E501
         "## Core Question\n",
         f"{checkpoint.core_question}\n\n",
         "## Current Thesis\n",
@@ -1515,6 +1544,8 @@ def enrich_checkpoint_with_code_context(
             files_changed=new_files_changed,
             git_context=checkpoint.git_context,
             diff_summary=checkpoint.diff_summary,
+            continues_from=checkpoint.continues_from,
+            related_knowledge=checkpoint.related_knowledge,
         )
 
     return checkpoint
@@ -1570,4 +1601,6 @@ def enrich_checkpoint_with_git_context(
         files_changed=checkpoint.files_changed,
         git_context=git_ctx.to_dict(),
         diff_summary=diff.to_dict() if diff.files_changed or diff.staged_files else None,
+        continues_from=checkpoint.continues_from,
+        related_knowledge=checkpoint.related_knowledge,
     )
