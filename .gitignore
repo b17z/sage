@@ -39,6 +39,9 @@ pnpm-debug.log*
 *.tmp
 *.bak
 
+# MCP config (local dev only, not for plugin distribution)
+.mcp.json
+
 # Env / secrets
 .env
 .env.*
