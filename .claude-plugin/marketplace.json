@@ -1,20 +1,17 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "benvy",
-  "description": "Developer tools by be.nvy \u2014 Sage, Crucible, and more",
+  "name": "b17z",
+  "description": "Developer tools by b17z — Sage, Crucible, and more",
   "owner": {
-    "name": "be.nvy",
-    "url": "https://github.com/benvy"
+    "name": "b17z",
+    "url": "https://github.com/b17z"
   },
   "plugins": [
     {
       "name": "sage",
       "description": "Semantic memory with checkpoints, knowledge base, and code context linking",
-      "version": "4.0.0",
-      "author": {
-        "name": "be.nvy"
-      },
-      "source": "."
+      "category": "productivity",
+      "source": "./"
     }
   ]
 }

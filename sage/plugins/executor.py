@@ -122,6 +122,12 @@ def _execute_save_recovery(params: dict[str, Any]) -> None:
 def _execute_write_marker(params: dict[str, Any]) -> None:
     """Execute a write_marker action.
 
+    Now uses bundle architecture (v4.0) - creates a ContinuityBundle with:
+    - Most recent recovery checkpoint
+    - Most recent substantive checkpoint (confidence > 0)
+    - Related knowledge (semantically matched)
+    - Related failures (semantically matched)
+
     Parameters:
         reason (str): Reason for the marker
         compaction_summary (str, optional): Summary from compaction
@@ -131,24 +137,45 @@ def _execute_write_marker(params: dict[str, Any]) -> None:
 
     try:
         from sage.config import detect_project_root
-        from sage.continuity import mark_for_continuity
+        from sage.continuity import (
+            create_continuity_bundle,
+            get_most_recent_checkpoint,
+            mark_for_continuity_with_bundle,
+        )
 
         # Get project root for project-scoped continuity marker
         project_root = detect_project_root()
 
-        result = mark_for_continuity(
+        # Find the most recent checkpoint (should be the recovery checkpoint just saved)
+        most_recent = get_most_recent_checkpoint(project_root)
+        recovery_checkpoint_id = most_recent.stem if most_recent else None
+
+        # Create bundle with both checkpoints and related context
+        bundle = create_continuity_bundle(
+            recovery_checkpoint_id=recovery_checkpoint_id,
+            project_path=project_root,
+        )
+
+        # Write marker with bundle
+        result = mark_for_continuity_with_bundle(
+            bundle=bundle,
             reason=reason,
             compaction_summary=compaction_summary,
             project_dir=project_root,
         )
 
         if result.ok:
-            _log_to_watcher_file(f"Continuity marker written: {result.unwrap()}")
+            _log_to_watcher_file(
+                f"Continuity bundle written: recovery={bundle.recovery_checkpoint_id}, "
+                f"substantive={bundle.substantive_checkpoint_id}, "
+                f"knowledge={len(bundle.knowledge_ids)}, failures={len(bundle.failure_ids)}"
+            )
         else:
-            _log_to_watcher_file(f"Failed to write marker: {result.unwrap_err().message}")
+            _log_to_watcher_file(f"Failed to write bundle: {result.unwrap_err().message}")
 
     except Exception as e:
         logger.warning(f"write_marker action: failed: {e}")
+        _log_to_watcher_file(f"write_marker action failed: {e}")
 
 
 def _execute_queue_for_injection(params: dict[str, Any]) -> None:

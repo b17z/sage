@@ -648,15 +648,20 @@ atexit.register(_sync_shutdown)
 
 
 def _get_continuity_context() -> str | None:
-    """Get pending continuity context for injection.
+    """Get pending continuity context for injection using bundle architecture (v4.0).
 
-    Checks if there's a continuity marker from a previous compaction.
-    Also checks the session queue for pending checkpoints.
-    If found, loads and formats the context, then clears the marker.
+    Injects BOTH checkpoints (recovery + substantive) plus related knowledge
+    and failures from the bundle. This provides full context restoration after
+    compaction.
+
+    Falls back to legacy single-checkpoint injection for backward compatibility.
 
     Returns:
         Formatted context string, or None if no pending continuity.
     """
+    from sage.continuity import get_continuity_bundle
+    from sage.recovery import format_recovery_for_context, load_recovery_checkpoint
+
     config = get_sage_config(_PROJECT_ROOT)
     if not config.continuity_enabled:
         logger.debug("Continuity disabled via config, clearing marker")
@@ -667,7 +672,7 @@ def _get_continuity_context() -> str | None:
     has_marker = has_pending_continuity(_PROJECT_ROOT)
     marker = get_continuity_marker(_PROJECT_ROOT) if has_marker else None
 
-    # Check for session queue entries
+    # Check for session queue entries (non-compaction checkpoints)
     queued_checkpoints = _get_queued_checkpoints()
 
     # If nothing pending, return None
@@ -686,20 +691,84 @@ def _get_continuity_context() -> str | None:
         lines.append(summary)
         lines.append("")
 
-    # Load and inject checkpoint from marker if available (ID-based lookup)
-    checkpoint_id = marker.get("checkpoint_id") if marker else None
     injected_ids = []
 
-    if checkpoint_id:
-        checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
-        if checkpoint:
-            lines.append("**Last Checkpoint:**")
-            lines.append(format_checkpoint_for_context(checkpoint))
-            injected_ids.append(checkpoint_id)
-        else:
-            lines.append(f"*Checkpoint not found: {checkpoint_id}*")
-    elif not queued_checkpoints:
-        lines.append("*No checkpoint was saved before compaction.*")
+    # Try bundle-based injection (v4.0)
+    bundle = get_continuity_bundle(_PROJECT_ROOT) if marker else None
+
+    if bundle:
+        bundle_injected_any = False
+
+        # Inject SUBSTANTIVE checkpoint first (richer context from earlier)
+        if bundle.substantive_checkpoint_id:
+            substantive = load_checkpoint(bundle.substantive_checkpoint_id, project_path=_PROJECT_ROOT)
+            if substantive:
+                lines.append("**Research Context:**")
+                lines.append(format_checkpoint_for_context(substantive))
+                lines.append("")
+                injected_ids.append(bundle.substantive_checkpoint_id)
+                bundle_injected_any = True
+
+        # Inject RECOVERY checkpoint (recent work at compaction time)
+        if bundle.recovery_checkpoint_id:
+            # Try loading as recovery checkpoint first
+            recovery = load_recovery_checkpoint(bundle.recovery_checkpoint_id, _PROJECT_ROOT)
+            if recovery:
+                lines.append("**Recent Work (at compaction):**")
+                lines.append(format_recovery_for_context(recovery))
+                lines.append("")
+                injected_ids.append(bundle.recovery_checkpoint_id)
+                bundle_injected_any = True
+            else:
+                # Fall back to structured checkpoint
+                structured = load_checkpoint(bundle.recovery_checkpoint_id, project_path=_PROJECT_ROOT)
+                if structured:
+                    lines.append("**Recent Checkpoint:**")
+                    lines.append(format_checkpoint_for_context(structured))
+                    lines.append("")
+                    injected_ids.append(bundle.recovery_checkpoint_id)
+                    bundle_injected_any = True
+                else:
+                    # Checkpoint was referenced but couldn't be loaded
+                    lines.append(f"*Checkpoint not found: {bundle.recovery_checkpoint_id}*")
+
+        # If nothing was injected from bundle checkpoints, show a message
+        if not bundle_injected_any and not bundle.knowledge_ids and not bundle.failure_ids:
+            if not queued_checkpoints:
+                lines.append("*No checkpoint was saved before compaction.*")
+
+        # Inject bundled knowledge
+        if bundle.knowledge_ids:
+            lines.append("**Related Knowledge:**")
+            for kid in bundle.knowledge_ids:
+                item = _load_knowledge_item(kid)
+                if item:
+                    lines.append(f"• **{item.id}**: {item.content[:300]}...")
+            lines.append("")
+
+        # Inject bundled failures
+        if bundle.failure_ids:
+            lines.append("**⚠️ Relevant Failures:**")
+            for fid in bundle.failure_ids:
+                failure = _load_failure(fid)
+                if failure:
+                    lines.append(f"• **{failure.id}**: {failure.approach} → {failure.learned}")
+            lines.append("")
+
+    else:
+        # Legacy fallback: single checkpoint_id in marker
+        checkpoint_id = marker.get("checkpoint_id") if marker else None
+
+        if checkpoint_id:
+            checkpoint = load_checkpoint(checkpoint_id, project_path=_PROJECT_ROOT)
+            if checkpoint:
+                lines.append("**Last Checkpoint:**")
+                lines.append(format_checkpoint_for_context(checkpoint))
+                injected_ids.append(checkpoint_id)
+            else:
+                lines.append(f"*Checkpoint not found: {checkpoint_id}*")
+        elif not queued_checkpoints:
+            lines.append("*No checkpoint was saved before compaction.*")
 
     # Inject queued checkpoints (up to 3, most recent first)
     if queued_checkpoints:
@@ -728,6 +797,30 @@ def _get_continuity_context() -> str | None:
         logger.info(f"Injected {len(injected_ids)} checkpoint(s): {injected_ids}")
 
     return "\n".join(lines)
+
+
+def _load_knowledge_item(knowledge_id: str):
+    """Load a knowledge item by ID. Returns None if not found."""
+    try:
+        from sage.knowledge import get_knowledge
+
+        return get_knowledge(knowledge_id, project_path=_PROJECT_ROOT)
+    except Exception:
+        return None
+
+
+def _load_failure(failure_id: str):
+    """Load a failure by ID. Returns None if not found."""
+    try:
+        from sage.failures import load_failures
+
+        failures = load_failures(_PROJECT_ROOT)
+        for f in failures:
+            if f.id == failure_id:
+                return f
+        return None
+    except Exception:
+        return None
 
 
 def _get_queued_checkpoints():
