@@ -1,5 +1,6 @@
 {
   "name": "sage",
+  "version": "4.0.0",
   "description": "Semantic memory for Claude - checkpoint research, persist knowledge, never lose context",
   "author": {
     "name": "b17z",

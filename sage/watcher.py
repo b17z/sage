@@ -312,6 +312,48 @@ def _save_cursor_state(transcript_path: str, position: int) -> None:
         _log_to_file(f"Failed to save cursor state: {e}")
 
 
+def _check_missed_compaction(transcript_path: Path) -> None:
+    """Check for compaction entries missed due to restart race condition.
+
+    When Claude Code compacts, it sends SIGTERM to restart processes.
+    The old watcher may die before processing the compaction entry.
+    This function scans recent transcript lines to catch missed compactions.
+    """
+    from sage.continuity import get_continuity_marker
+
+    project_root = detect_project_root()
+
+    # If there's already a marker, we didn't miss anything
+    if get_continuity_marker(project_root):
+        return
+
+    # Scan last 50 lines for compaction entries
+    try:
+        with open(transcript_path) as f:
+            # Read all lines (transcript files aren't huge)
+            lines = f.readlines()
+
+        # Check last 50 lines for compaction
+        for line in lines[-50:]:
+            try:
+                data = json.loads(line)
+                if (
+                    isinstance(data, dict)
+                    and data.get("isCompactSummary") is True
+                    and isinstance(data.get("message"), dict)
+                ):
+                    summary = data["message"].get("content", "")
+                    if isinstance(summary, str) and summary:
+                        _log_to_file("Found missed compaction entry, processing now")
+                        _handle_compaction(summary, transcript_path)
+                        return  # Only process the most recent one
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+    except OSError as e:
+        _log_to_file(f"Failed to check for missed compaction: {e}")
+
+
 def _handle_compaction(summary: str, transcript_path: Path | None = None) -> None:
     """Handle detected compaction event.
 
@@ -540,6 +582,9 @@ def watch_transcript(
     current_file = None
 
     try:
+        # Check for compaction missed due to restart race condition
+        _check_missed_compaction(current_transcript)
+
         current_file = open(current_transcript)
         # Seek to end - we only care about new events
         current_file.seek(0, 2)

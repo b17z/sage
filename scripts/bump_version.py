@@ -28,10 +28,6 @@ VERSION_FILES = {
         "type": "json",
         "key": "version",
     },
-    ".claude-plugin/marketplace.json": {
-        "type": "json",
-        "key": ["plugins", 0, "version"],
-    },
     "CLAUDE.md": {
         "pattern": r'\*\*Current version:\*\* v[0-9]+\.[0-9]+\.[0-9]+',
         "replacement": "**Current version:** v{version}",
