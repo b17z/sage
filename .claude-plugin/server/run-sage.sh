@@ -25,7 +25,12 @@ if [ ! -d "$VENV_DIR" ]; then
     echo "[Sage] First run - installing dependencies..." >&2
     python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
-    "$VENV_DIR/bin/pip" install --quiet "claude-sage[mcp]"
+    # If running from source repo, use editable install for development
+    if [ -f "$SAGE_ROOT/pyproject.toml" ]; then
+        "$VENV_DIR/bin/pip" install --quiet -e "$SAGE_ROOT[mcp]"
+    else
+        "$VENV_DIR/bin/pip" install --quiet "claude-sage[mcp]"
+    fi
     echo "[Sage] Installation complete" >&2
 fi
 

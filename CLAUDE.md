@@ -3,7 +3,7 @@
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
 **Current version:** v4.0.0 (invisible context hydration)
-**Test count:** 1655 tests (maintain or increase)
+**Test count:** 1668 tests (maintain or increase)
 
 ---
 
@@ -76,44 +76,44 @@ sage ui --api-only           # REST API only mode
 | Tool | Purpose |
 |------|---------|
 | **System** | |
-| `sage_version()` | Get version + config info |
-| `sage_health()` | System diagnostics + continuity injection |
-| `sage_continuity_status()` | Check/inject session continuity |
-| `sage_get_config()` | Show all config values |
-| `sage_set_config(key, value)` | Set tuning parameter |
-| `sage_reload_config()` | Apply config changes |
-| `sage_debug_query(query)` | Debug retrieval scoring |
+| `version()` | Get version + config info |
+| `health()` | System diagnostics + continuity injection |
+| `continuity_status()` | Check/inject session continuity |
+| `get_config()` | Show all config values |
+| `set_config(key, value)` | Set tuning parameter |
+| `reload_config()` | Apply config changes |
+| `debug_query(query)` | Debug retrieval scoring |
 | **Checkpoints** | |
-| `sage_save_checkpoint(...)` | Save research checkpoint |
-| `sage_list_checkpoints()` | List saved checkpoints |
-| `sage_load_checkpoint(id)` | Load checkpoint for context |
-| `sage_search_checkpoints(query)` | Semantic search |
-| `sage_autosave_check(...)` | Auto-checkpoint at breakpoints |
+| `save_checkpoint(...)` | Save research checkpoint |
+| `list_checkpoints()` | List saved checkpoints |
+| `load_checkpoint(id)` | Load checkpoint for context |
+| `search_checkpoints(query)` | Semantic search |
+| `autosave_check(...)` | Auto-checkpoint at breakpoints |
 | **Knowledge** | |
-| `sage_save_knowledge(...)` | Save new knowledge item |
-| `sage_recall_knowledge(query)` | Retrieve matching knowledge |
-| `sage_list_knowledge()` | List all knowledge |
-| `sage_update_knowledge(id, ...)` | Edit existing item |
-| `sage_deprecate_knowledge(id, reason)` | Mark as outdated |
-| `sage_archive_knowledge(id)` | Hide from recall |
-| `sage_remove_knowledge(id)` | Delete item |
-| `sage_code_context(file, symbol)` | Find knowledge linking to code |
-| `sage_link_knowledge(src, tgt, relation)` | Link two knowledge items |
+| `save_knowledge(...)` | Save new knowledge item |
+| `recall_knowledge(query)` | Retrieve matching knowledge |
+| `list_knowledge()` | List all knowledge |
+| `update_knowledge(id, ...)` | Edit existing item |
+| `deprecate_knowledge(id, reason)` | Mark as outdated |
+| `archive_knowledge(id)` | Hide from recall |
+| `remove_knowledge(id)` | Delete item |
+| `code_context(file, symbol)` | Find knowledge linking to code |
+| `link_knowledge(src, tgt, relation)` | Link two knowledge items |
 | **Failures** *(v4.0)* | |
-| `sage_record_failure(...)` | Track what didn't work |
-| `sage_list_failures()` | List recorded failures |
+| `record_failure(...)` | Track what didn't work |
+| `list_failures()` | List recorded failures |
 | **Todos** | |
-| `sage_list_todos()` | List persistent todos |
-| `sage_mark_todo_done(id)` | Mark todo complete |
-| `sage_get_pending_todos()` | Get pending for injection |
+| `list_todos()` | List persistent todos |
+| `mark_todo_done(id)` | Mark todo complete |
+| `get_pending_todos()` | Get pending for injection |
 | **Code** *(requires `[code]` extra)* | |
-| `sage_index_code(path)` | Index codebase for search |
-| `sage_search_code(query)` | Semantic code search |
-| `sage_grep_symbol(name)` | Fast exact symbol lookup |
-| `sage_analyze_function(name)` | Get function source code |
-| `sage_mark_core(path)` | Mark file for context injection |
-| `sage_list_core()` | List core files |
-| `sage_unmark_core(path)` | Remove core marking |
+| `index_code(path)` | Index codebase for search |
+| `search_code(query)` | Semantic code search |
+| `grep_symbol(name)` | Fast exact symbol lookup |
+| `analyze_function(name)` | Get function source code |
+| `mark_core(path)` | Mark file for context injection |
+| `list_core()` | List core files |
+| `unmark_core(path)` | Remove core marking |
 
 ## Architecture
 

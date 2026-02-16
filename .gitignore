@@ -39,7 +39,8 @@ pnpm-debug.log*
 *.tmp
 *.bak
 
-# MCP config (local dev only, not for plugin distribution)
+# MCP config - root .mcp.json is for local dev only (uses CLAUDE_PLUGIN_ROOT)
+# Users install via: claude plugin install sage@sage
 .mcp.json
 
 # Env / secrets
