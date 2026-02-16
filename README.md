@@ -18,6 +18,20 @@
 
 ## Quick Start
 
+### Option A: Claude Code Plugin (Recommended)
+
+```bash
+# 1. Add the marketplace (one-time)
+/plugin marketplace add b17z/sage
+
+# 2. Install the plugin
+/plugin install sage@b17z/sage
+```
+
+Or run `/plugin` and use the interactive UI to browse and install.
+
+### Option B: Manual Install
+
 ```bash
 # 1. Install
 pip install claude-sage[mcp]
@@ -112,7 +126,6 @@ sage ui --api-only   # REST API for custom frontends
 ```
 
 Or use any of these:
-- **CoWork plugin** — If you have CoWork access
 - **Obsidian** — Open `~/.sage/` as vault (it's just Markdown)
 - **Custom** — Build on the REST API
 
@@ -128,6 +141,16 @@ See [docs/ui.md](docs/ui.md) for details.
 - **[Continuity](docs/continuity.md)** — Session persistence deep-dive
 - **[Maintenance](docs/maintenance.md)** — Storage maintenance and caching
 - **[UI Options](docs/ui.md)** — Web UI, API, Obsidian, CoWork plugin
+
+## Known Issues
+
+### Plugin MCP Tool Naming
+
+When installed as a Claude Code plugin, MCP tools follow the format `mcp__plugin_<plugin>_<server>__<tool>`. Since both the plugin and MCP server are named "sage", tools appear as `mcp__plugin_sage_sage__save_checkpoint` rather than the expected `mcp__plugin_sage__save_checkpoint`.
+
+This is [documented Claude Code behavior](https://github.com/anthropics/claude-code/blob/main/docs/plugins.md) — the official MCP integration docs show the same pattern with `asana_asana` as an example. No official plugins currently use MCP servers, so there's no precedent for cleaner naming.
+
+**Workaround:** The plugin works correctly despite the redundant naming. If this bothers you, install via pip instead (`pip install claude-sage[mcp]`).
 
 ## Requirements
 
