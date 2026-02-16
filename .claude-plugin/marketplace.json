@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "sage",
-  "description": "Semantic memory for Claude \u2014 checkpoint research, persist knowledge, never lose context",
+  "name": "benvy",
+  "description": "Developer tools by be.nvy \u2014 Sage, Crucible, and more",
   "owner": {
     "name": "be.nvy",
     "url": "https://github.com/benvy"

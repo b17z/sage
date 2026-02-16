@@ -907,17 +907,53 @@
   <section class="install" id="install">
     <div class="container">
       <h2>Get started</h2>
-      <p class="install-desc">Install from PyPI, then set up the MCP server and skills.</p>
+      <p class="install-desc">Install as a plugin for teams, or via pip for individual use.</p>
 
       <div class="install-methods">
-        <!-- Method 1: Quick Start (Recommended) -->
+        <!-- Method 1: Plugin (Recommended for Teams) -->
         <div class="install-method recommended">
           <div class="install-method-header">
-            <span class="install-method-title">Quick Start</span>
-            <span class="install-method-badge">Recommended</span>
+            <span class="install-method-title">Plugin Install</span>
+            <span class="install-method-badge">Teams</span>
           </div>
           <div class="install-method-body">
-            <p class="install-method-desc">Install from PyPI and set up Claude Code integration.</p>
+            <p class="install-method-desc">One command. Auto-installs dependencies on first use.</p>
+            <div class="install-method-commands">
+              <div class="terminal-line"><span class="terminal-prompt">/</span> <span class="terminal-cmd">plugin marketplace add benvy/sage</span> <span class="terminal-comment"># Add marketplace</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">/</span> <span class="terminal-cmd">plugin install sage@benvy</span> <span class="terminal-comment"># Install plugin</span></div>
+            </div>
+            <p class="install-method-gets"><strong>Gets you:</strong> MCP server + skills + CLI (auto-installed)</p>
+            <p class="install-method-note">First MCP tool call auto-installs Python dependencies. No pip needed.</p>
+          </div>
+        </div>
+
+        <!-- Method 1b: Team Config -->
+        <div class="install-method">
+          <div class="install-method-header">
+            <span class="install-method-title">Team Setup</span>
+          </div>
+          <div class="install-method-body">
+            <p class="install-method-desc">Add to repo for automatic team installation. Teammates get prompted on folder trust.</p>
+            <div class="install-method-commands" style="font-size: 0.8rem;">
+              <div class="terminal-line"><span class="terminal-comment">// .claude/settings.json</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">{</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">  "extraKnownMarketplaces": {</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">    "benvy": { "source": { "source": "github", "repo": "benvy/sage" } }</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">  },</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">  "enabledPlugins": { "sage@benvy": true }</span></div>
+              <div class="terminal-line"><span class="terminal-cmd">}</span></div>
+            </div>
+            <p class="install-method-gets"><strong>Gets you:</strong> Auto-prompt for all team members</p>
+          </div>
+        </div>
+
+        <!-- Method 2: pip Install -->
+        <div class="install-method">
+          <div class="install-method-header">
+            <span class="install-method-title">pip Install</span>
+          </div>
+          <div class="install-method-body">
+            <p class="install-method-desc">Manual install for individual use or development.</p>
             <div class="install-method-commands">
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">pip install claude-sage[mcp]</span></div>
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">sage mcp install</span> <span class="terminal-comment"># Add MCP server to Claude</span></div>
@@ -927,7 +963,7 @@
           </div>
         </div>
 
-        <!-- Method 2: With Code Indexing -->
+        <!-- Method 3: With Code Indexing -->
         <div class="install-method">
           <div class="install-method-header">
             <span class="install-method-title">With Code Indexing</span>
@@ -942,7 +978,7 @@
           </div>
         </div>
 
-        <!-- Method 3: Build from Source -->
+        <!-- Method 4: Build from Source -->
         <div class="install-method">
           <div class="install-method-header">
             <span class="install-method-title">Build from Source</span>
@@ -950,7 +986,7 @@
           <div class="install-method-body">
             <p class="install-method-desc">For contributors or custom setups.</p>
             <div class="install-method-commands">
-              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">git clone https://github.com/b17z/sage</span></div>
+              <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">git clone https://github.com/benvy/sage</span></div>
               <div class="terminal-line"><span class="terminal-prompt">$</span> <span class="terminal-cmd">cd sage && pip install -e ".[dev,mcp,code]"</span></div>
             </div>
             <p class="install-method-note">Then: <code style="color: var(--accent);">sage mcp install && sage skills install</code></p>

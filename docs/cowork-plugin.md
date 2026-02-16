@@ -6,11 +6,11 @@ Sage can be installed as a CoWork/Claude Code plugin, providing slash commands a
 
 ### From GitHub (when published)
 ```bash
-# Add to plugin marketplace
-claude plugin marketplace add benvy/sage
+# Add marketplace
+/plugin marketplace add benvy/sage
 
 # Install
-claude plugin install sage@benvy/sage
+/plugin install sage@benvy
 ```
 
 ### Local Development
