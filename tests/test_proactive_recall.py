@@ -202,42 +202,42 @@ class TestGetProactiveRecall:
 
 
 class TestSageHealthProactiveRecall:
-    """Tests for proactive recall integration in sage_health."""
+    """Tests for proactive recall integration in health."""
 
     def test_health_includes_proactive_recall(self):
-        """sage_health includes proactive recall when knowledge matches."""
+        """health includes proactive recall when knowledge matches."""
         mock_recall = "═══ RECALLED KNOWLEDGE ═══\nTest knowledge"
 
         with patch("sage.mcp_server._get_continuity_context", return_value=None):
             with patch("sage.mcp_server._get_proactive_recall", return_value=mock_recall):
-                from sage.mcp_server import sage_health
+                from sage.mcp_server import health
 
-                result = sage_health()
+                result = health()
 
         assert "RECALLED KNOWLEDGE" in result
         assert "Test knowledge" in result
 
     def test_health_works_without_proactive_recall(self):
-        """sage_health works when no proactive recall available."""
+        """health works when no proactive recall available."""
         with patch("sage.mcp_server._get_continuity_context", return_value=None):
             with patch("sage.mcp_server._get_proactive_recall", return_value=None):
-                from sage.mcp_server import sage_health
+                from sage.mcp_server import health
 
-                result = sage_health()
+                result = health()
 
         assert "Sage Health Check" in result
         assert "RECALLED KNOWLEDGE" not in result
 
     def test_health_shows_both_continuity_and_recall(self):
-        """sage_health shows both continuity and proactive recall."""
+        """health shows both continuity and proactive recall."""
         mock_continuity = "═══ SESSION CONTINUITY ═══\nContinuity context"
         mock_recall = "═══ RECALLED KNOWLEDGE ═══\nRecalled knowledge"
 
         with patch("sage.mcp_server._get_continuity_context", return_value=mock_continuity):
             with patch("sage.mcp_server._get_proactive_recall", return_value=mock_recall):
-                from sage.mcp_server import sage_health
+                from sage.mcp_server import health
 
-                result = sage_health()
+                result = health()
 
         assert "SESSION CONTINUITY" in result
         assert "RECALLED KNOWLEDGE" in result
@@ -260,9 +260,9 @@ class TestIntegration:
         with patch("sage.mcp_server._PROJECT_ROOT", project_dir):
             with patch("sage.mcp_server._get_continuity_context", return_value=None):
                 with patch("sage.mcp_server._get_proactive_recall", return_value=mock_recall):
-                    from sage.mcp_server import sage_health
+                    from sage.mcp_server import health
 
-                    result = sage_health()
+                    result = health()
 
         # Should include the recalled knowledge
         assert "Sage Health Check" in result

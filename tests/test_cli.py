@@ -641,3 +641,79 @@ class TestAdminCommands:
 
         assert result.exit_code == 0
         assert "already" in result.output.lower()
+
+
+class TestCheckpointPostCompactCommand:
+    """Tests for the checkpoint post-compact CLI command."""
+
+    def test_post_compact_help(self, runner):
+        """Post-compact help shows description."""
+        result = runner.invoke(main, ["checkpoint", "post-compact", "--help"])
+
+        assert result.exit_code == 0
+        assert "compaction" in result.output.lower()
+        assert "--transcript" in result.output
+
+    def test_post_compact_no_transcript(self, runner, tmp_path, monkeypatch):
+        """Post-compact with no transcript shows appropriate message."""
+        monkeypatch.setattr("sage.config.detect_project_root", lambda: tmp_path)
+        monkeypatch.setattr(
+            "sage.watcher.find_active_transcript", lambda _: None
+        )
+
+        result = runner.invoke(main, ["checkpoint", "post-compact", "--project", str(tmp_path)])
+
+        # Should fail gracefully
+        assert "no transcript" in result.output.lower()
+
+    def test_post_compact_no_summary_in_transcript(self, runner, tmp_path, monkeypatch):
+        """Post-compact with no compaction summary shows appropriate message."""
+        # Create a transcript without compaction summary
+        transcript_path = tmp_path / "transcript.jsonl"
+        transcript_path.write_text('{"message": {"role": "user", "content": "hello"}}\n')
+
+        monkeypatch.setattr("sage.config.detect_project_root", lambda: tmp_path)
+
+        result = runner.invoke(
+            main,
+            ["checkpoint", "post-compact", "--project", str(tmp_path), "--transcript", str(transcript_path)]
+        )
+
+        assert "no compaction summary" in result.output.lower()
+
+    def test_post_compact_with_summary(self, runner, tmp_path, monkeypatch):
+        """Post-compact extracts summary and saves checkpoint."""
+        import json
+
+        # Create checkpoints dir
+        checkpoints_dir = tmp_path / ".sage" / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+
+        # Create a transcript with compaction summary
+        transcript_path = tmp_path / "transcript.jsonl"
+        compaction_entry = {
+            "isCompactSummary": True,
+            "message": {"content": "This is the compaction summary from Claude Code."}
+        }
+        transcript_path.write_text(json.dumps(compaction_entry) + "\n")
+
+        monkeypatch.setattr("sage.config.detect_project_root", lambda: tmp_path)
+        monkeypatch.setattr("sage.recovery.get_recovery_checkpoints_dir", lambda project_path=None: checkpoints_dir)
+
+        result = runner.invoke(
+            main,
+            ["checkpoint", "post-compact", "--project", str(tmp_path), "--transcript", str(transcript_path)]
+        )
+
+        assert result.exit_code == 0
+        assert "post-compact checkpoint saved" in result.output.lower()
+        assert "summary:" in result.output.lower()
+
+        # Verify checkpoint was created
+        checkpoint_files = list(checkpoints_dir.glob("*.md"))
+        assert len(checkpoint_files) == 1
+
+        # Verify checkpoint contains the summary as thesis
+        checkpoint_content = checkpoint_files[0].read_text()
+        assert "This is the compaction summary from Claude Code" in checkpoint_content
+        assert "extraction_method: compaction" in checkpoint_content

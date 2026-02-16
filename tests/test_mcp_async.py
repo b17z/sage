@@ -80,10 +80,10 @@ class TestAsyncCheckpointSave:
     def test_checkpoint_returns_queued_immediately(
         self, async_test_env, mock_async_enabled
     ):
-        """sage_save_checkpoint returns 'Checkpoint queued' immediately (fire-and-forget)."""
-        from sage.mcp_server import sage_save_checkpoint
+        """save_checkpoint returns 'Checkpoint queued' immediately (fire-and-forget)."""
+        from sage.mcp_server import save_checkpoint
 
-        result = sage_save_checkpoint(
+        result = save_checkpoint(
             core_question="How to implement auth?",
             thesis="JWT is the best approach for stateless authentication.",
             confidence=0.8,
@@ -95,10 +95,10 @@ class TestAsyncCheckpointSave:
     def test_checkpoint_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
-        """sage_save_checkpoint uses fire-and-forget regardless of async config."""
-        from sage.mcp_server import sage_save_checkpoint
+        """save_checkpoint uses fire-and-forget regardless of async config."""
+        from sage.mcp_server import save_checkpoint
 
-        result = sage_save_checkpoint(
+        result = save_checkpoint(
             core_question="How to implement auth?",
             thesis="JWT is the best approach for stateless authentication.",
             confidence=0.8,
@@ -107,10 +107,10 @@ class TestAsyncCheckpointSave:
         assert "📍 Checkpoint" in result
 
     def test_checkpoint_saves_in_background(self, async_test_env, mock_async_disabled):
-        """sage_save_checkpoint actually saves the checkpoint in background."""
-        from sage.mcp_server import sage_list_checkpoints, sage_save_checkpoint
+        """save_checkpoint actually saves the checkpoint in background."""
+        from sage.mcp_server import list_checkpoints, save_checkpoint
 
-        result = sage_save_checkpoint(
+        result = save_checkpoint(
             core_question="Test question",
             thesis="Test thesis with enough content.",
             confidence=0.7,
@@ -122,15 +122,15 @@ class TestAsyncCheckpointSave:
         time.sleep(0.5)
 
         # Verify checkpoint was saved
-        list_result = sage_list_checkpoints()
+        list_result = list_checkpoints()
         assert "Checkpoints [1]" in list_result
 
     def test_checkpoint_validates_before_save(self, async_test_env, mock_async_enabled):
         """Invalid checkpoint data rejected before fire-and-forget save."""
-        from sage.mcp_server import sage_save_checkpoint
+        from sage.mcp_server import save_checkpoint
 
         # Invalid confidence
-        result = sage_save_checkpoint(
+        result = save_checkpoint(
             core_question="Q",
             thesis="T",
             confidence=1.5,
@@ -145,10 +145,10 @@ class TestAsyncKnowledgeSave:
     def test_knowledge_returns_queued_immediately(
         self, async_test_env, mock_async_enabled
     ):
-        """sage_save_knowledge returns 'Knowledge queued' immediately (fire-and-forget)."""
-        from sage.mcp_server import sage_save_knowledge
+        """save_knowledge returns 'Knowledge queued' immediately (fire-and-forget)."""
+        from sage.mcp_server import save_knowledge
 
-        result = sage_save_knowledge(
+        result = save_knowledge(
             knowledge_id="test-knowledge",
             content="Test content for knowledge item.",
             keywords=["test", "knowledge"],
@@ -160,10 +160,10 @@ class TestAsyncKnowledgeSave:
     def test_knowledge_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled
     ):
-        """sage_save_knowledge uses fire-and-forget regardless of async config."""
-        from sage.mcp_server import sage_save_knowledge
+        """save_knowledge uses fire-and-forget regardless of async config."""
+        from sage.mcp_server import save_knowledge
 
-        result = sage_save_knowledge(
+        result = save_knowledge(
             knowledge_id="test-knowledge",
             content="Test content for knowledge item.",
             keywords=["test", "knowledge"],
@@ -178,8 +178,8 @@ class TestAsyncAutosaveCheck:
     def test_autosave_returns_queued_immediately(
         self, async_test_env, mock_async_enabled, monkeypatch
     ):
-        """sage_autosave_check returns 'Checkpoint queued' immediately (fire-and-forget)."""
-        from sage.mcp_server import sage_autosave_check
+        """autosave_check returns 'Checkpoint queued' immediately (fire-and-forget)."""
+        from sage.mcp_server import autosave_check
 
         # Mock dedup check to allow save
         mock_dedup = MagicMock()
@@ -189,7 +189,7 @@ class TestAsyncAutosaveCheck:
             lambda thesis, project_path=None: mock_dedup,
         )
 
-        result = sage_autosave_check(
+        result = autosave_check(
             trigger_event="manual",
             core_question="Research question here",
             current_thesis="A thesis with sufficient content for validation.",
@@ -202,8 +202,8 @@ class TestAsyncAutosaveCheck:
     def test_autosave_returns_queued_regardless_of_async_setting(
         self, async_test_env, mock_async_disabled, monkeypatch
     ):
-        """sage_autosave_check uses fire-and-forget regardless of async config."""
-        from sage.mcp_server import sage_autosave_check
+        """autosave_check uses fire-and-forget regardless of async config."""
+        from sage.mcp_server import autosave_check
 
         # Mock dedup check
         mock_dedup = MagicMock()
@@ -213,7 +213,7 @@ class TestAsyncAutosaveCheck:
             lambda thesis, project_path=None: mock_dedup,
         )
 
-        result = sage_autosave_check(
+        result = autosave_check(
             trigger_event="manual",
             core_question="Research question here",
             current_thesis="A thesis with sufficient content for validation.",
@@ -466,12 +466,12 @@ class TestAsyncPerformance:
     def test_checkpoint_save_returns_fast(self, async_test_env, mock_async_enabled):
         """Checkpoint save returns in under 100ms."""
         from sage import mcp_server
-        from sage.mcp_server import sage_save_checkpoint
+        from sage.mcp_server import save_checkpoint
 
         mcp_server._task_queue = asyncio.Queue()
 
         start = time.time()
-        sage_save_checkpoint(
+        save_checkpoint(
             core_question="Performance test question",
             thesis="This should return immediately without waiting for save.",
             confidence=0.8,
@@ -484,12 +484,12 @@ class TestAsyncPerformance:
     def test_knowledge_save_returns_fast(self, async_test_env, mock_async_enabled):
         """Knowledge save returns in under 100ms."""
         from sage import mcp_server
-        from sage.mcp_server import sage_save_knowledge
+        from sage.mcp_server import save_knowledge
 
         mcp_server._task_queue = asyncio.Queue()
 
         start = time.time()
-        sage_save_knowledge(
+        save_knowledge(
             knowledge_id="perf-test",
             content="Performance test content.",
             keywords=["performance"],
@@ -504,9 +504,9 @@ class TestSyncFallback:
 
     def test_checkpoint_sync_fallback_works(self, async_test_env, mock_async_disabled):
         """Checkpoint saves synchronously when async disabled."""
-        from sage.mcp_server import sage_save_checkpoint
+        from sage.mcp_server import save_checkpoint
 
-        result = sage_save_checkpoint(
+        result = save_checkpoint(
             core_question="Sync fallback test",
             thesis="This should save synchronously.",
             confidence=0.7,
@@ -517,9 +517,9 @@ class TestSyncFallback:
 
     def test_knowledge_sync_fallback_works(self, async_test_env, mock_async_disabled):
         """Knowledge saves synchronously when async disabled."""
-        from sage.mcp_server import sage_save_knowledge
+        from sage.mcp_server import save_knowledge
 
-        result = sage_save_knowledge(
+        result = save_knowledge(
             knowledge_id="sync-fallback",
             content="Sync fallback content.",
             keywords=["sync"],

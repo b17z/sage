@@ -47,7 +47,7 @@ def sample_recovery_checkpoint():
     return RecoveryCheckpoint(
         id="2026-01-15T10-00-00_recovery-implementing-feature",
         type="recovery",
-        trigger="pre_compact",
+        trigger="compaction",
         extracted_at="2026-01-15T10:00:00Z",
         extraction_method="local",
         topic="Implementing the new feature",
@@ -104,7 +104,7 @@ class TestRecoveryCheckpoint:
         cp = RecoveryCheckpoint(id="test-id")
 
         assert cp.type == "recovery"
-        assert cp.trigger == "pre_compact"
+        assert cp.trigger == "compaction"
         assert cp.extracted_at == ""
         assert cp.extraction_method == "local"
         assert cp.topic == ""
@@ -210,12 +210,12 @@ class TestExtractRecoveryCheckpoint:
         """Extracts checkpoint from transcript window."""
         checkpoint = extract_recovery_checkpoint(
             sample_transcript_window,
-            trigger="pre_compact",
+            trigger="compaction",
             use_claude=False,
         )
 
         assert checkpoint.type == "recovery"
-        assert checkpoint.trigger == "pre_compact"
+        assert checkpoint.trigger == "compaction"
         assert checkpoint.extraction_method == "local"
         assert checkpoint.topic != ""
 
@@ -262,6 +262,92 @@ class TestExtractRecoveryCheckpoint:
 
         assert checkpoint.extracted_at != ""
         assert "T" in checkpoint.extracted_at  # ISO format
+
+    def test_uses_compaction_summary_as_thesis(self, sample_transcript_window):
+        """Uses compaction summary directly as thesis when provided."""
+        compaction_summary = "The user was implementing a new authentication system using JWT tokens. Key decisions: use RS256 algorithm, store refresh tokens in httpOnly cookies."
+
+        checkpoint = extract_recovery_checkpoint(
+            sample_transcript_window,
+            trigger="compaction",
+            compaction_summary=compaction_summary,
+        )
+
+        assert checkpoint.thesis == compaction_summary
+        assert checkpoint.extraction_method == "compaction"
+        assert checkpoint.confidence == 0.7
+
+    def test_extracts_topic_from_compaction_summary(self, sample_transcript_window):
+        """Extracts topic from first sentence of compaction summary."""
+        compaction_summary = "Implementing JWT authentication. The user needed to add token refresh logic."
+
+        checkpoint = extract_recovery_checkpoint(
+            sample_transcript_window,
+            trigger="compaction",
+            compaction_summary=compaction_summary,
+        )
+
+        assert "JWT authentication" in checkpoint.topic or "Implementing" in checkpoint.topic
+
+    def test_falls_back_to_heuristic_when_no_summary(self, sample_transcript_window):
+        """Falls back to heuristic extraction when no compaction summary."""
+        checkpoint = extract_recovery_checkpoint(
+            sample_transcript_window,
+            trigger="compaction",
+            compaction_summary=None,
+        )
+
+        # Should use local extraction
+        assert checkpoint.extraction_method == "local"
+        assert checkpoint.thesis == ""  # No thesis without summary or claude
+
+
+class TestExtractTopicFromSummary:
+    """Tests for _extract_topic_from_summary function."""
+
+    def test_extracts_first_sentence(self):
+        """Extracts first sentence from summary."""
+        from sage.recovery import _extract_topic_from_summary
+
+        summary = "Implementing authentication. Then we added tests. And documentation."
+        topic = _extract_topic_from_summary(summary)
+
+        assert topic == "Implementing authentication"
+
+    def test_skips_markdown_headers(self):
+        """Skips markdown headers in summary."""
+        from sage.recovery import _extract_topic_from_summary
+
+        summary = "# Summary\nThe user was working on caching."
+        topic = _extract_topic_from_summary(summary)
+
+        assert "Summary" not in topic
+        assert "caching" in topic
+
+    def test_handles_bullet_points(self):
+        """Handles bullet point prefixes."""
+        from sage.recovery import _extract_topic_from_summary
+
+        summary = "- Implemented new feature\n- Added tests"
+        topic = _extract_topic_from_summary(summary)
+
+        assert topic == "Implemented new feature"
+
+    def test_handles_empty_summary(self):
+        """Returns empty string for empty summary."""
+        from sage.recovery import _extract_topic_from_summary
+
+        assert _extract_topic_from_summary("") == ""
+        assert _extract_topic_from_summary(None) == ""
+
+    def test_truncates_long_topics(self):
+        """Truncates topics longer than 100 characters."""
+        from sage.recovery import _extract_topic_from_summary
+
+        long_text = "A" * 200
+        topic = _extract_topic_from_summary(long_text)
+
+        assert len(topic) <= 100
 
 
 class TestRecoveryToMarkdown:
@@ -349,7 +435,7 @@ class TestMarkdownToRecovery:
         md = _recovery_to_markdown(sample_recovery_checkpoint)
         parsed = _markdown_to_recovery(md)
 
-        assert parsed.trigger == "pre_compact"
+        assert parsed.trigger == "compaction"
         assert parsed.extraction_method == "local"
         assert parsed.salience_score == 0.85
 
@@ -606,7 +692,7 @@ class TestIntegration:
         # Extract
         checkpoint = extract_recovery_checkpoint(
             sample_transcript_window,
-            trigger="pre_compact",
+            trigger="compaction",
         )
         assert checkpoint.type == "recovery"
 

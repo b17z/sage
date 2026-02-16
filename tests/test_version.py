@@ -126,7 +126,7 @@ class TestVersionInHealth:
         monkeypatch.setattr(mcp_server, "_PROJECT_ROOT", None)
 
         with patch("sage.check_for_updates", return_value=(True, "99.0.0")):
-            result = mcp_server.sage_health()
+            result = mcp_server.health()
 
         assert "Update available" in result
         assert "99.0.0" in result
@@ -143,7 +143,7 @@ class TestVersionInHealth:
         monkeypatch.setattr(mcp_server, "_PROJECT_ROOT", None)
 
         with patch("sage.check_for_updates", return_value=(False, None)):
-            result = mcp_server.sage_health()
+            result = mcp_server.health()
 
         assert "(latest)" in result
 

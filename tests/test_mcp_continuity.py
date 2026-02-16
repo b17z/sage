@@ -139,16 +139,16 @@ class TestGetContinuityContext:
 
 
 class TestSageContinuityStatus:
-    """Tests for sage_continuity_status MCP tool."""
+    """Tests for continuity_status MCP tool."""
 
     def test_injects_pending_context(self, cleanup_continuity):
         """Injects context if pending marker exists."""
         from sage.continuity import mark_for_continuity
-        from sage.mcp_server import sage_continuity_status
+        from sage.mcp_server import continuity_status
 
         mark_for_continuity(reason="test", compaction_summary="Test summary")
 
-        result = sage_continuity_status()
+        result = continuity_status()
 
         assert "SESSION CONTINUITY" in result
         assert "Test summary" in result
@@ -166,9 +166,9 @@ class TestSageContinuityStatus:
         # Mock session queue to return empty list (no checkpoints queued)
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
             with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
-                from sage.mcp_server import sage_continuity_status
+                from sage.mcp_server import continuity_status
 
-                result = sage_continuity_status()
+                result = continuity_status()
 
         assert "Continuity Status" in result
         assert "No pending continuity" in result
@@ -185,31 +185,31 @@ class TestSageContinuityStatus:
         # Mock session queue to return empty list (no checkpoints queued)
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
             with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
-                from sage.mcp_server import sage_continuity_status
+                from sage.mcp_server import continuity_status
 
-                result = sage_continuity_status()
+                result = continuity_status()
 
         assert "12345" in result
         assert "running" in result.lower()
 
 
 class TestSageHealthWithContinuity:
-    """Tests for sage_health integration with continuity."""
+    """Tests for health integration with continuity."""
 
     def test_health_includes_watcher_status(self, cleanup_continuity):
-        """sage_health includes watcher daemon status."""
+        """health includes watcher daemon status."""
         mock_watcher = {"running": False, "pid": None, "transcript": None}
 
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
-            from sage.mcp_server import sage_health
+            from sage.mcp_server import health
 
-            result = sage_health()
+            result = health()
 
         # Should mention watcher
         assert "watcher" in result.lower()
 
     def test_health_injects_continuity_if_pending(self, cleanup_continuity):
-        """sage_health injects continuity context if pending."""
+        """health injects continuity context if pending."""
         from sage.continuity import mark_for_continuity
 
         mark_for_continuity(reason="test", compaction_summary="Health check test")
@@ -217,16 +217,16 @@ class TestSageHealthWithContinuity:
         mock_watcher = {"running": True, "pid": 1234, "transcript": None}
 
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
-            from sage.mcp_server import sage_health
+            from sage.mcp_server import health
 
-            result = sage_health()
+            result = health()
 
         # Should include both continuity context and health info
         assert "SESSION CONTINUITY" in result
         assert "Health Check" in result
 
     def test_health_shows_watcher_not_running(self, cleanup_continuity):
-        """sage_health shows instruction to start watcher."""
+        """health shows instruction to start watcher."""
         from sage.continuity import CONTINUITY_FILE
 
         if CONTINUITY_FILE.exists():
@@ -235,9 +235,9 @@ class TestSageHealthWithContinuity:
         mock_watcher = {"running": False, "pid": None, "transcript": None}
 
         with patch("sage.watcher.get_watcher_status", return_value=mock_watcher):
-            from sage.mcp_server import sage_health
+            from sage.mcp_server import health
 
-            result = sage_health()
+            result = health()
 
         assert "not running" in result.lower() or "watcher start" in result.lower()
 

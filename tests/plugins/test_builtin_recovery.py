@@ -85,7 +85,21 @@ class TestRecoveryPlugin:
 
         save_action = next(a for a in result.actions if a.action_type == "save_recovery")
         assert save_action.parameters["transcript_path"] == "/my/transcript.jsonl"
-        assert save_action.parameters["trigger"] == "pre_compact"
+        assert save_action.parameters["trigger"] == "compaction"
+
+    def test_save_recovery_action_includes_compaction_summary(self):
+        """save_recovery action includes compaction summary for better extraction."""
+        plugin = RecoveryPlugin()
+        event = CompactionDetected(
+            timestamp="2024-01-01T00:00:00Z",
+            summary="Working on JWT authentication with RS256 tokens.",
+            transcript_path="/my/transcript.jsonl",
+        )
+
+        result = plugin.handle(event)
+
+        save_action = next(a for a in result.actions if a.action_type == "save_recovery")
+        assert save_action.parameters["compaction_summary"] == "Working on JWT authentication with RS256 tokens."
 
     def test_write_marker_action_has_summary(self):
         """write_marker action includes compaction summary."""

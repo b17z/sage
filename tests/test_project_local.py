@@ -242,7 +242,7 @@ class TestMCPProjectIntegration:
 
         # Patch the module-level _PROJECT_ROOT
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_save_checkpoint(
+            result = mcp_server.save_checkpoint(
                 core_question="MCP integration test question",
                 thesis="MCP saves to project-local directory",
                 confidence=0.8,
@@ -267,7 +267,7 @@ class TestMCPProjectIntegration:
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # Save a checkpoint first
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="List test",
                 thesis="Checkpoint for listing",
                 confidence=0.7,
@@ -278,7 +278,7 @@ class TestMCPProjectIntegration:
             time.sleep(0.5)
 
             # List should find it
-            result = mcp_server.sage_list_checkpoints(limit=10)
+            result = mcp_server.list_checkpoints(limit=10)
 
         assert "Checkpoints [1]" in result
         assert "Checkpoint for listing" in result
@@ -291,7 +291,7 @@ class TestMCPProjectIntegration:
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # Save a checkpoint
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="Load test question",
                 thesis="Checkpoint for loading test",
                 confidence=0.85,
@@ -302,11 +302,11 @@ class TestMCPProjectIntegration:
             time.sleep(0.5)
 
             # List to get the checkpoint ID
-            list_result = mcp_server.sage_list_checkpoints()
+            list_result = mcp_server.list_checkpoints()
             checkpoint_id = list_result.split("**")[1].split("**")[0]
 
             # Load it back
-            load_result = mcp_server.sage_load_checkpoint(checkpoint_id)
+            load_result = mcp_server.load_checkpoint(checkpoint_id)
 
         assert "Load test question" in load_result
         assert "Checkpoint for loading test" in load_result
@@ -316,7 +316,7 @@ class TestMCPProjectIntegration:
         from sage import mcp_server
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_autosave_check(
+            result = mcp_server.autosave_check(
                 trigger_event="synthesis",
                 core_question="Autosave integration test",
                 current_thesis="Testing autosave with project-local storage",
@@ -344,7 +344,7 @@ class TestMCPProjectIntegration:
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="Global question",
                 thesis="This thesis exists globally",
                 confidence=0.8,
@@ -356,7 +356,7 @@ class TestMCPProjectIntegration:
 
         # Same thesis should save to project-local (different scope = not duplicate)
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            result = mcp_server.sage_autosave_check(
+            result = mcp_server.autosave_check(
                 trigger_event="synthesis",
                 core_question="Project question",
                 current_thesis="This thesis exists globally",  # Same thesis
@@ -372,7 +372,7 @@ class TestMCPProjectIntegration:
 
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
             # First save
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="Dedup test",
                 thesis="This is a unique thesis for deduplication testing",
                 confidence=0.8,
@@ -384,7 +384,7 @@ class TestMCPProjectIntegration:
             time.sleep(2.0)
 
             # Try to save very similar thesis
-            result = mcp_server.sage_autosave_check(
+            result = mcp_server.autosave_check(
                 trigger_event="synthesis",
                 core_question="Dedup test",
                 current_thesis="This is a unique thesis for deduplication testing",
@@ -403,7 +403,7 @@ class TestMCPProjectIntegration:
 
         # Save to project-local
         with patch.object(mcp_server, "_PROJECT_ROOT", project_with_sage):
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="Project question",
                 thesis="Project-local checkpoint via MCP",
                 confidence=0.8,
@@ -411,14 +411,14 @@ class TestMCPProjectIntegration:
             )
             # Wait for fire-and-forget save to complete
             time.sleep(0.5)
-            project_list = mcp_server.sage_list_checkpoints()
+            project_list = mcp_server.list_checkpoints()
 
         # Save to global
         with (
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            mcp_server.sage_save_checkpoint(
+            mcp_server.save_checkpoint(
                 core_question="Global question",
                 thesis="Global checkpoint via MCP",
                 confidence=0.8,
@@ -426,7 +426,7 @@ class TestMCPProjectIntegration:
             )
             # Wait for fire-and-forget save to complete
             time.sleep(0.5)
-            global_list = mcp_server.sage_list_checkpoints()
+            global_list = mcp_server.list_checkpoints()
 
         # Verify isolation
         assert "Project-local checkpoint via MCP" in project_list
@@ -443,7 +443,7 @@ class TestMCPProjectIntegration:
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
         ):
-            result = mcp_server.sage_save_checkpoint(
+            result = mcp_server.save_checkpoint(
                 core_question="Fallback test",
                 thesis="Should save to global when no project",
                 confidence=0.7,
