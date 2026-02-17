@@ -222,6 +222,11 @@ class SageConfig:
     failure_memory_enabled: bool = True  # Track and inject relevant failures
     failure_injection_limit: int = 3  # Max failures to inject per session
 
+    # Module settings (v4.1)
+    # Control which tool modules are exposed to reduce context usage
+    # Available: core, knowledge, code, extras
+    modules: tuple[str, ...] = ("core",)  # Default to minimal tools
+
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         import logging
@@ -273,6 +278,9 @@ class SageConfig:
             # Only apply known fields - use dataclass fields, not hasattr (security)
             valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
             valid_overrides = {k: v for k, v in overrides.items() if k in valid_fields}
+            # Convert modules list to tuple (YAML loads as list)
+            if "modules" in valid_overrides and isinstance(valid_overrides["modules"], list):
+                valid_overrides["modules"] = tuple(valid_overrides["modules"])
             return cls(**valid_overrides)
         return cls()
 
@@ -293,6 +301,9 @@ class SageConfig:
         data = {}
         for key, value in self.__dict__.items():
             if getattr(defaults, key) != value:
+                # Convert tuples to lists for YAML serialization
+                if isinstance(value, tuple):
+                    value = list(value)
                 data[key] = value
 
         # If all defaults, save empty dict (or minimal marker)

@@ -43,7 +43,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from sage.config import detect_project_root, get_sage_config
 from sage.continuity import (
@@ -170,11 +170,18 @@ Max 30 attempts. If timeout, return "Sage: task timed out after 60s"."""
     )
 
 
-# Initialize MCP server
-mcp = FastMCP("sage")
-
 # Detect project root at startup for project-local checkpoints
 _PROJECT_ROOT = detect_project_root()
+
+# Load config for module filtering
+_STARTUP_CONFIG = get_sage_config(_PROJECT_ROOT)
+
+# Initialize MCP server with module-based tag filtering
+# Users can configure which modules are enabled via:
+#   sage config set modules "core,knowledge,code"
+# Available modules: core, knowledge, code, extras
+_enabled_modules = set(_STARTUP_CONFIG.modules) if _STARTUP_CONFIG.modules else {"core"}
+mcp = FastMCP("sage", include_tags=_enabled_modules)
 
 # =============================================================================
 # Session Start Auto-Injection
@@ -1087,7 +1094,7 @@ def _get_proactive_recall() -> str | None:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def version() -> str:
     """Get Sage version and configuration info.
@@ -1115,7 +1122,7 @@ def version() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def health() -> str:
     """Check Sage system health and diagnostics.
@@ -1280,7 +1287,7 @@ def health() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def continuity_status() -> str:
     """Check session continuity status and inject pending context.
@@ -1354,7 +1361,7 @@ def continuity_status() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def get_config() -> str:
     """Get current Sage configuration values.
@@ -1407,7 +1414,7 @@ def get_config() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -> str:
     """Debug what knowledge and checkpoints would match a query.
@@ -1557,7 +1564,7 @@ def debug_query(query: str, skill: str = "", include_checkpoints: bool = True) -
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def save_checkpoint(
     core_question: str,
@@ -1701,7 +1708,7 @@ def save_checkpoint(
     return f"📍 Checkpoint saved{template_info}{code_info}{chain_info}: {thesis_preview}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     """List saved research checkpoints.
@@ -1743,7 +1750,7 @@ def list_checkpoints(limit: int = 10, skill: str | None = None) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def load_checkpoint(checkpoint_id: str) -> str:
     """Load a checkpoint for context injection.
@@ -1765,7 +1772,7 @@ def load_checkpoint(checkpoint_id: str) -> str:
     return format_checkpoint_for_context(checkpoint)
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def search_checkpoints(query: str, limit: int = 5) -> str:
     """Search checkpoints by semantic similarity to a query.
@@ -1841,7 +1848,7 @@ def search_checkpoints(query: str, limit: int = 5) -> str:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def save_knowledge(
     knowledge_id: str,
@@ -1896,7 +1903,7 @@ def save_knowledge(
     return f"📍 Knowledge saved: {knowledge_id}{type_label} ({scope}){links_info}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def recall_knowledge(query: str, skill: str = "") -> str:
     """Recall relevant knowledge for a query.
@@ -1926,7 +1933,7 @@ def recall_knowledge(query: str, skill: str = "") -> str:
     return format_recalled_context(result, project_path=_PROJECT_ROOT)
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def list_knowledge(skill: str | None = None) -> str:
     """List stored knowledge items.
@@ -1975,7 +1982,7 @@ def list_knowledge(skill: str | None = None) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def remove_knowledge(knowledge_id: str) -> str:
     """Remove a knowledge item.
@@ -1991,7 +1998,7 @@ def remove_knowledge(knowledge_id: str) -> str:
     return f"Knowledge item not found: {knowledge_id}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def update_knowledge(
     knowledge_id: str,
@@ -2054,7 +2061,7 @@ def update_knowledge(
     return f"✓ Updated {knowledge_id}: {', '.join(updates)}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def link_knowledge(
     source_id: str,
@@ -2110,7 +2117,7 @@ def link_knowledge(
         return f"Failed to link knowledge: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def deprecate_knowledge(
     knowledge_id: str,
@@ -2154,7 +2161,7 @@ def deprecate_knowledge(
     return msg
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def archive_knowledge(knowledge_id: str) -> str:
     """Archive a knowledge item (hide from recall).
@@ -2183,7 +2190,7 @@ def archive_knowledge(knowledge_id: str) -> str:
     return f"📦 Archived: {knowledge_id}\nRestore with: update_knowledge('{knowledge_id}', status='active')"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def code_context(file: str, symbol: str | None = None) -> str:
     """Find knowledge items that link to specific code.
@@ -2252,7 +2259,7 @@ def code_context(file: str, symbol: str | None = None) -> str:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def list_todos(status: str = "") -> str:
     """List todo items.
@@ -2281,7 +2288,7 @@ def list_todos(status: str = "") -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def mark_todo_done(todo_id: str) -> str:
     """Mark a todo as done.
@@ -2297,7 +2304,7 @@ def mark_todo_done(todo_id: str) -> str:
     return f"Todo not found: {todo_id}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"knowledge"})
 @with_session_context
 def get_pending_todos() -> str:
     """Get pending todos for session-start injection.
@@ -2324,7 +2331,7 @@ def get_pending_todos() -> str:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def set_config(key: str, value: str, project_level: bool = False) -> str:
     """Set a Sage tuning configuration value.
@@ -2398,7 +2405,7 @@ def set_config(key: str, value: str, project_level: bool = False) -> str:
     return f"✓ Set {key} = {typed_value} ({location}-level)\n\nCall reload_config() to apply."
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def reload_config() -> str:
     """Reload Sage configuration and clear cached models.
@@ -2466,7 +2473,7 @@ AUTOSAVE_TRIGGERS = {
 }
 
 
-@mcp.tool()
+@mcp.tool(tags={"core"})
 @with_session_context
 def autosave_check(
     trigger_event: str,
@@ -2645,7 +2652,7 @@ def _check_code_deps() -> str | None:
         return "Codebase module not available. Install with: pip install claude-sage[code]"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def index_code(
     path: str = ".",
@@ -2697,7 +2704,7 @@ def index_code(
         return f"Indexing failed: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def search_code(
     query: str,
@@ -2750,7 +2757,7 @@ def search_code(
         return f"Search failed: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def grep_symbol(
     name: str,
@@ -2823,7 +2830,7 @@ def grep_symbol(
         return f"Lookup failed: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def analyze_function(
     name: str,
@@ -2880,7 +2887,7 @@ def analyze_function(
         return f"Analysis failed: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def mark_core(
     path: str,
@@ -2912,7 +2919,7 @@ def mark_core(
         return f"Failed to mark file: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def list_core(
     project: str | None = None,
@@ -2951,7 +2958,7 @@ def list_core(
         return f"Failed to list core files: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"code"})
 @with_session_context
 def unmark_core(
     path: str,
@@ -3163,7 +3170,7 @@ def get_failure_resource(failure_id: str) -> str:
 # =============================================================================
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def record_failure(
     failure_id: str,
@@ -3212,7 +3219,7 @@ def record_failure(
         return f"Failed to record failure: {e}"
 
 
-@mcp.tool()
+@mcp.tool(tags={"extras"})
 @with_session_context
 def list_failures(
     limit: int = 10,
@@ -3340,6 +3347,49 @@ def main():
         mcp.run(transport="sse")
     else:
         mcp.run()
+
+
+# =============================================================================
+# Tool Callable Wrappers for Test Compatibility
+# =============================================================================
+
+
+class _ToolWrapper:
+    """Wrapper that makes FunctionTool objects callable.
+
+    The fastmcp package wraps @mcp.tool() decorated functions into FunctionTool
+    objects that aren't directly callable. This wrapper makes them callable for
+    test compatibility while preserving their FunctionTool attributes.
+    """
+
+    def __init__(self, tool):
+        self._tool = tool
+        # Copy attributes for inspection
+        self.fn = tool.fn
+        self.name = tool.name
+        self.tags = tool.tags
+
+    def __call__(self, *args, **kwargs):
+        return self._tool.fn(*args, **kwargs)
+
+    def __repr__(self):
+        return f"<ToolWrapper({self._tool.name})>"
+
+
+def _wrap_tools():
+    """Wrap all FunctionTool objects in the module to make them callable."""
+    import sys
+
+    module = sys.modules[__name__]
+    for name in dir(module):
+        obj = getattr(module, name)
+        if hasattr(obj, "fn") and hasattr(obj, "name") and hasattr(obj, "tags"):
+            # It's a FunctionTool, wrap it
+            setattr(module, name, _ToolWrapper(obj))
+
+
+# Apply wrappers after all tools are defined
+_wrap_tools()
 
 
 if __name__ == "__main__":

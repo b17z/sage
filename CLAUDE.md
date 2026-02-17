@@ -2,8 +2,8 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v4.1.0 (invisible context hydration)
-**Test count:** 1668 tests (maintain or increase)
+**Current version:** v4.2.0 (invisible context hydration)
+**Test count:** 1679 tests (maintain or increase)
 
 ---
 
@@ -71,49 +71,64 @@ sage ui                      # Start local web UI
 sage ui --api-only           # REST API only mode
 ```
 
+## Tool Modules
+
+Sage exposes 33 MCP tools organized into 4 modules. By default, only `core` (8 tools) is enabled to minimize context usage. Configure which modules to enable:
+
+```bash
+# View current modules
+sage config get modules
+
+# Enable more modules (requires Claude Code restart)
+sage config set modules "core,knowledge"       # Add knowledge tools
+sage config set modules "core,knowledge,code"  # Add code indexing
+sage config set modules "core,knowledge,code,extras"  # All tools
+```
+
+| Module | Tools | Purpose |
+|--------|-------|---------|
+| **core** (default) | 8 | Checkpoints, continuity, health |
+| **knowledge** | 11 | Knowledge base, todos |
+| **code** | 8 | Code indexing, semantic search |
+| **extras** | 6 | Config, debugging, failures |
+
 ## MCP Tools
 
-| Tool | Purpose |
-|------|---------|
-| **System** | |
-| `version()` | Get version + config info |
-| `health()` | System diagnostics + continuity injection |
-| `continuity_status()` | Check/inject session continuity |
-| `get_config()` | Show all config values |
-| `set_config(key, value)` | Set tuning parameter |
-| `reload_config()` | Apply config changes |
-| `debug_query(query)` | Debug retrieval scoring |
-| **Checkpoints** | |
-| `save_checkpoint(...)` | Save research checkpoint |
-| `list_checkpoints()` | List saved checkpoints |
-| `load_checkpoint(id)` | Load checkpoint for context |
-| `search_checkpoints(query)` | Semantic search |
-| `autosave_check(...)` | Auto-checkpoint at breakpoints |
-| **Knowledge** | |
-| `save_knowledge(...)` | Save new knowledge item |
-| `recall_knowledge(query)` | Retrieve matching knowledge |
-| `list_knowledge()` | List all knowledge |
-| `update_knowledge(id, ...)` | Edit existing item |
-| `deprecate_knowledge(id, reason)` | Mark as outdated |
-| `archive_knowledge(id)` | Hide from recall |
-| `remove_knowledge(id)` | Delete item |
-| `code_context(file, symbol)` | Find knowledge linking to code |
-| `link_knowledge(src, tgt, relation)` | Link two knowledge items |
-| **Failures** *(v4.0)* | |
-| `record_failure(...)` | Track what didn't work |
-| `list_failures()` | List recorded failures |
-| **Todos** | |
-| `list_todos()` | List persistent todos |
-| `mark_todo_done(id)` | Mark todo complete |
-| `get_pending_todos()` | Get pending for injection |
-| **Code** *(requires `[code]` extra)* | |
-| `index_code(path)` | Index codebase for search |
-| `search_code(query)` | Semantic code search |
-| `grep_symbol(name)` | Fast exact symbol lookup |
-| `analyze_function(name)` | Get function source code |
-| `mark_core(path)` | Mark file for context injection |
-| `list_core()` | List core files |
-| `unmark_core(path)` | Remove core marking |
+| Tool | Module | Purpose |
+|------|--------|---------|
+| `version()` | core | Get version + config info |
+| `health()` | core | System diagnostics + continuity injection |
+| `continuity_status()` | core | Check/inject session continuity |
+| `save_checkpoint(...)` | core | Save research checkpoint |
+| `list_checkpoints()` | core | List saved checkpoints |
+| `load_checkpoint(id)` | core | Load checkpoint for context |
+| `search_checkpoints(query)` | core | Semantic search |
+| `autosave_check(...)` | core | Auto-checkpoint at breakpoints |
+| `save_knowledge(...)` | knowledge | Save new knowledge item |
+| `recall_knowledge(query)` | knowledge | Retrieve matching knowledge |
+| `list_knowledge()` | knowledge | List all knowledge |
+| `update_knowledge(id, ...)` | knowledge | Edit existing item |
+| `deprecate_knowledge(id, reason)` | knowledge | Mark as outdated |
+| `archive_knowledge(id)` | knowledge | Hide from recall |
+| `remove_knowledge(id)` | knowledge | Delete item |
+| `link_knowledge(src, tgt, relation)` | knowledge | Link two knowledge items |
+| `list_todos()` | knowledge | List persistent todos |
+| `mark_todo_done(id)` | knowledge | Mark todo complete |
+| `get_pending_todos()` | knowledge | Get pending for injection |
+| `index_code(path)` | code | Index codebase for search |
+| `search_code(query)` | code | Semantic code search |
+| `grep_symbol(name)` | code | Fast exact symbol lookup |
+| `analyze_function(name)` | code | Get function source code |
+| `mark_core(path)` | code | Mark file for context injection |
+| `list_core()` | code | List core files |
+| `unmark_core(path)` | code | Remove core marking |
+| `code_context(file, symbol)` | code | Find knowledge linking to code |
+| `get_config()` | extras | Show all config values |
+| `set_config(key, value)` | extras | Set tuning parameter |
+| `reload_config()` | extras | Apply config changes |
+| `debug_query(query)` | extras | Debug retrieval scoring |
+| `record_failure(...)` | extras | Track what didn't work |
+| `list_failures()` | extras | List recorded failures |
 
 ## Architecture
 
