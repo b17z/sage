@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from sage.config import SAGE_DIR, get_sage_config
+from sage.config import SAGE_DIR, detect_project_root, get_sage_config
 from sage.types import CheckpointId
 
 logger = logging.getLogger(__name__)
@@ -129,12 +129,33 @@ def generate_checkpoint_id(description: str) -> CheckpointId:
     return CheckpointId(f"{ts}_{slug}")
 
 
-def get_checkpoints_dir(project_path: Path | None = None) -> Path:
-    """Get the checkpoints directory, preferring project-local if available."""
+def get_checkpoints_dir(project_path: Path | None = None, auto_create: bool = True) -> Path:
+    """Get the checkpoints directory, preferring project-local.
+
+    Auto-creates .sage/ in project root if detected.
+
+    Args:
+        project_path: Optional explicit project path (skips auto-detection if provided)
+        auto_create: If True, create .sage/ in project root if it doesn't exist
+
+    Returns:
+        Path to checkpoints directory (project-local if available, else global)
+    """
+    # If explicit project_path given, use it (don't auto-detect)
     if project_path:
         local_dir = project_path / ".sage" / "checkpoints"
-        if local_dir.exists() or (project_path / ".sage").exists():
+        if local_dir.exists() or (project_path / ".sage").exists() or auto_create:
             return local_dir
+        # Explicit path given but .sage doesn't exist and auto_create=False
+        return CHECKPOINTS_DIR
+
+    # Auto-detect project only when no explicit path
+    detected = detect_project_root()
+    if detected:
+        local_dir = detected / ".sage" / "checkpoints"
+        if local_dir.exists() or (detected / ".sage").exists() or auto_create:
+            return local_dir
+
     return CHECKPOINTS_DIR
 
 

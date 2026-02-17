@@ -349,15 +349,18 @@ class TestIntegration:
         assert has_pending_continuity()
 
         # 3. Get context (simulating sage tool call)
-        context = _get_continuity_context()
+        # Mock _get_queued_checkpoints to avoid picking up real project checkpoints
+        with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+            context = _get_continuity_context()
         assert context is not None
         assert "feature X" in context
 
         # 4. Marker should be cleared
         assert not has_pending_continuity()
 
-        # 5. Subsequent calls return None
-        assert _get_continuity_context() is None
+        # 5. Subsequent calls return None (no marker, no queued)
+        with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+            assert _get_continuity_context() is None
 
     def test_multiple_tools_only_inject_once(self, cleanup_continuity):
         """Context is only injected on first tool call."""
@@ -366,11 +369,13 @@ class TestIntegration:
 
         mark_for_continuity(reason="test", compaction_summary="Once only")
 
-        # First call gets context
-        first = _get_continuity_context()
-        assert first is not None
-        assert "Once only" in first
+        # Mock _get_queued_checkpoints to avoid picking up real project checkpoints
+        with patch("sage.mcp_server._get_queued_checkpoints", return_value=[]):
+            # First call gets context
+            first = _get_continuity_context()
+            assert first is not None
+            assert "Once only" in first
 
-        # Second call returns None
-        second = _get_continuity_context()
-        assert second is None
+            # Second call returns None
+            second = _get_continuity_context()
+            assert second is None

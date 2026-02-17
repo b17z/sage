@@ -108,7 +108,10 @@ class TestProjectLocalCheckpoints:
         self, tmp_path: Path, global_checkpoints_dir: Path
     ):
         """get_checkpoints_dir() falls back to global when no project."""
-        with patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"):
+        with (
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
+        ):
             result = get_checkpoints_dir(project_path=None)
 
         assert result == global_checkpoints_dir / "checkpoints"
@@ -191,7 +194,10 @@ class TestProjectLocalCheckpoints:
             thesis="Global checkpoint",
             confidence=0.5,
         )
-        with patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"):
+        with (
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
+        ):
             save_checkpoint(global_cp, project_path=None)
 
         # List project-local - should only see local
@@ -200,7 +206,10 @@ class TestProjectLocalCheckpoints:
         assert local_list[0].thesis == "Local checkpoint"
 
         # List global - should only see global
-        with patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"):
+        with (
+            patch("sage.checkpoint.CHECKPOINTS_DIR", global_checkpoints_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
+        ):
             global_list = list_checkpoints(project_path=None)
         assert len(global_list) == 1
         assert global_list[0].thesis == "Global checkpoint"
@@ -343,6 +352,7 @@ class TestMCPProjectIntegration:
         with (
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
         ):
             mcp_server.save_checkpoint(
                 core_question="Global question",
@@ -417,6 +427,7 @@ class TestMCPProjectIntegration:
         with (
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
         ):
             mcp_server.save_checkpoint(
                 core_question="Global question",
@@ -442,6 +453,7 @@ class TestMCPProjectIntegration:
         with (
             patch.object(mcp_server, "_PROJECT_ROOT", None),
             patch("sage.checkpoint.CHECKPOINTS_DIR", global_sage_dir / "checkpoints"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
         ):
             result = mcp_server.save_checkpoint(
                 core_question="Fallback test",

@@ -488,6 +488,7 @@ class TestConfigIntegrationCheckpoint:
         with (
             patch("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir),
             patch("sage.checkpoint.SAGE_DIR", sage_dir),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
             patch("sage.config.SAGE_DIR", sage_dir),
             patch("sage.config.detect_project_root", return_value=None),
             patch("sage.checkpoint._add_checkpoint_embedding", return_value=True),

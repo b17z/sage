@@ -28,27 +28,32 @@ KNOWLEDGE_DIR = SAGE_DIR / "knowledge"
 KNOWLEDGE_INDEX = KNOWLEDGE_DIR / "index.yaml"
 
 
-def _get_knowledge_dir(project_path: Path | None = None) -> Path:
+def _get_knowledge_dir(project_path: Path | None = None, auto_create: bool = True) -> Path:
     """Get the knowledge directory, preferring project-local.
 
     Knowledge is project-scoped so teams can share knowledge via git.
+    Auto-creates .sage/ in project root if detected.
 
     Args:
-        project_path: Optional project path to use
+        project_path: Optional explicit project path (skips auto-detection if provided)
+        auto_create: If True, create .sage/ in project root if it doesn't exist
 
     Returns:
         Path to knowledge directory (project-local if available, else global)
     """
+    # If explicit project_path given, use it (don't auto-detect)
     if project_path:
         project_sage = project_path / ".sage"
-        if project_sage.exists():
+        if project_sage.exists() or auto_create:
             return project_sage / "knowledge"
+        # Explicit path given but .sage doesn't exist and auto_create=False
+        return KNOWLEDGE_DIR
 
-    # Auto-detect project
+    # Auto-detect project only when no explicit path
     detected = detect_project_root()
     if detected:
         project_sage = detected / ".sage"
-        if project_sage.exists():
+        if project_sage.exists() or auto_create:
             return project_sage / "knowledge"
 
     # Fall back to global

@@ -40,6 +40,7 @@ def mock_checkpoint_paths(tmp_path: Path, mock_checkpoints_dir: Path):
     with (
         patch("sage.checkpoint.CHECKPOINTS_DIR", mock_checkpoints_dir),
         patch("sage.checkpoint.SAGE_DIR", tmp_path / ".sage"),
+        patch("sage.checkpoint.detect_project_root", return_value=None),
     ):
         yield mock_checkpoints_dir
 
@@ -853,6 +854,7 @@ class TestCheckpointMaintenance:
         with (
             patch("sage.checkpoint.CHECKPOINTS_DIR", checkpoints_dir),
             patch("sage.checkpoint.SAGE_DIR", tmp_path / ".sage"),
+            patch("sage.checkpoint.detect_project_root", return_value=None),
             patch("sage.checkpoint._add_checkpoint_embedding", return_value=True),
             patch("sage.checkpoint._remove_checkpoint_embedding", return_value=True),
         ):

@@ -151,7 +151,7 @@ class TestGetProactiveRecall:
         mock_result.items = []
 
         with patch("sage.mcp_server._get_project_context", return_value="my-project"):
-            with patch("sage.knowledge.recall_knowledge", return_value=mock_result):
+            with patch("sage.mcp_server._recall_knowledge", return_value=mock_result):
                 from sage.mcp_server import _get_proactive_recall
 
                 result = _get_proactive_recall()
@@ -169,11 +169,14 @@ class TestGetProactiveRecall:
         mock_result.count = 1
         mock_result.items = [mock_item]
 
-        with patch("sage.mcp_server._get_project_context", return_value="my-project"):
-            with patch("sage.knowledge.recall_knowledge", return_value=mock_result):
-                from sage.mcp_server import _get_proactive_recall
+        with (
+            patch("sage.mcp_server._get_project_context", return_value="my-project"),
+            patch("sage.mcp_server._recall_knowledge", return_value=mock_result),
+            patch("sage.embeddings.is_model_loaded", return_value=True),
+        ):
+            from sage.mcp_server import _get_proactive_recall
 
-                result = _get_proactive_recall()
+            result = _get_proactive_recall()
 
         assert result is not None
         assert "RECALLED KNOWLEDGE" in result
@@ -191,11 +194,14 @@ class TestGetProactiveRecall:
         mock_result.count = 1
         mock_result.items = [mock_item]
 
-        with patch("sage.mcp_server._get_project_context", return_value="awesome-project"):
-            with patch("sage.knowledge.recall_knowledge", return_value=mock_result):
-                from sage.mcp_server import _get_proactive_recall
+        with (
+            patch("sage.mcp_server._get_project_context", return_value="awesome-project"),
+            patch("sage.mcp_server._recall_knowledge", return_value=mock_result),
+            patch("sage.embeddings.is_model_loaded", return_value=True),
+        ):
+            from sage.mcp_server import _get_proactive_recall
 
-                result = _get_proactive_recall()
+            result = _get_proactive_recall()
 
         assert result is not None
         assert "awesome-project" in result
