@@ -23,7 +23,7 @@ mkdir -p "$SAGE_HOME"
 VENV_DIR="$SAGE_HOME/.venv"
 if [ ! -d "$VENV_DIR" ]; then
     echo "[Sage] First run - installing dependencies..." >&2
-    python3.12 -m venv "$VENV_DIR"
+    python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
     # If running from source repo, use editable install for development
     if [ -f "$SAGE_ROOT/pyproject.toml" ]; then
