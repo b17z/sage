@@ -24,7 +24,7 @@ VERSION_FILES = {
         "pattern": r'^__version__ = "[^"]+"',
         "replacement": '__version__ = "{version}"',
     },
-    ".claude-plugin/plugin.json": {
+    "plugins/sage/.claude-plugin/plugin.json": {
         "type": "json",
         "key": "version",
     },

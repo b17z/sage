@@ -1,6 +1,6 @@
 {
   "name": "sage",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Semantic memory for Claude - checkpoint research, persist knowledge, never lose context",
   "author": {
     "name": "b17z",
@@ -8,5 +8,10 @@
   },
   "homepage": "https://pypi.org/project/claude-sage/",
   "repository": "https://github.com/b17z/sage",
-  "license": "MIT"
+  "license": "MIT",
+  "components": {
+    "mcpServers": [
+      ".mcp.json"
+    ]
+  }
 }

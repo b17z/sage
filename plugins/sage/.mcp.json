@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sage": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/server/run-sage.sh",
+      "args": [],
+      "env": {},
+      "description": "Semantic memory - checkpoints, knowledge, code context"
+    }
+  }
+}

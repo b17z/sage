@@ -5,8 +5,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
-SAGE_ROOT="$(dirname "$PLUGIN_ROOT")"
+PLUGIN_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"  # plugins/sage
+SAGE_ROOT="$(dirname "$(dirname "$PLUGIN_ROOT")")"   # repo root (for pyproject.toml)
 
 # Use workspace for persistent data (survives VM resets)
 # CoWork mounts the workspace at a known path
@@ -27,9 +27,9 @@ if [ ! -d "$VENV_DIR" ]; then
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
     # If running from source repo, use editable install for development
     if [ -f "$SAGE_ROOT/pyproject.toml" ]; then
-        "$VENV_DIR/bin/pip" install --quiet -e "$SAGE_ROOT[mcp]"
+        "$VENV_DIR/bin/pip" install --quiet -e "$SAGE_ROOT[mcp,code]"
     else
-        "$VENV_DIR/bin/pip" install --quiet "claude-sage[mcp]"
+        "$VENV_DIR/bin/pip" install --quiet "claude-sage[mcp,code]"
     fi
     echo "[Sage] Installation complete" >&2
 fi

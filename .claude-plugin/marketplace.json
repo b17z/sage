@@ -11,7 +11,7 @@
       "name": "sage",
       "description": "Semantic memory with checkpoints, knowledge base, and code context linking",
       "category": "productivity",
-      "source": "./"
+      "source": "./plugins/sage"
     }
   ]
 }
