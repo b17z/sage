@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-__version__ = "4.2.2"
+__version__ = "4.2.3"
 
 # Branded types for type-safe IDs
 from sage.types import CheckpointId, KnowledgeId, SkillName, TaskId, TemplateName
