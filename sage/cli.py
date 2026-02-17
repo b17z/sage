@@ -772,6 +772,11 @@ def config_list():
     console.print("  [dim]# Model[/dim]")
     _show_tuning_value("embedding_model", effective.embedding_model, defaults.embedding_model)
 
+    console.print("  [dim]# Modules[/dim]")
+    modules_str = ",".join(effective.modules)
+    defaults_str = ",".join(defaults.modules)
+    _show_tuning_value("modules", modules_str, defaults_str)
+
     console.print()
     console.print("[dim]sage config set KEY VALUE      Set a value[/dim]")
     console.print("[dim]sage config set KEY VALUE --project   Set project-level[/dim]")
@@ -845,6 +850,15 @@ def config_set(key: str, value: str, project: bool):
                 typed_value = int(value)
             except ValueError:
                 console.print(f"[red]Invalid integer value: {value}[/red]")
+                sys.exit(1)
+        elif key == "modules":
+            # Special handling for modules tuple - parse comma-separated string
+            typed_value = tuple(m.strip() for m in value.split(",") if m.strip())
+            valid_modules = {"core", "knowledge", "code", "extras"}
+            invalid = set(typed_value) - valid_modules
+            if invalid:
+                console.print(f"[red]Invalid module(s): {invalid}[/red]")
+                console.print(f"[dim]Valid modules: {', '.join(sorted(valid_modules))}[/dim]")
                 sys.exit(1)
         else:
             typed_value = value
