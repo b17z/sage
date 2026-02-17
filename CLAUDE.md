@@ -2,7 +2,7 @@
 
 Semantic memory for Claude Code. Automatically checkpoint research at meaningful moments, persist knowledge across sessions, and never lose context to compaction again.
 
-**Current version:** v4.2.0 (invisible context hydration)
+**Current version:** v4.2.1 (invisible context hydration)
 **Test count:** 1679 tests (maintain or increase)
 
 ---
