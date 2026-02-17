@@ -23,6 +23,16 @@ mkdir -p "$SAGE_HOME"
 VENV_DIR="$SAGE_HOME/.venv"
 if [ ! -d "$VENV_DIR" ]; then
     echo "[Sage] First run - installing dependencies..." >&2
+
+    # Check Python version (need 3.12+)
+    PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
+    PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
+    if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]; }; then
+        echo "[Sage] Error: Python 3.12+ required, found $PY_VERSION" >&2
+        exit 1
+    fi
+
     python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
     # If running from source repo, use editable install for development
