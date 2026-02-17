@@ -10,7 +10,9 @@ Three hooks work together to preserve research context:
 |------|------|---------------|
 | `post-response-context-check.sh` | Stop | Context exceeds 70% of window |
 | `post-response-semantic-detector.sh` | Stop | Semantic patterns detected in output |
-| `pre-compact.sh` | PreCompact | User runs `/compact` |
+| `session-start-sage.sh` | SessionStart | New session starts |
+
+> **Note:** `pre-compact.sh` was removed - it caused a deadlock bug and fires before the session summary exists. The watcher daemon handles post-compaction recovery instead. See `docs/hook-autocompact-learnings.md` for details.
 
 ## Installation
 
@@ -53,11 +55,11 @@ Then add to `~/.claude/settings.json`:
         ]
       }
     ],
-    "PreCompact": [
+    "SessionStart": [
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/hooks/pre-compact.sh" }
+          { "type": "command", "command": "/path/to/hooks/session-start-sage.sh" }
         ]
       }
     ]
@@ -142,19 +144,18 @@ Each trigger type has an independent rate-limit using marker files:
 |----------|---------|-------------|
 | `SAGE_SEMANTIC_COOLDOWN` | `30` | Rate limit in seconds (content gating is done by embeddings) |
 
-### Pre-Compact Hook
+### SessionStart Hook
 
-**File:** `pre-compact.sh`
+**File:** `session-start-sage.sh`
 
-**Purpose:** Triggers checkpoint before context compaction to preserve state.
+**Purpose:** Injects continuity context when a new session starts.
 
 **How it works:**
-1. User runs `/compact`
-2. Hook blocks compaction
-3. Instructs Claude to checkpoint first
-4. User can run `/compact` again after checkpointing
+1. New session starts (after compaction or fresh start)
+2. Hook runs `sage continuity inject`
+3. Any pending continuity context is injected into the session
 
-**Note:** This hook always blocks. Claude must checkpoint, then user re-runs `/compact`.
+This works with the watcher daemon which detects compaction and marks context for injection.
 
 ## Hook JSON Format
 
@@ -194,10 +195,10 @@ Run the test suite:
 2. Look for "Stop hook error: Synthesis detected..."
 3. Claude should call `sage_autosave_check`
 
-**Test pre-compact:**
-1. Run `/compact`
-2. Hook should block and request checkpoint
-3. After checkpointing, run `/compact` again
+**Test session-start:**
+1. Mark continuity pending: `sage continuity mark --reason test`
+2. Start a new session
+3. Hook should inject the continuity context
 
 ## Troubleshooting
 

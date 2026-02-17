@@ -1540,10 +1540,11 @@ def hooks_install(force):
     hooks_dest.mkdir(parents=True, exist_ok=True)
 
     # Copy hook files
+    # NOTE: pre-compact.sh was removed - causes deadlock bug and fires before summary exists
+    # See knowledge item: precompact-hook-deadlock
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
-        "pre-compact.sh",
         "session-start-sage.sh",
     ]
 
@@ -1604,16 +1605,7 @@ def hooks_install(force):
     if stop_hooks:
         hook_config["Stop"] = [{"matcher": "", "hooks": stop_hooks}]
 
-    # PreCompact hooks
-    if hook_exists("pre-compact.sh"):
-        hook_config["PreCompact"] = [
-            {
-                "matcher": "",
-                "hooks": [
-                    {"type": "command", "command": str(hooks_dest / "pre-compact.sh")},
-                ],
-            }
-        ]
+    # NOTE: PreCompact hooks removed - causes deadlock bug (see precompact-hook-deadlock)
 
     # Merge with existing hooks (don't overwrite other hooks)
     if "hooks" not in settings:
@@ -1650,12 +1642,13 @@ def hooks_uninstall(force):
     hooks_dest = Path.home() / ".claude" / "hooks"
     settings_path = Path.home() / ".claude" / "settings.json"
 
-    # Remove hook files
+    # Remove hook files (includes legacy hooks that may still be installed)
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
-        "post-response-sage-notify.sh",
-        "pre-compact.sh",
+        "post-response-sage-notify.sh",  # legacy, never implemented
+        "pre-compact.sh",  # legacy, removed due to deadlock bug
+        "session-start-sage.sh",
     ]
 
     for hook_file in hook_files:
@@ -1669,9 +1662,11 @@ def hooks_uninstall(force):
         try:
             settings = json.loads(settings_path.read_text())
             if "hooks" in settings:
-                # Remove Stop and PreCompact entries that contain our hooks
+                # Remove Stop, SessionStart, and PreCompact entries that contain our hooks
                 if "Stop" in settings["hooks"]:
                     del settings["hooks"]["Stop"]
+                if "SessionStart" in settings["hooks"]:
+                    del settings["hooks"]["SessionStart"]
                 if "PreCompact" in settings["hooks"]:
                     del settings["hooks"]["PreCompact"]
 
@@ -1701,8 +1696,7 @@ def hooks_status():
     hook_files = [
         "post-response-context-check.sh",
         "post-response-semantic-detector.sh",
-        "post-response-sage-notify.sh",
-        "pre-compact.sh",
+        "session-start-sage.sh",
     ]
 
     for hook_file in hook_files:
@@ -1724,10 +1718,10 @@ def hooks_status():
             else:
                 console.print("  [red]✗[/red] Stop hooks not configured")
 
-            if "PreCompact" in hooks_config:
-                console.print("  [green]✓[/green] PreCompact hooks configured")
+            if "SessionStart" in hooks_config:
+                console.print("  [green]✓[/green] SessionStart hooks configured")
             else:
-                console.print("  [red]✗[/red] PreCompact hooks not configured")
+                console.print("  [red]✗[/red] SessionStart hooks not configured")
         except json.JSONDecodeError:
             console.print(f"  [red]✗[/red] Could not parse {settings_path}")
     else:
@@ -1949,8 +1943,7 @@ def templates_show(name):
 # Hook files managed:
 #   - post-response-context-check.sh (context threshold detection)
 #   - post-response-semantic-detector.sh (synthesis/branch point detection)
-#   - pre-compact.sh (pre-compaction checkpointing)
-#   - post-response-sage-notify.sh (notification display)
+#   - session-start-sage.sh (continuity injection on session start)
 
 
 # ============================================================================

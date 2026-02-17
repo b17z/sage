@@ -203,20 +203,8 @@ rm -rf "$TEMP_DIR"
 
 echo ""
 
-# --- Pre-Compact Hook Test ---
-echo "## pre-compact.sh"
-
-output=$(echo '{}' | "$SCRIPT_DIR/pre-compact.sh" 2>/dev/null)
-decision=$(echo "$output" | jq -r '.decision // empty')
-if [ "$decision" = "block" ] && echo "$output" | grep -q "sage_autosave_check"; then
-    echo -e "${GREEN}✓${NC} pre-compact → block with checkpoint instruction"
-    ((PASSED++))
-else
-    echo -e "${RED}✗${NC} pre-compact → expected block with checkpoint instruction"
-    ((FAILED++))
-fi
-
-echo ""
+# NOTE: pre-compact.sh tests removed - hook causes deadlock bug and was removed
+# See knowledge item: precompact-hook-deadlock
 
 # --- Summary ---
 echo "=== Results ==="
